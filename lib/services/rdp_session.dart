@@ -73,6 +73,9 @@ class RdpSessionController implements SessionController {
   int _ourHwnd = 0;
   int? _lastLeft;
   int? _lastTop;
+  int? _pendingW;
+  int? _pendingH;
+  int _pendingStableTicks = 0;
   Directory? _scratchDir;
   Timer? _pollTimer;
   bool _disposed = false;
@@ -516,9 +519,27 @@ class RdpSessionController implements SessionController {
       final h = (logicalRect.height * devicePixelRatio).round();
       _debugLog('reposition(!_started): logicalRect=$logicalRect dpr=$devicePixelRatio -> w=$w h=$h');
       // A pane can briefly report a zero/tiny size mid-layout (e.g. right
-      // as a split is created) -- not a real size worth locking in as the
-      // negotiated resolution, so wait for an actual one instead.
-      if (w >= 200 && h >= 150) _beginWith(w, h);
+      // as a split is created, or during a new tab's own entrance
+      // transition even in an already-maximized window) -- not a real size
+      // worth locking in as the negotiated resolution. Trusting the very
+      // first reading over threshold was locking in exactly that kind of
+      // transient bad read with no way to self-correct afterward (nothing
+      // re-checks it unless the window itself is resized again later).
+      // Requiring a few consecutive ticks to agree first (~400-600ms) costs
+      // a beat on every connect but means a transient short-lived read can
+      // never get locked in as the permanent size.
+      if (w >= 200 && h >= 150) {
+        if (w == _pendingW && h == _pendingH) {
+          _pendingStableTicks++;
+        } else {
+          _pendingW = w;
+          _pendingH = h;
+          _pendingStableTicks = 1;
+        }
+        if (_pendingStableTicks >= 3) _beginWith(w, h);
+      } else {
+        _pendingStableTicks = 0;
+      }
       return;
     }
     if (_childHwnd == 0) return;
