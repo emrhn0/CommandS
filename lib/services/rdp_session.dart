@@ -604,7 +604,23 @@ class RdpSessionController implements SessionController {
     // Skipping the no-op case fixes that outright, and self-healing (the
     // actual point of polling instead of only reacting to events) still
     // works exactly the same on the ticks where something did move.
-    if (left == _lastLeft && top == _lastTop) return;
+    if (left == _lastLeft && top == _lastTop) {
+      // Nothing moved, so skip the repositioning SetWindowPos below (that's
+      // the flicker fix above) -- but the embedded window is a real, separate
+      // Win32 window sitting *behind* Flutter's own GPU-composited surface,
+      // not something Flutter's compositor knows to leave a hole for. Any
+      // repaint Flutter itself triggers elsewhere (hover highlight on a
+      // sidebar item, an animation, anything) can end up drawn on top of it,
+      // and nothing was re-asserting z-order on the ticks where position
+      // didn't change -- confirmed live: the RDP content only stayed visible
+      // while the mouse sat still over it, and blanked the moment it moved
+      // onto some other part of the UI. HWND_TOP here only touches z-order
+      // (NOMOVE/NOSIZE, no repaint of the RDP content itself), so it's cheap
+      // enough to do unconditionally every tick without reintroducing that
+      // flicker.
+      SetWindowPos(_childHwnd, 0 /* HWND_TOP */, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+      return;
+    }
     _lastLeft = left;
     _lastTop = top;
     // SWP_SHOWWINDOW here too: something along the embed/rebuild path was
