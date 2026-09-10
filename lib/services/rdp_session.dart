@@ -352,9 +352,30 @@ class RdpSessionController implements SessionController {
     final newStyle = (style & ~WS_POPUP & ~WS_CAPTION & ~WS_THICKFRAME) | WS_CHILD;
     SetWindowLongPtr(foundHwnd, GWL_STYLE, newStyle);
     final prevParent = SetParent(foundHwnd, ourHwnd);
+    // SetParent's own return value can't distinguish success from failure on
+    // its own -- 0 is both the correct result when the window had no prior
+    // parent (the normal case: mstsc's session window starts out top-level)
+    // *and* what a failed call returns, so GetLastError has to be checked
+    // too, and checked immediately, before any other Win32 call can reset
+    // it. Confirmed live (via the debug log) that this was failing with
+    // ERROR_INVALID_HANDLE (6) a meaningful fraction of the time -- mstsc
+    // recreates its session window a few times while negotiating a
+    // non-default resolution, and this can grab an EnumWindows result that's
+    // already stale (destroyed and replaced) by the time SetParent runs on
+    // it. The old code never checked for this and locked in `foundHwnd` as
+    // `_childHwnd` regardless, permanently giving up on a window that was
+    // never actually reparented -- left behind as its own real top-level
+    // window whereever Windows happened to place it, while the app's own
+    // pane stayed empty. Retrying instead of locking in a failed attempt
+    // lets the next tick's EnumWindows find mstsc's real, final window.
+    final setParentErr = GetLastError();
+    if (prevParent == 0 && setParentErr != 0) {
+      _debugLog('_findAndEmbed: SetParent FAILED mstscHwnd=$foundHwnd err=$setParentErr -- retrying next tick');
+      return;
+    }
     SetWindowPos(foundHwnd, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | _swpFrameChanged);
     ShowWindow(foundHwnd, SW_SHOW);
-    _debugLog('_findAndEmbed: SetParent prevParent=$prevParent lastError=${GetLastError()}');
+    _debugLog('_findAndEmbed: SetParent OK prevParent=$prevParent mstscHwnd=$foundHwnd');
 
     _childHwnd = foundHwnd;
     _ourHwnd = ourHwnd;
@@ -369,13 +390,34 @@ class RdpSessionController implements SessionController {
   /// parented). Checked every tick and silently re-applied if it drifted,
   /// the same way [reposition] re-asserts `SW_SHOW` every frame regardless
   /// of whether anything actually hid it.
+  ///
+  /// Confirmed live (via the debug log) that `_childHwnd` can also be a
+  /// handle [_findAndEmbed] grabbed moments before mstsc destroyed and
+  /// replaced it -- every attempt to reparent *that* handle fails forever
+  /// (it's simply gone), which used to retry-and-fail silently on every
+  /// single tick with no way out. Now checked for and treated as "this
+  /// handle is dead" rather than "try again" -- resetting so the next tick's
+  /// [_findAndEmbed] looks for mstsc's real, current window instead.
   void _ensureStillParented() {
     if (_childHwnd == 0 || _ourHwnd == 0) return;
+    if (IsWindow(_childHwnd) == 0) {
+      _debugLog('_ensureStillParented: $_childHwnd no longer a valid window -- resetting to find a fresh one');
+      _childHwnd = 0;
+      _ourHwnd = 0;
+      return;
+    }
     if (GetParent(_childHwnd) == _ourHwnd) return;
     final style = GetWindowLongPtr(_childHwnd, GWL_STYLE);
     final newStyle = (style & ~WS_POPUP & ~WS_CAPTION & ~WS_THICKFRAME) | WS_CHILD;
     SetWindowLongPtr(_childHwnd, GWL_STYLE, newStyle);
-    SetParent(_childHwnd, _ourHwnd);
+    final prevParent = SetParent(_childHwnd, _ourHwnd);
+    final err = GetLastError();
+    if (prevParent == 0 && err != 0) {
+      _debugLog('_ensureStillParented: SetParent FAILED $_childHwnd err=$err -- resetting to find a fresh window');
+      _childHwnd = 0;
+      _ourHwnd = 0;
+      return;
+    }
     SetWindowPos(_childHwnd, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | _swpFrameChanged);
     ShowWindow(_childHwnd, SW_SHOW);
     _debugLog('_ensureStillParented: re-parented $_childHwnd under $_ourHwnd');
