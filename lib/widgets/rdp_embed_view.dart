@@ -108,9 +108,54 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
               const Center(
                 child: Text('Session ended.', style: TextStyle(color: Colors.white70)),
               ),
+            if (status == SessionStatus.running)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _RefreshForResizeButton(controller: widget.controller),
+              ),
           ],
         );
       },
+    );
+  }
+}
+
+/// A connection's content is sized once, at connect time, and never
+/// auto-resized to follow the pane growing (see [RdpSessionController]) --
+/// this is the manual way to pick up a new size without closing and
+/// reopening the tab. Tucked in a corner and only shown once connected, so
+/// it stays out of the way of the actual remote desktop underneath.
+class _RefreshForResizeButton extends StatefulWidget {
+  const _RefreshForResizeButton({required this.controller});
+  final RdpSessionController controller;
+
+  @override
+  State<_RefreshForResizeButton> createState() => _RefreshForResizeButtonState();
+}
+
+class _RefreshForResizeButtonState extends State<_RefreshForResizeButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedOpacity(
+        opacity: _hover ? 1 : 0.45,
+        duration: const Duration(milliseconds: 120),
+        child: Material(
+          color: Colors.black87,
+          shape: const CircleBorder(),
+          child: IconButton(
+            tooltip: 'Reconnect to fill the current pane size',
+            icon: const Icon(Icons.aspect_ratio, size: 16, color: Colors.white),
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.controller.refreshForCurrentSize,
+          ),
+        ),
+      ),
     );
   }
 }
