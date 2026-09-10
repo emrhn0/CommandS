@@ -71,6 +71,8 @@ class RdpSessionController implements SessionController {
   int _lockedHeight = 0;
   int _childHwnd = 0;
   int _ourHwnd = 0;
+  int? _lastLeft;
+  int? _lastTop;
   Directory? _scratchDir;
   Timer? _pollTimer;
   bool _disposed = false;
@@ -529,6 +531,17 @@ class RdpSessionController implements SessionController {
     // same trade-off RDM itself makes.
     final left = (logicalRect.left * devicePixelRatio).round();
     final top = (logicalRect.top * devicePixelRatio).round();
+    // Position tracking is polled on a timer (see RdpEmbedView) rather than
+    // driven purely by layout events, so this runs constantly whether or
+    // not the pane actually moved. Forcing SetWindowPos + a synchronous
+    // RedrawWindow every single tick regardless was repainting the live
+    // RDP surface 5x/second for no reason -- visible as a constant flicker.
+    // Skipping the no-op case fixes that outright, and self-healing (the
+    // actual point of polling instead of only reacting to events) still
+    // works exactly the same on the ticks where something did move.
+    if (left == _lastLeft && top == _lastTop) return;
+    _lastLeft = left;
+    _lastTop = top;
     // SWP_SHOWWINDOW here too: something along the embed/rebuild path was
     // leaving the reparented window's visible bit cleared even after the
     // explicit ShowWindow(SW_SHOW) right after SetParent -- moving it is
