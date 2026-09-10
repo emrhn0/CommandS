@@ -74,6 +74,21 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
     widget.controller.reposition(rect, dpr);
   }
 
+  /// Reads the pane's current size *right now*, before triggering the
+  /// reconnect -- see [RdpSessionController.refreshForCurrentSize] for why
+  /// this can't wait for the next poll tick to do it instead.
+  void _refresh() {
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      widget.controller.refreshForCurrentSize();
+      return;
+    }
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final w = (box.size.width * dpr).round();
+    final h = (box.size.height * dpr).round();
+    widget.controller.refreshForCurrentSize(width: w, height: h);
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -108,9 +123,54 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
               const Center(
                 child: Text('Session ended.', style: TextStyle(color: Colors.white70)),
               ),
+            if (status == SessionStatus.running)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _RefreshForResizeButton(onPressed: _refresh),
+              ),
           ],
         );
       },
+    );
+  }
+}
+
+/// A connection's content is sized once, at connect time, and never
+/// auto-resized to follow the pane growing (see [RdpSessionController]) --
+/// this is the manual way to pick up a new size without closing and
+/// reopening the tab. Tucked in a corner and only shown once connected, so
+/// it stays out of the way of the actual remote desktop underneath.
+class _RefreshForResizeButton extends StatefulWidget {
+  const _RefreshForResizeButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  State<_RefreshForResizeButton> createState() => _RefreshForResizeButtonState();
+}
+
+class _RefreshForResizeButtonState extends State<_RefreshForResizeButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedOpacity(
+        opacity: _hover ? 1 : 0.45,
+        duration: const Duration(milliseconds: 120),
+        child: Material(
+          color: Colors.black87,
+          shape: const CircleBorder(),
+          child: IconButton(
+            tooltip: 'Reconnect to fill the current pane size',
+            icon: const Icon(Icons.aspect_ratio, size: 16, color: Colors.white),
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.onPressed,
+          ),
+        ),
+      ),
     );
   }
 }

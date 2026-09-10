@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../app_version.dart';
 import '../providers/app_state.dart';
 
 /// RDM-style "Bağlan" strip pinned to the bottom of the connections panel —
@@ -45,9 +46,21 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 4, left: 2),
-            child: Text(
-              '${app.connections.length} connection${app.connections.length == 1 ? '' : 's'}',
-              style: TextStyle(fontSize: 10, color: Theme.of(context).textTheme.bodySmall?.color),
+            child: Row(
+              children: [
+                Text(
+                  '${app.connections.length} connection${app.connections.length == 1 ? '' : 's'}',
+                  style: TextStyle(fontSize: 10, color: Theme.of(context).textTheme.bodySmall?.color),
+                ),
+                const Spacer(),
+                Text(
+                  appVersion,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
             ),
           ),
           SizedBox(

@@ -89,6 +89,7 @@ class RdpSessionController implements SessionController {
   /// Further calls are no-ops.
   void _beginWith(int desktopWidth, int desktopHeight) {
     if (_started) return;
+    _debugLog('_beginWith: desktopWidth=$desktopWidth desktopHeight=$desktopHeight');
     _started = true;
     _lockedWidth = desktopWidth;
     _lockedHeight = desktopHeight;
@@ -513,6 +514,7 @@ class RdpSessionController implements SessionController {
     if (!_started) {
       final w = (logicalRect.width * devicePixelRatio).round();
       final h = (logicalRect.height * devicePixelRatio).round();
+      _debugLog('reposition(!_started): logicalRect=$logicalRect dpr=$devicePixelRatio -> w=$w h=$h');
       // A pane can briefly report a zero/tiny size mid-layout (e.g. right
       // as a split is created) -- not a real size worth locking in as the
       // negotiated resolution, so wait for an actual one instead.
@@ -570,9 +572,44 @@ class RdpSessionController implements SessionController {
     if (_childHwnd != 0) ShowWindow(_childHwnd, SW_SHOW);
   }
 
-  @override
-  void dispose() {
-    _disposed = true;
+  /// Reconnects from scratch, negotiating against whatever size the pane
+  /// actually is *right now* -- the explicit escape hatch for the trade-off
+  /// [reposition] documents (this app, like RDM, doesn't auto-resize a live
+  /// connection's content to follow the window growing). Surfaced as a
+  /// button in [RdpEmbedView] rather than something automatic, so it never
+  /// fires a reconnect the user didn't ask for.
+  ///
+  /// [width]/[height], if given, are the pane's current size in physical
+  /// pixels, read by the caller at the exact moment of the button press --
+  /// before anything here tears the old session down or the widget tree
+  /// changes underneath it. An earlier version left this to the next
+  /// [reposition] tick to pick up after teardown, which raced the status
+  /// change back to `starting` (its own rebuild) and landed on a stale or
+  /// default-sized read; passing the size in up front removes that race
+  /// entirely by never depending on a read taken *after* teardown started.
+  Future<void> refreshForCurrentSize({int? width, int? height}) async {
+    if (_disposed) return;
+    _debugLog('refreshForCurrentSize: called width=$width height=$height');
+    _teardownProcess();
+    _started = false;
+    _lastLeft = null;
+    _lastTop = null;
+    _childHwnd = 0;
+    _ourHwnd = 0;
+    lastError = null;
+    _setStatus(SessionStatus.starting);
+    if (width != null && height != null && width >= 200 && height >= 150) {
+      _beginWith(width, height);
+    }
+    // Otherwise fall back to the next reposition() tick picking up the pane's
+    // size, same as first connect.
+  }
+
+  /// Kills the running mstsc process and its embedded window without
+  /// touching the controller's own lifecycle state (status stream, disposed
+  /// flag) -- shared by [dispose] and [refreshForCurrentSize], which differ
+  /// only in what happens after.
+  void _teardownProcess() {
     _pollTimer?.cancel();
     unawaited(_clearCredential());
     try {
@@ -586,6 +623,14 @@ class RdpSessionController implements SessionController {
         _scratchDir!.deleteSync(recursive: true);
       }
     } catch (_) {}
+    _process = null;
+    _scratchDir = null;
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _teardownProcess();
     _statusController.close();
   }
 }
