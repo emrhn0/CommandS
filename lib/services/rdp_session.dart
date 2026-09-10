@@ -570,32 +570,9 @@ class RdpSessionController implements SessionController {
     if (_childHwnd != 0) ShowWindow(_childHwnd, SW_SHOW);
   }
 
-  /// Reconnects from scratch, negotiating against whatever size the pane
-  /// actually is *right now* -- the explicit escape hatch for the trade-off
-  /// [reposition] documents (this app, like RDM, doesn't auto-resize a live
-  /// connection's content to follow the window growing). Surfaced as a
-  /// button in [RdpEmbedView] rather than something automatic, so it never
-  /// fires a reconnect the user didn't ask for.
-  Future<void> refreshForCurrentSize() async {
-    if (_disposed) return;
-    _teardownProcess();
-    _started = false;
-    _lastLeft = null;
-    _lastTop = null;
-    _childHwnd = 0;
-    _ourHwnd = 0;
-    lastError = null;
-    _setStatus(SessionStatus.starting);
-    // The next reposition() tick (within 200ms, see RdpEmbedView) picks up
-    // the pane's current size and restarts through the same _beginWith path
-    // used on first connect -- nothing further to do here.
-  }
-
-  /// Kills the running mstsc process and its embedded window without
-  /// touching the controller's own lifecycle state (status stream, disposed
-  /// flag) -- shared by [dispose] and [refreshForCurrentSize], which differ
-  /// only in what happens after.
-  void _teardownProcess() {
+  @override
+  void dispose() {
+    _disposed = true;
     _pollTimer?.cancel();
     unawaited(_clearCredential());
     try {
@@ -609,14 +586,6 @@ class RdpSessionController implements SessionController {
         _scratchDir!.deleteSync(recursive: true);
       }
     } catch (_) {}
-    _process = null;
-    _scratchDir = null;
-  }
-
-  @override
-  void dispose() {
-    _disposed = true;
-    _teardownProcess();
     _statusController.close();
   }
 }
