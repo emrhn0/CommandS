@@ -74,7 +74,17 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
   void _startPolling() {
     _pollTimer?.cancel();
     _reposition();
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 200), (_) => _reposition());
+    // 200ms wasn't fast enough to beat it: this app's own GPU-composited
+    // surface can end up painted over the embedded native window's region
+    // on any repaint (a sidebar hover highlight, anything) -- see
+    // [RdpSessionController.reposition] -- and Flutter re-presents on every
+    // pointer move even when nothing else in the tree actually changed, so
+    // moving the mouse over the sidebar was triggering that far more often
+    // than once per 200ms, leaving the RDP content hidden behind it for
+    // as long as the mouse kept moving. 30ms (~33Hz) is cheap on an
+    // otherwise-idle timer (no repaint of the RDP content itself on the
+    // no-op path, just a z-order nudge) and keeps up with that rate.
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 30), (_) => _reposition());
   }
 
   void _reposition() {
