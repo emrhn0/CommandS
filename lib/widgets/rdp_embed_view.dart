@@ -26,6 +26,7 @@ class RdpEmbedView extends StatefulWidget {
 class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver {
   final _key = GlobalKey();
   Timer? _pollTimer;
+  Timer? _resizeDebounce;
 
   @override
   void initState() {
@@ -48,7 +49,19 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
 
   @override
   void didChangeMetrics() {
-    if (widget.active) _reposition();
+    if (!widget.active) return;
+    _reposition();
+    // A live connection's content is negotiated once and doesn't follow the
+    // window growing on its own (see RdpSessionController.reposition) --
+    // window resizes/maximizes fire this repeatedly while dragging, so
+    // debounce and pick up the settled size once things stop moving, the
+    // same size read [_refresh] already does safely for the manual button.
+    _resizeDebounce?.cancel();
+    _resizeDebounce = Timer(const Duration(milliseconds: 600), () {
+      if (mounted && widget.active && widget.controller.status == SessionStatus.running) {
+        _refresh();
+      }
+    });
   }
 
   /// Flutter only calls [didChangeMetrics] when the window's *size* changes
@@ -93,6 +106,7 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
+    _resizeDebounce?.cancel();
     widget.controller.hide();
     super.dispose();
   }
@@ -136,11 +150,14 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
   }
 }
 
-/// A connection's content is sized once, at connect time, and never
-/// auto-resized to follow the pane growing (see [RdpSessionController]) --
-/// this is the manual way to pick up a new size without closing and
-/// reopening the tab. Tucked in a corner and only shown once connected, so
-/// it stays out of the way of the actual remote desktop underneath.
+/// A connection's content is negotiated once, at connect time, and doesn't
+/// track the pane growing on its own (see [RdpSessionController]) -- window
+/// resizes already trigger a debounced auto-refresh (see
+/// [_RdpEmbedViewState.didChangeMetrics]), but a plain drag between split
+/// panes changes the pane's size without ever resizing the window, so this
+/// stays as the immediate manual escape hatch. Tucked in a corner and only
+/// shown once connected, so it stays out of the way of the actual remote
+/// desktop underneath.
 class _RefreshForResizeButton extends StatefulWidget {
   const _RefreshForResizeButton({required this.onPressed});
   final VoidCallback onPressed;
