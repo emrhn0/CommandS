@@ -1,0 +1,186 @@
+name: Build and release
+
+# Push a v*.*.* tag to build Windows + macOS and publish a GitHub Release.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build Flutter Windows release
+        run: |
+          flutter pub get
+          flutter build windows --release
+
+      - name: Bundle plink.exe (PuTTY drives our SSH sessions)
+        shell: pwsh
+        run: |
+          choco install putty.install --no-progress -y
+          $plink = Get-ChildItem -Path "C:\Program Files\PuTTY","C:\Program Files (x86)\PuTTY" `
+            -Filter plink.exe -ErrorAction SilentlyContinue -Recurse | Select-Object -First 1
+          if (-not $plink) { throw "plink.exe not found after chocolatey install" }
+          Copy-Item $plink.FullName "build\windows\x64\runner\Release\plink.exe"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer (.exe)
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$env:VERSION" `
+            windows\installer.iss
+
+      - name: Zip portable build (no-installer alternative)
+        shell: bash
+        run: |
+          OUT="CommandS_${VERSION}_windows_portable"
+          mkdir -p "dist2/$OUT"
+          cp -r build/windows/x64/runner/Release/* "dist2/$OUT/"
+          cd dist2 && 7z a "${OUT}.zip" "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist2/*.zip
+            dist2/*Setup.exe
+          if-no-files-found: error
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build Flutter macOS release
+        run: |
+          flutter pub get
+          flutter build macos --release
+
+      - name: Zip the .app (ditto keeps the bundle structure intact)
+        shell: bash
+        run: |
+          mkdir -p dist2
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app")
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist2/CommandS_${VERSION}_macOS.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: dist2/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [version, windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          ls -la artifacts/*/
+
+          PREV_TAG=$(git tag --list 'v*.*.*' --sort=-v:refname | grep -v "^${TAG}\$" | head -n1 || true)
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:'- %s' "${PREV_TAG}..${TAG}" | grep -v '^- Merge ' || true)
+            [ -z "$CHANGELOG" ] && CHANGELOG="- (see commit history)"
+            CHANGELOG_HEADER="## What's changed since ${PREV_TAG}"
+          else
+            CHANGELOG="- Initial release"
+            CHANGELOG_HEADER="## What's changed"
+          fi
+
+          NOTES="CommandS ${VERSION}
+
+          ${CHANGELOG_HEADER}
+          ${CHANGELOG}
+
+          ## Windows
+          - \`..._Setup.exe\` - installer (no admin rights needed, Start Menu + Desktop shortcuts, proper uninstall). Recommended.
+          - \`..._portable.zip\` - unzip and run commands.exe directly, no install.
+
+          ## macOS
+          1. Unzip \`CommandS_${VERSION}_macOS.zip\` and drag the app to **Applications**.
+          2. Not notarized (no paid Apple Developer account), so macOS quarantines it on first download. Run this once in Terminal:
+             \`\`\`
+             xattr -dr com.apple.quarantine /Applications/commands.app
+             \`\`\`
+          "
+
+          set +e
+          CREATE_OUT=$(gh release create "$TAG" artifacts/windows-build/*.zip artifacts/windows-build/*Setup.exe artifacts/macos-build/*.zip \
+            --title "CommandS $TAG" \
+            --notes "$NOTES" 2>&1)
+          CREATE_STATUS=$?
+          set -e
+          echo "$CREATE_OUT"
+
+          if [ $CREATE_STATUS -ne 0 ]; then
+            echo "gh release create failed (exit $CREATE_STATUS), trying upload+edit on an existing release..."
+            gh release upload "$TAG" artifacts/windows-build/*.zip artifacts/windows-build/*Setup.exe artifacts/macos-build/*.zip --clobber
+            gh release edit "$TAG" --title "CommandS $TAG" --notes "$NOTES"
+          fi
+
+      - name: Prune old releases (keep latest 5)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release list --json tagName,publishedAt,isDraft \
+            --jq '[.[] | select(.isDraft == false)] | sort_by(.publishedAt) | reverse | .[5:] | .[].tagName' \
+          | while read -r old; do
+              echo "deleting old release $old"
+              gh release delete "$old" --yes || true
+            done
