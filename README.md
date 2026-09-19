@@ -17,10 +17,14 @@ WebView: built with Flutter, rendered natively.
 - Tabbed sessions — each tab is independent and live; switching tabs never
   drops the connection. Drag a tab to an edge of the terminal area to
   split the view, Windows-Snap style.
-- RDP sessions run through the OS's own client (`mstsc` / Microsoft Remote
-  Desktop) but are embedded directly in a tab, not a separate window —
-  credential prompts and the unsigned-`.rdp` security warning are handled
-  automatically.
+- RDP sessions on Windows run through the OS's own client (`mstsc`) but are
+  embedded directly in a tab, not a separate window — credential prompts and
+  the unsigned-`.rdp` security warning are handled automatically. On macOS
+  the session opens in the installed Microsoft client ("Windows App", or the
+  older "Microsoft Remote Desktop") with the host, user and password filled
+  in: AppKit does not let one app place another app's window inside its own,
+  so drawing the session in the tab means speaking RDP in-process, which is
+  planned but not here yet.
 - PuTTY-style in-terminal `login as:` / `password:` prompts when a
   connection is opened with host only.
 - Folder-organized saved connections (create/rename/delete folders;
@@ -45,6 +49,14 @@ flutter run -d windows   # or -d macos
 Windows builds need `plink.exe` on `PATH` or next to `CommandS.exe`
 (installed with [PuTTY](https://www.putty.org/); the release installer
 bundles it). macOS/Linux use the system `ssh`.
+
+The macOS build ships **without App Sandbox**. An SSH client has to open
+outbound connections and read the user's own `~/.ssh` (keys, `known_hosts`,
+`config`, the agent socket); a sandboxed build gets a private container
+instead and connects to nothing. Releases go out through GitHub, not the Mac
+App Store, so the sandbox costs everything and buys nothing here. Upgrading
+from 1.0.23 or earlier moves saved connections out of the old container
+automatically, once, on first launch.
 
 ## Releases
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
@@ -67,7 +69,7 @@ class _TerminalAppearanceDialogState extends State<_TerminalAppearanceDialog> {
                 height: 60,
                 decoration: BoxDecoration(color: _bg, border: Border.all(color: Colors.black26)),
                 alignment: Alignment.center,
-                child: Text('user@host:~\$ ls -la', style: TextStyle(color: _fg, fontFamily: 'monospace', fontSize: 13)),
+                child: Text('user@host:~\$ ls -la', style: TextStyle(color: _fg, fontFamily: Platform.isMacOS ? 'Menlo' : 'Consolas', fontSize: 13)),
               ),
               const SizedBox(height: 16),
               const Text('Background', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),

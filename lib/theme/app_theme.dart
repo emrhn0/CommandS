@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 /// CommandS palette — plain monochrome: white accent on near-black in dark
@@ -40,7 +42,7 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.darkBg,
       canvasColor: AppColors.darkPanel,
       dividerColor: AppColors.darkBorder,
-      fontFamily: 'Segoe UI',
+      fontFamily: _uiFontFamily,
       textTheme: const TextTheme(
         bodyMedium: TextStyle(color: AppColors.darkText),
         bodySmall: TextStyle(color: AppColors.darkTextDim),
@@ -105,7 +107,7 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.lightBg,
       canvasColor: AppColors.lightPanel,
       dividerColor: AppColors.lightBorder,
-      fontFamily: 'Segoe UI',
+      fontFamily: _uiFontFamily,
       textTheme: const TextTheme(
         bodyMedium: TextStyle(color: AppColors.lightText),
         bodySmall: TextStyle(color: AppColors.lightTextDim),
@@ -156,3 +158,8 @@ class AppTheme {
     );
   }
 }
+
+/// Segoe UI does not exist on a Mac, and asking for a missing family drops
+/// the whole app onto Flutter's bundled fallback rather than the system
+/// face. Leaving it null on macOS is what picks up SF Pro.
+final String? _uiFontFamily = Platform.isMacOS ? null : 'Segoe UI';

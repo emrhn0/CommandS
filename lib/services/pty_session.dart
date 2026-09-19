@@ -110,7 +110,7 @@ class PtySessionController implements SessionController {
       if (Platform.isWindows) {
         await _startWindows();
       } else {
-        _startPosix();
+        await _startPosix();
       }
     } on UnsafeTargetError catch (e) {
       lastError = e.message;
@@ -210,14 +210,128 @@ class PtySessionController implements SessionController {
     return _utf8SessionReady!;
   }
 
-  void _startPosix() {
+  /// Legacy algorithms we ask OpenSSH to *append* to its own preference
+  /// lists (the `+` forms below), so a modern server still negotiates a
+  /// modern algorithm and only old network gear falls back this far. Cisco
+  /// IOS, Aruba and older ProCurve/Huawei firmware offer nothing newer than
+  /// these, and OpenSSH has disabled every one of them by default -- which
+  /// is exactly why those switches connect from plink on Windows and fail
+  /// here with "no matching key exchange method found". Plink offers them
+  /// too, so this only brings macOS in line with the Windows build.
+  static const _legacyKex = [
+    'diffie-hellman-group14-sha1',
+    'diffie-hellman-group-exchange-sha1',
+    'diffie-hellman-group1-sha1',
+  ];
+  static const _legacyHostKeys = ['ssh-rsa', 'ssh-dss'];
+  static const _legacyCiphers = ['aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'];
+  static const _legacyMacs = ['hmac-sha1', 'hmac-sha1-96', 'hmac-md5'];
+
+  /// The OpenSSH we are actually driving decides which of the above still
+  /// exist -- 10.x dropped `ssh-dss` outright, and naming an algorithm it
+  /// does not know is a fatal "Unsupported ... algorithms" before a packet
+  /// is sent. `ssh -Q` reports what this build supports; anything missing is
+  /// dropped from our list. Probed once per app run.
+  static Map<String, Set<String>>? _supportedAlgos;
+
+  static Future<Set<String>> _supported(String query) async {
+    final cache = _supportedAlgos ??= {};
+    final hit = cache[query];
+    if (hit != null) return hit;
+    var found = <String>{};
+    try {
+      final r = await Process.run(_sshExecutable, ['-Q', query]);
+      if (r.exitCode == 0) {
+        found = (r.stdout as String).split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+      }
+    } catch (_) {
+      // Leave it empty: no legacy options get added, which is the old
+      // behavior rather than a broken command line.
+    }
+    cache[query] = found;
+    return found;
+  }
+
+  /// `+list` option, or null when this OpenSSH supports none of [wanted].
+  static Future<String?> _legacyOption(String query, List<String> wanted) async {
+    final have = await _supported(query);
+    final usable = wanted.where(have.contains).toList();
+    return usable.isEmpty ? null : '+${usable.join(',')}';
+  }
+
+  /// Full path first: an app bundle launched from Finder inherits a minimal
+  /// PATH that does not always include /usr/bin.
+  static final String _sshExecutable =
+      File('/usr/bin/ssh').existsSync() ? '/usr/bin/ssh' : 'ssh';
+
+  Future<void> _startPosix() async {
+    final args = <String>['-p', '$port', '-t'];
+
+    for (final (query, wanted) in [
+      ('kex', _legacyKex),
+      ('key', _legacyHostKeys),
+      ('cipher', _legacyCiphers),
+      ('mac', _legacyMacs),
+    ]) {
+      final value = await _legacyOption(query, wanted);
+      if (value == null) continue;
+      switch (query) {
+        case 'kex':
+          args.addAll(['-o', 'KexAlgorithms=$value']);
+        case 'key':
+          args.addAll(['-o', 'HostKeyAlgorithms=$value', '-o', 'PubkeyAcceptedAlgorithms=$value']);
+        case 'cipher':
+          args.addAll(['-o', 'Ciphers=$value']);
+        case 'mac':
+          args.addAll(['-o', 'MACs=$value']);
+      }
+    }
+
+    final env = Map<String, String>.from(Platform.environment);
+    // flutter_pty forwards a short allowlist otherwise, and a bundle started
+    // from Finder has almost no environment to begin with.
+    env['TERM'] = 'xterm-256color';
+    env.putIfAbsent('LANG', () => 'en_US.UTF-8');
+    env.putIfAbsent('PATH', () => '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin');
+
+    if (_password.isNotEmpty) {
+      // A saved password did nothing here before: the Windows path hands
+      // plink `-pwfile`, the POSIX path just dropped it and left the user
+      // typing it in by hand. OpenSSH has no password flag at all, so we go
+      // through its askpass hook, which since 8.4 can be forced even though
+      // we are on a real tty. The helper prints the password from an
+      // environment variable it inherits -- nothing is written to disk, and
+      // it never reaches a command line or process listing.
+      final dir = _scratchDir = await Directory.systemTemp.createTemp('commands_');
+      final askpass = File('${dir.path}/askpass.sh');
+      await askpass.writeAsString('#!/bin/sh\nprintf %s "\$COMMANDS_SSH_PASSWORD"\n');
+      await Process.run('/bin/chmod', ['700', askpass.path]);
+
+      env['COMMANDS_SSH_PASSWORD'] = _password;
+      env['SSH_ASKPASS'] = askpass.path;
+      env['SSH_ASKPASS_REQUIRE'] = 'force';
+      env['DISPLAY'] = env['DISPLAY'] ?? ':0';
+
+      // With askpass forced, *every* prompt goes through the helper --
+      // including the "authenticity of host ... can't be established"
+      // confirmation, which would otherwise be answered with the password.
+      // accept-new records an unknown host without asking and still refuses
+      // a host whose key has changed.
+      args.addAll(['-o', 'StrictHostKeyChecking=accept-new']);
+      // Skip the key/agent attempts that would each pull up the helper
+      // first; the saved password is what this connection is for. Network
+      // gear that only offers keyboard-interactive (the Cisco case) is
+      // covered by listing it ahead of plain password auth.
+      args.addAll(['-o', 'PreferredAuthentications=keyboard-interactive,password']);
+      args.addAll(['-o', 'NumberOfPasswordPrompts=3']);
+    }
+
+    args.add(_username.isEmpty ? host : '$_username@$host');
+
     _pty = Pty.start(
-      'ssh',
-      arguments: [
-        '-p', '$port',
-        '-t',
-        _username.isEmpty ? host : '$_username@$host',
-      ],
+      _sshExecutable,
+      arguments: args,
+      environment: env,
       columns: terminal.viewWidth,
       rows: terminal.viewHeight,
     );
@@ -243,9 +357,14 @@ class PtySessionController implements SessionController {
     tabTitle ??= _username.isEmpty ? host : '$_username@$host';
     _setStatus(SessionStatus.running);
 
-    // plink reads the password file at startup; drop the scratch directory
-    // shortly after so it does not sit on disk for the whole session.
-    Future.delayed(const Duration(seconds: 15), _cleanUpScratch);
+    // plink reads the password file at startup, so on Windows the scratch
+    // directory (which holds the password in the clear) goes away shortly
+    // after. The POSIX scratch dir holds only the askpass helper -- no
+    // secret, and ssh may still need it for a late prompt -- so that one
+    // lives until the session ends, which _pty.exitCode above handles.
+    if (Platform.isWindows) {
+      Future.delayed(const Duration(seconds: 15), _cleanUpScratch);
+    }
   }
 
   void _cleanUpScratch() {
