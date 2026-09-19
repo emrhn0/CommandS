@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import '../theme/app_mark.dart';
@@ -9,6 +11,12 @@ const double kTitleBarHeight = 32;
 /// color — orange, in this case — behind plain system buttons) with one
 /// that matches CommandS's own theme. Spans the full window width, above
 /// the sidebar/terminal split.
+///
+/// On macOS the same bar keeps the system traffic lights (restored in
+/// `main`) instead of drawing its own buttons: it indents the title past
+/// them and leaves the right side empty. Minimise/maximise/close belong to
+/// the OS there, and a Windows-shaped close button on the wrong side of a
+/// Mac window is worse than no button.
 class CustomTitleBar extends StatefulWidget {
   const CustomTitleBar({super.key});
 
@@ -43,6 +51,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMac = Platform.isMacOS;
     return Container(
       height: kTitleBarHeight,
       color: isDark ? AppColors.darkBg : AppColors.lightPanel,
@@ -54,7 +63,8 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
                 height: double.infinity,
                 child: Row(
                   children: [
-                    const SizedBox(width: 10),
+                    // Clear of the traffic lights on macOS.
+                    SizedBox(width: isMac ? 78 : 10),
                     const AppMark(size: 16),
                     const SizedBox(width: 7),
                     Text(
@@ -71,30 +81,32 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
               ),
             ),
           ),
-          _CaptionButton(
-            icon: Icons.remove,
-            tooltip: 'Minimize',
-            onTap: () => windowManager.minimize(),
-          ),
-          _CaptionButton(
-            icon: _isMaximized ? Icons.filter_none : Icons.crop_square,
-            iconSize: _isMaximized ? 12 : 13,
-            tooltip: _isMaximized ? 'Restore' : 'Maximize',
-            onTap: () async {
-              if (await windowManager.isMaximized()) {
-                windowManager.unmaximize();
-              } else {
-                windowManager.maximize();
-              }
-            },
-          ),
-          _CaptionButton(
-            icon: Icons.close,
-            tooltip: 'Close',
-            hoverColor: const Color(0xFFE81123),
-            hoverIconColor: Colors.white,
-            onTap: () => windowManager.close(),
-          ),
+          if (!isMac) ...[
+            _CaptionButton(
+              icon: Icons.remove,
+              tooltip: 'Minimize',
+              onTap: () => windowManager.minimize(),
+            ),
+            _CaptionButton(
+              icon: _isMaximized ? Icons.filter_none : Icons.crop_square,
+              iconSize: _isMaximized ? 12 : 13,
+              tooltip: _isMaximized ? 'Restore' : 'Maximize',
+              onTap: () async {
+                if (await windowManager.isMaximized()) {
+                  windowManager.unmaximize();
+                } else {
+                  windowManager.maximize();
+                }
+              },
+            ),
+            _CaptionButton(
+              icon: Icons.close,
+              tooltip: 'Close',
+              hoverColor: const Color(0xFFE81123),
+              hoverIconColor: Colors.white,
+              onTap: () => windowManager.close(),
+            ),
+          ],
         ],
       ),
     );

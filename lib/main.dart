@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -19,6 +21,14 @@ void main() async {
       titleBarStyle: TitleBarStyle.hidden,
     ),
     () async {
+      // Hiding the title bar hides macOS's close/minimise/zoom buttons with
+      // it, and the Windows-style caption buttons CustomTitleBar draws are
+      // not what a Mac window is closed with. Put the real traffic lights
+      // back; CustomTitleBar leaves room for them and draws no buttons of
+      // its own there.
+      if (Platform.isMacOS) {
+        await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: true);
+      }
       await windowManager.show();
       await windowManager.focus();
     },

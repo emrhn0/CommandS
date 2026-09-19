@@ -152,9 +152,10 @@ jobs:
 
           ## macOS
           1. Unzip \`CommandS_${VERSION}_macOS.zip\` and drag the app to **Applications**.
-          2. Not notarized (no paid Apple Developer account), so macOS quarantines it on first download. Run this once in Terminal:
+          2. Upgrading from 1.0.23 or earlier: the app used to install as \`commands.app\`. Delete that one — saved connections move across by themselves on first launch.
+          3. Not notarized (no paid Apple Developer account), so macOS quarantines it on first download. Run this once in Terminal:
              \`\`\`
-             xattr -dr com.apple.quarantine /Applications/commands.app
+             xattr -dr com.apple.quarantine /Applications/CommandS.app
              \`\`\`
           "
 

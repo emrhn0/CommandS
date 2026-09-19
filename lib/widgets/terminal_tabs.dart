@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 import '../providers/app_state.dart';
+import '../services/mac_rdp_session.dart';
 import '../services/pane_layout.dart';
 import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
@@ -75,7 +77,7 @@ class _TabBarRow extends StatelessWidget {
             tabId: tab.id,
             title: tab.controller.tabTitle ?? tab.controller.host,
             active: active,
-            isRdp: tab.controller is RdpSessionController,
+            isRdp: tab.controller is RdpSessionController || tab.controller is MacRdpSessionController,
             statusStream: tab.controller.statusStream,
             onTap: () => app.setActiveTab(i),
             onClose: () => app.closeTab(i),
@@ -373,7 +375,70 @@ class _SessionPane extends StatelessWidget {
     if (controller is RdpSessionController) {
       return RdpEmbedView(controller: controller as RdpSessionController, active: active);
     }
+    if (controller is MacRdpSessionController) {
+      return _MacRdpPane(controller: controller as MacRdpSessionController);
+    }
     return _TerminalPane(controller: controller as PtySessionController, active: active);
+  }
+}
+
+/// macOS RDP tab. The session itself is a window of the Microsoft client
+/// (see [MacRdpSessionController] for why it cannot be drawn in here yet),
+/// so the pane reports what happened and offers to open it again.
+class _MacRdpPane extends StatelessWidget {
+  const _MacRdpPane({required this.controller});
+  final MacRdpSessionController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dim = Theme.of(context).textTheme.bodySmall?.color;
+    return StreamBuilder<SessionStatus>(
+      stream: controller.statusStream,
+      initialData: controller.status,
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? SessionStatus.starting;
+        final failed = status == SessionStatus.error;
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  failed ? Icons.error_outline : Icons.desktop_windows_outlined,
+                  size: 38,
+                  color: failed ? scheme.error : scheme.primary.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  failed ? 'RDP session could not start' : 'RDP session opened',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  failed
+                      ? (controller.lastError ?? 'Unknown error.')
+                      : '${controller.host} is running in ${controller.launchedApp ?? 'the RDP client'}, '
+                          'in its own window, with host and user filled in — only the password is '
+                          'left to type. macOS does not allow another app’s window to be placed '
+                          'inside this tab; in-app RDP is coming in a later release.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: dim, fontSize: 12, height: 1.45),
+                ),
+                const SizedBox(height: 18),
+                OutlinedButton.icon(
+                  onPressed: controller.relaunch,
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: Text(failed ? 'Try again' : 'Open again'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -433,12 +498,20 @@ class _TerminalPaneState extends State<_TerminalPane> {
           // (which travel the key-event path) still worked. That is what made
           // every password look wrong.
           hardwareKeyboardOnly: true,
+          textStyle: _terminalTextStyle,
           theme: TerminalThemes.withColors(background: app.terminalBackground, foreground: app.terminalForeground),
         ),
       ),
     );
   }
 }
+
+/// xterm.dart asks for the family "monospace", which CoreText does not know:
+/// on macOS that resolves to a proportional system face and every column in
+/// the grid drifts. Name the fonts that are actually installed.
+final TerminalStyle _terminalTextStyle = Platform.isMacOS
+    ? const TerminalStyle(fontFamily: 'Menlo', fontFamilyFallback: ['SF Mono', 'Monaco', 'Courier New'])
+    : const TerminalStyle(fontFamily: 'Consolas', fontFamilyFallback: ['Cascadia Mono', 'Courier New', 'monospace']);
 
 class TerminalThemes {
   static const dark = TerminalTheme(

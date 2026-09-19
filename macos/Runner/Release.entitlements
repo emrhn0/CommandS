@@ -2,7 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.app-sandbox</key>
+	<!-- App Sandbox is deliberately off. CommandS is an SSH/RDP client: it
+	     spawns /usr/bin/ssh, which has to open outbound sockets and read the
+	     user's own ~/.ssh (known_hosts, keys, config, the agent socket). A
+	     sandboxed build gets a private container instead, so every saved key
+	     is invisible and every host asks for its fingerprint again -- and
+	     without network.client the connection never leaves the machine at
+	     all. Releases ship through GitHub, not the Mac App Store, so the
+	     sandbox buys nothing here. Same choice iTerm2 and Termius make. -->
+	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
 </dict>
 </plist>
