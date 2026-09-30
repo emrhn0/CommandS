@@ -46,6 +46,9 @@ dependencies:
   win32: ^5.15.0
   ffi: ^2.2.0
   xml: ^7.0.1
+  # Verifies the checksum published with a release before the updater
+  # runs the installer it just downloaded (see services/update_service.dart).
+  crypto: ^3.0.0
 
 dev_dependencies:
   flutter_test:
