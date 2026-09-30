@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'providers/app_state.dart';
-import 'services/rdp_session.dart';
 import 'screens/home_screen.dart';
+import 'services/rdp_session.dart';
 import 'theme/app_theme.dart';
+import 'widgets/update_dialog.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,7 +62,8 @@ class CommandSApp extends StatelessWidget {
           // app; this tells them to step aside while a dialog is open. See
           // [RdpModalObserver].
           navigatorObservers: [_rdpModalObserver],
-          home: const HomeScreen(),
+          // Asks, once a launch, whether to install a newer release.
+          home: const UpdateGate(child: HomeScreen()),
         ),
       ),
     );
