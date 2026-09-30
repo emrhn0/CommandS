@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -385,14 +386,62 @@ class _SessionPane extends StatelessWidget {
 /// macOS RDP tab. The session itself is a window of the Microsoft client
 /// (see [MacRdpSessionController] for why it cannot be drawn in here yet),
 /// so the pane reports what happened and offers to open it again.
-class _MacRdpPane extends StatelessWidget {
+class _MacRdpPane extends StatefulWidget {
   const _MacRdpPane({required this.controller});
   final MacRdpSessionController controller;
+
+  @override
+  State<_MacRdpPane> createState() => _MacRdpPaneState();
+}
+
+class _MacRdpPaneState extends State<_MacRdpPane> {
+  bool _copied = false;
+
+  Future<void> _copyPassword() async {
+    final ok = await widget.controller.copyPasswordToClipboard();
+    if (!mounted || !ok) return;
+    setState(() => _copied = true);
+    // Long enough to read, short enough that the pane doesn't keep claiming
+    // the clipboard still holds the password after the user has moved on.
+    Timer(const Duration(seconds: 12), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  /// What is actually left for the user to do, which is the only thing this
+  /// pane can usefully say — it has no session to show.
+  String _detail(SessionStatus status) {
+    final controller = widget.controller;
+    if (status == SessionStatus.error) {
+      return controller.lastError ?? 'Unknown error.';
+    }
+    if (status == SessionStatus.closed) {
+      return 'The ${controller.backendName ?? 'RDP'} window for ${controller.host} '
+          'has closed. Open it again to reconnect.';
+    }
+    final client = controller.backendName ?? 'the RDP client';
+    if (controller.credentialsHandedOver) {
+      return '${controller.host} is open in $client, in its own window, signed '
+          'in with your saved credentials. macOS has no embeddable RDP '
+          'component and does not let one app place another app’s window '
+          'inside a tab, so the session cannot be drawn in here.';
+    }
+    if (controller.freerdpWouldHelp) {
+      return '${controller.host} is open in $client, in its own window, with '
+          'the host and username filled in — $client keeps its own credential '
+          'store, so the password is the one thing CommandS cannot hand it. '
+          'Copy it below, or run "brew install freerdp" and CommandS will sign '
+          'you in with no prompt at all.';
+    }
+    return '${controller.host} is open in $client, in its own window, with the '
+        'host and username filled in.';
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final dim = Theme.of(context).textTheme.bodySmall?.color;
+    final controller = widget.controller;
     return StreamBuilder<SessionStatus>(
       stream: controller.statusStream,
       initialData: controller.status,
@@ -401,7 +450,7 @@ class _MacRdpPane extends StatelessWidget {
         final failed = status == SessionStatus.error;
         return Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
+            constraints: const BoxConstraints(maxWidth: 430),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -412,26 +461,38 @@ class _MacRdpPane extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  failed ? 'RDP session could not start' : 'RDP session opened',
+                  switch (status) {
+                    SessionStatus.error => 'RDP session could not start',
+                    SessionStatus.closed => 'RDP session closed',
+                    _ => 'RDP session opened',
+                  },
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  failed
-                      ? (controller.lastError ?? 'Unknown error.')
-                      : '${controller.host} is running in ${controller.launchedApp ?? 'the RDP client'}, '
-                          'in its own window, with host and user filled in — only the password is '
-                          'left to type. macOS does not allow another app’s window to be placed '
-                          'inside this tab; in-app RDP is coming in a later release.',
+                  _detail(status),
                   textAlign: TextAlign.center,
                   style: TextStyle(color: dim, fontSize: 12, height: 1.45),
                 ),
                 const SizedBox(height: 18),
-                OutlinedButton.icon(
-                  onPressed: controller.relaunch,
-                  icon: const Icon(Icons.open_in_new, size: 16),
-                  label: Text(failed ? 'Try again' : 'Open again'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: controller.relaunch,
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: Text(failed ? 'Try again' : 'Open again'),
+                    ),
+                    if (controller.freerdpWouldHelp) ...[
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        onPressed: _copied ? null : _copyPassword,
+                        icon: Icon(_copied ? Icons.check : Icons.copy, size: 16),
+                        label: Text(_copied ? 'Copied' : 'Copy password'),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

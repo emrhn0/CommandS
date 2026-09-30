@@ -1,53 +1,46 @@
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:ffi/ffi.dart';
-import 'package:win32/win32.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import '../models/models.dart';
 import 'session_controller.dart';
 
-const int _bmClick = 0x00F5;
-const int _bmGetCheck = 0x00F0;
-const int _swpFrameChanged = 0x0020;
-const int _rdwInvalidate = 0x0001;
-const int _rdwUpdateNow = 0x0100;
-const int _rdwAllChildren = 0x0080;
-
-/// RDP has no pure-Dart client worth embedding, so we drive the OS's own
-/// one (`mstsc.exe`) and pull its window into ours instead of leaving it as
-/// a separate floating window. mstsc is launched pointed at a generated
-/// `.rdp` file (clipboard/wallpaper and friends come from there), then once
-/// its session window shows up — confirmed via live inspection to be class
-/// `TscShellContainerClass`, a *separate* top-level window from the
-/// "popup parent" frame that only ever hosts the security warning — we
-/// strip its caption/border, `SetParent` it under CommandS's own window,
-/// and keep it glued to wherever the tab's placeholder widget sits (see
-/// [RdpEmbedView]). The "Unknown publisher" warning lives in its own
-/// dialog the whole time, so a scan for its "Connect" button runs on every
-/// tick regardless of embed state — clicking it the instant it exists.
+/// RDP on Windows, through Microsoft's Remote Desktop ActiveX control
+/// (`mstscax.dll`) hosted in a child window of ours — see
+/// `windows/runner/rdp_ax_host.cpp` for the native half.
 ///
-/// The credential prompt is worked around separately, by pre-seeding
-/// Windows Credential Manager with `cmdkey` (removed again once connected)
-/// so mstsc never has to ask in the first place.
+/// This replaced an earlier approach that launched `mstsc.exe` and pulled its
+/// top-level window into ours with `SetParent`. Everything that path had to
+/// work around is simply gone here, because the control is the API Microsoft
+/// supports for exactly this:
+///
+///   * No child process, so no hunting for a window by class name, no window
+///     handle dying mid-negotiation, and no window re-asserting itself as
+///     top-level behind our back.
+///   * The password is a property on the control. The old path had to write it
+///     into Windows Credential Manager with `cmdkey` first, where it was
+///     readable by anything running as this user until we deleted it again.
+///   * No `.rdp` file, so the unsigned-file "Unknown publisher" warning that
+///     used to be dismissed by synthesising clicks onto its Connect button
+///     never appears.
+///   * The remote desktop is renegotiated at the pane's exact pixel size on
+///     resize (`UpdateSessionDisplaySettings`), so a resized pane is sharp
+///     rather than a stretched copy of the resolution negotiated at connect
+///     time. The manual "reconnect to fit" button only survives as a fallback
+///     for servers older than 2012 R2, which have no dynamic resolution.
 class RdpSessionController implements SessionController {
   RdpSessionController(this.conn) : host = conn.host {
     tabTitle = conn.name;
-    // mstsc is *not* launched here. RDM's own behavior (confirmed against
-    // it directly) is to size the connection to whatever its window
-    // happens to be at the moment you open it and leave it there --
-    // matching that beats guessing at a fixed/generic resolution up front:
-    // [RdpEmbedView]'s first `reposition()` call, within a frame or two of
-    // this controller existing, hands over the pane's *real* on-screen
-    // size, which is used to launch mstsc negotiating exactly that
-    // resolution -- filling the pane from the very first frame instead of
-    // negotiating some other size and stretching/shrinking into place.
-    // A short fallback timer covers the case where that callback never
-    // arrives for some reason (no layout ever happens) so this can't hang
-    // on the "starting" spinner forever.
-    Timer(const Duration(milliseconds: 800), () {
-      if (!_disposed && !_started) _beginWith(1280, 800);
+    // The native window is created on the first layout pass that reports a
+    // believable pane size (see [reposition]) so the session is negotiated at
+    // the size it will actually be displayed at. This timer only covers the
+    // case where no such layout ever arrives, so a tab can't sit on the
+    // spinner forever.
+    Timer(const Duration(milliseconds: 1200), () {
+      if (!_disposed && !_started) _begin(const ui.Rect.fromLTWH(0, 0, 1280, 800), 1.0);
     });
   }
 
@@ -63,653 +56,496 @@ class RdpSessionController implements SessionController {
   @override
   SessionStatus status = SessionStatus.starting;
 
+  /// What the control said went wrong, in its own words
+  /// (`IMsRdpClient.GetErrorDescription`) — far better than anything this app
+  /// could infer, and the reason disconnects are reported rather than guessed.
   String? lastError;
 
-  Process? _process;
+  /// Set once the session is live. Null until then.
+  bool? _dynamicResolution;
+
+  /// True when the server renegotiates resolution on resize. Where it is
+  /// false, resizing scales the existing image and the manual reconnect
+  /// control is worth offering.
+  bool get supportsDynamicResolution => _dynamicResolution ?? false;
+
+  int? _hostId;
   bool _started = false;
-  int _lockedWidth = 0;
-  int _lockedHeight = 0;
-  int _childHwnd = 0;
-  int _ourHwnd = 0;
-  int? _lastLeft;
-  int? _lastTop;
-  int? _pendingW;
-  int? _pendingH;
-  int _pendingStableTicks = 0;
-  Directory? _scratchDir;
-  Timer? _pollTimer;
   bool _disposed = false;
-  bool _credentialSeeded = false;
-  String get _credentialTarget => 'TERMSRV/${conn.host}';
+  bool _active = true;
+
+  ui.Rect? _lastBounds;
+  int? _sessionWidth;
+  int? _sessionHeight;
+  Timer? _resizeDebounce;
 
   void _setStatus(SessionStatus s) {
+    if (_disposed) return;
     status = s;
     if (!_statusController.isClosed) _statusController.add(s);
   }
 
-  /// Called once, by whichever fires first: [reposition]'s first real call
-  /// with the pane's on-screen size, or the constructor's fallback timer.
-  /// Further calls are no-ops.
-  void _beginWith(int desktopWidth, int desktopHeight) {
-    if (_started) return;
-    _debugLog('_beginWith: desktopWidth=$desktopWidth desktopHeight=$desktopHeight');
+  int get _port => conn.port == 22 ? 3389 : conn.port;
+
+  // ---- lifecycle ----
+
+  Future<void> _begin(ui.Rect bounds, double devicePixelRatio) async {
+    if (_started || _disposed) return;
     _started = true;
-    _lockedWidth = desktopWidth;
-    _lockedHeight = desktopHeight;
-    unawaited(_start(desktopWidth, desktopHeight));
-  }
-
-  Future<void> _start(int desktopWidth, int desktopHeight) async {
+    final physical = _physical(bounds, devicePixelRatio);
+    _lastBounds = bounds;
+    _sessionWidth = physical.width;
+    _sessionHeight = physical.height;
     try {
-      if (conn.password.isNotEmpty) {
-        await _seedCredential();
+      final id = await RdpChannel.instance.create(
+        x: physical.x,
+        y: physical.y,
+        width: physical.width,
+        height: physical.height,
+      );
+      if (_disposed) {
+        await RdpChannel.instance.destroy(id);
+        return;
       }
-
-      _scratchDir = await Directory.systemTemp.createTemp('commands_rdp_');
-      final rdpFile = File('${_scratchDir!.path}\\session.rdp');
-      final buffer = StringBuffer()
-        ..writeln('full address:s:${conn.host}:${conn.port == 22 ? 3389 : conn.port}')
-        ..writeln('username:s:${conn.username}')
-        ..writeln('screen mode id:i:1')
-        ..writeln('use multimon:i:0')
-        ..writeln('session bpp:i:32')
-        // "dynamic resolution" (having the *server* re-render at a new
-        // resolution on every resize, which is what plain mstsc looks so
-        // sharp doing) was tried here and reverted -- confirmed live it
-        // makes mstsc actively fight embedding: something in its own
-        // resolution-negotiation path resets the window's position/size on
-        // its own terms, undoing every SetWindowPos call this app makes to
-        // keep it glued to the pane (window ended up off-screen entirely).
-        //
-        // Confirmed live against RDM directly instead: it sizes a
-        // connection to whatever its own window happens to be *at the
-        // moment you open it* and doesn't try to live-track further resizes
-        // after that (you have to reopen the connection to pick up a new
-        // size) -- matching that here beats guessing a generic resolution,
-        // since the negotiated size now genuinely matches the pane instead
-        // of needing "smart sizing" to stretch/shrink a mismatched image
-        // into place (soft/blurry, and letterboxed if the aspect ratio
-        // didn't match either). "smart sizing" stays on purely as a safety
-        // net for whatever this size guess is off by, and for later window
-        // resizes this app does still keep glued to the pane's bounds.
-        ..writeln('desktopwidth:i:$desktopWidth')
-        ..writeln('desktopheight:i:$desktopHeight')
-        ..writeln('smart sizing:i:1')
-        ..writeln('authentication level:i:0')
-        ..writeln('redirectclipboard:i:${conn.rdpClipboard ? 1 : 0}')
-        ..writeln('disable wallpaper:i:${conn.rdpWallpaper ? 0 : 1}')
-        ..writeln('disable full window drag:i:1')
-        ..writeln('allow font smoothing:i:1')
-        ..writeln('prompt for credentials:i:0')
-        ..writeln('enablecredsspsupport:i:1');
-      if (conn.domain != null && conn.domain!.isNotEmpty) {
-        buffer.writeln('domain:s:${conn.domain}');
-      }
-      await rdpFile.writeAsString(buffer.toString());
-
-      _process = await Process.start('mstsc.exe', [rdpFile.path]);
-      unawaited(_process!.exitCode.then((_) {
-        if (!_disposed) {
-          _setStatus(SessionStatus.closed);
-        }
-      }));
-
-      var tick = 0;
-      _pollTimer = Timer.periodic(const Duration(milliseconds: 200), (t) {
-        if (_disposed) {
-          t.cancel();
-          return;
-        }
-        tick++;
-        if (tick <= 15) _debugLogWindows(tick);
-
-        if (_childHwnd == 0) {
-          _findAndEmbed(tick);
-        } else {
-          _ensureStillParented();
-        }
-        // The "Unknown publisher" warning is a window *owned* by the main
-        // frame, not a child of it -- EnumChildWindows never walks into
-        // owned-but-not-child windows, so it has to be found separately at
-        // the top level (confirmed via live logging: main frame class
-        // TSC_POPUP_PARENT_WNDCLASS, warning class #32770, owner = main
-        // frame's hwnd) before its Connect button can be reached at all.
-        _handleSecurityDialog();
-        if (_childHwnd != 0 && status != SessionStatus.running) {
-          _setStatus(SessionStatus.running);
-          unawaited(_clearCredential());
-        }
-      });
-
-      // mstsc sometimes never shows a window (bad host, immediate failure) —
-      // give up cleanly instead of polling forever.
-      Timer(const Duration(seconds: 20), () {
-        if (!_disposed && _childHwnd == 0) {
-          _pollTimer?.cancel();
-          lastError = 'Remote Desktop window never appeared.';
-          _setStatus(SessionStatus.error);
-        }
-      });
+      _hostId = id;
+      RdpChannel.instance.register(id, _onNativeEvent);
+      if (!_active) await RdpChannel.instance.setVisible(id, false);
+      _dynamicResolution = await RdpChannel.instance.connect(
+        id: id,
+        host: conn.host,
+        port: _port,
+        username: conn.username,
+        domain: conn.domain ?? '',
+        password: conn.rememberPassword ? conn.password : '',
+        width: physical.width,
+        height: physical.height,
+        dpi: (devicePixelRatio * 96).round(),
+        clipboard: conn.rdpClipboard,
+        wallpaper: conn.rdpWallpaper,
+      );
+    } on PlatformException catch (e) {
+      lastError = e.message ?? e.code;
+      _setStatus(SessionStatus.error);
     } catch (e) {
       lastError = e.toString();
       _setStatus(SessionStatus.error);
     }
   }
 
-  /// Pre-loads the credential mstsc will look for on its own, so it never
-  /// has to ask. Windows Credential Manager entries are global to the user
-  /// account, so this is removed again as soon as we're connected (or the
-  /// attempt fails) rather than left behind.
-  Future<void> _seedCredential() async {
-    try {
-      final result = await Process.run('cmdkey', [
-        '/generic:$_credentialTarget',
-        '/user:${conn.username}',
-        '/pass:${conn.password}',
-      ]);
-      _credentialSeeded = result.exitCode == 0;
-    } catch (_) {
-      _credentialSeeded = false;
-    }
-  }
-
-  Future<void> _clearCredential() async {
-    if (!_credentialSeeded) return;
-    _credentialSeeded = false;
-    try {
-      await Process.run('cmdkey', ['/delete:$_credentialTarget']);
-    } catch (_) {}
-  }
-
-  // TEMP diagnostic — pulled once embedding is confirmed solid across
-  // enough real hosts.
-  void _debugLog(String line) {
-    try {
-      File('${Directory.systemTemp.path}\\commands_rdp_debug.log')
-          .writeAsStringSync('$line\n', mode: FileMode.append);
-    } catch (_) {}
-  }
-
-  void _debugLogWindows(int tick) {
-    final pid = _process?.pid;
-    if (pid == null) return;
-    final lines = <String>[];
-    final cb = NativeCallable<BOOL Function(IntPtr, IntPtr)>.isolateLocal(
-      (int hwnd, int lParam) {
-        final winPid = calloc<Uint32>();
-        try {
-          GetWindowThreadProcessId(hwnd, winPid);
-          if (winPid.value != pid) return 1;
-          final classBuf = wsalloc(256);
-          final len = GetWindowTextLength(hwnd);
-          final textBuf = wsalloc(len + 1);
-          try {
-            GetClassName(hwnd, classBuf, 256);
-            GetWindowText(hwnd, textBuf, len + 1);
-            final owner = GetWindow(hwnd, GW_OWNER);
-            final vis = IsWindowVisible(hwnd);
-            lines.add(
-              '  hwnd=$hwnd class=${classBuf.toDartString()} title="${textBuf.toDartString()}" visible=$vis owner=$owner',
-            );
-          } finally {
-            free(classBuf);
-            free(textBuf);
-          }
-        } finally {
-          calloc.free(winPid);
-        }
-        return 1;
-      },
-      exceptionalReturn: 1,
-    );
-    try {
-      EnumWindows(cb.nativeFunction, 0);
-    } finally {
-      cb.close();
-    }
-    try {
-      File('${Directory.systemTemp.path}\\commands_rdp_debug.log').writeAsStringSync(
-        'tick $tick pid=$pid embedded=$_childHwnd:\n${lines.isEmpty ? '  (no windows for this pid)' : lines.join('\n')}\n',
-        mode: FileMode.append,
-      );
-    } catch (_) {}
-  }
-
-  /// mstsc's actual session surface -- confirmed via live inspection to be a
-  /// *separate* top-level window from the "popup parent" frame that only
-  /// hosts the security warning first. Embedding the popup-parent window (as
-  /// an earlier version of this code did) reparents an empty placeholder:
-  /// the real remote-desktop content renders into `TscShellContainerClass`
-  /// instead and was left behind as its own floating, native-chrome window.
-  /// It starts invisible and only appears once the session actually starts
-  /// rendering, so this is naturally re-checked every tick until it shows up.
-  static const _mstscMainClass = 'TscShellContainerClass';
-
-  /// Older mstsc builds render the live session directly into the
-  /// popup-parent frame instead of a separate container window. It's
-  /// visible several ticks before [_mstscMainClass] ever shows up (it hosts
-  /// the security warning first), so it's only accepted as a fallback once
-  /// [_legacyFallbackAfterTicks] ticks have passed without the real
-  /// container window appearing -- otherwise it gets grabbed first and,
-  /// since embedding only runs while unset, locks onto the empty frame.
-  static const _mstscLegacyClass = 'TSC_POPUP_PARENT_WNDCLASS';
-  static const _legacyFallbackAfterTicks = 25; // ~5s at the 200ms poll interval
-
-  /// Looks for mstsc's session window (see [_mstscMainClass] /
-  /// [_mstscLegacyClass]) owned by our child process and, if found,
-  /// reparents it under CommandS's own window as a borderless child.
-  void _findAndEmbed(int tick) {
-    final pid = _process?.pid;
-    if (pid == null) return;
-
-    int foundHwnd = 0;
-    int legacyHwnd = 0;
-    final callback = NativeCallable<BOOL Function(IntPtr, IntPtr)>.isolateLocal(
-      (int hwnd, int lParam) {
-        final winPid = calloc<Uint32>();
-        try {
-          GetWindowThreadProcessId(hwnd, winPid);
-          if (winPid.value != pid || IsWindowVisible(hwnd) == 0) return 1;
-          final classBuf = wsalloc(256);
-          try {
-            GetClassName(hwnd, classBuf, 256);
-            final cls = classBuf.toDartString();
-            if (cls == _mstscMainClass) {
-              foundHwnd = hwnd;
-              return 0;
-            }
-            if (cls == _mstscLegacyClass) {
-              legacyHwnd = hwnd;
-            }
-          } finally {
-            free(classBuf);
-          }
-        } finally {
-          calloc.free(winPid);
-        }
-        return 1;
-      },
-      exceptionalReturn: 1,
-    );
-
-    try {
-      EnumWindows(callback.nativeFunction, 0);
-    } finally {
-      callback.close();
-    }
-
-    if (foundHwnd == 0 && tick >= _legacyFallbackAfterTicks) foundHwnd = legacyHwnd;
-    if (foundHwnd == 0) return;
-
-    final ourHwnd = _findOwnWindow();
-    _debugLog('_findAndEmbed: mstscHwnd=$foundHwnd ourHwnd=$ourHwnd');
-    if (ourHwnd == 0) return;
-
-    // Strip title bar/border, then move under our window. SWP_FRAMECHANGED
-    // is required after SetWindowLongPtr -- without it Windows keeps
-    // painting the old (captioned) frame even though the style bits changed.
-    final style = GetWindowLongPtr(foundHwnd, GWL_STYLE);
-    final newStyle = (style & ~WS_POPUP & ~WS_CAPTION & ~WS_THICKFRAME) | WS_CHILD;
-    SetWindowLongPtr(foundHwnd, GWL_STYLE, newStyle);
-    final prevParent = SetParent(foundHwnd, ourHwnd);
-    // SetParent's own return value can't distinguish success from failure on
-    // its own -- 0 is both the correct result when the window had no prior
-    // parent (the normal case: mstsc's session window starts out top-level)
-    // *and* what a failed call returns, so GetLastError has to be checked
-    // too, and checked immediately, before any other Win32 call can reset
-    // it. Confirmed live (via the debug log) that this was failing with
-    // ERROR_INVALID_HANDLE (6) a meaningful fraction of the time -- mstsc
-    // recreates its session window a few times while negotiating a
-    // non-default resolution, and this can grab an EnumWindows result that's
-    // already stale (destroyed and replaced) by the time SetParent runs on
-    // it. The old code never checked for this and locked in `foundHwnd` as
-    // `_childHwnd` regardless, permanently giving up on a window that was
-    // never actually reparented -- left behind as its own real top-level
-    // window whereever Windows happened to place it, while the app's own
-    // pane stayed empty. Retrying instead of locking in a failed attempt
-    // lets the next tick's EnumWindows find mstsc's real, final window.
-    final setParentErr = GetLastError();
-    if (prevParent == 0 && setParentErr != 0) {
-      _debugLog('_findAndEmbed: SetParent FAILED mstscHwnd=$foundHwnd err=$setParentErr -- retrying next tick');
-      return;
-    }
-    SetWindowPos(foundHwnd, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | _swpFrameChanged);
-    ShowWindow(foundHwnd, SW_SHOW);
-    _debugLog('_findAndEmbed: SetParent OK prevParent=$prevParent mstscHwnd=$foundHwnd');
-
-    _childHwnd = foundHwnd;
-    _ourHwnd = ourHwnd;
-  }
-
-  /// Something about mstsc's own window -- confirmed live: it reasserts
-  /// itself as a top-level window (`GetParent` back to the desktop) some
-  /// seconds after a successful `SetParent`, even though nothing in this
-  /// class ever calls SetParent again -- undoes the embed with no visible
-  /// symptom in this app (the borderless-child style survives, so it still
-  /// happens to sit in the right screen position, just no longer actually
-  /// parented). Checked every tick and silently re-applied if it drifted,
-  /// the same way [reposition] re-asserts `SW_SHOW` every frame regardless
-  /// of whether anything actually hid it.
-  ///
-  /// Confirmed live (via the debug log) that `_childHwnd` can also be a
-  /// handle [_findAndEmbed] grabbed moments before mstsc destroyed and
-  /// replaced it -- every attempt to reparent *that* handle fails forever
-  /// (it's simply gone), which used to retry-and-fail silently on every
-  /// single tick with no way out. Now checked for and treated as "this
-  /// handle is dead" rather than "try again" -- resetting so the next tick's
-  /// [_findAndEmbed] looks for mstsc's real, current window instead.
-  void _ensureStillParented() {
-    if (_childHwnd == 0 || _ourHwnd == 0) return;
-    if (IsWindow(_childHwnd) == 0) {
-      _debugLog('_ensureStillParented: $_childHwnd no longer a valid window -- resetting to find a fresh one');
-      _childHwnd = 0;
-      _ourHwnd = 0;
-      return;
-    }
-    if (GetParent(_childHwnd) == _ourHwnd) return;
-    final style = GetWindowLongPtr(_childHwnd, GWL_STYLE);
-    final newStyle = (style & ~WS_POPUP & ~WS_CAPTION & ~WS_THICKFRAME) | WS_CHILD;
-    SetWindowLongPtr(_childHwnd, GWL_STYLE, newStyle);
-    final prevParent = SetParent(_childHwnd, _ourHwnd);
-    final err = GetLastError();
-    if (prevParent == 0 && err != 0) {
-      _debugLog('_ensureStillParented: SetParent FAILED $_childHwnd err=$err -- resetting to find a fresh window');
-      _childHwnd = 0;
-      _ourHwnd = 0;
-      return;
-    }
-    SetWindowPos(_childHwnd, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | _swpFrameChanged);
-    ShowWindow(_childHwnd, SW_SHOW);
-    _debugLog('_ensureStillParented: re-parented $_childHwnd under $_ourHwnd');
-  }
-
-  /// CommandS's own top-level window, found by *our* process id rather than
-  /// `FindWindow(className, null)` -- that call matches the first window of
-  /// that class *anywhere on the system*, and every default Flutter Windows
-  /// app is built with the exact same class name
-  /// ("FLUTTER_RUNNER_WIN32_WINDOW"). With any other Flutter app running
-  /// (including an older/second CommandS instance) it could silently grab
-  /// the wrong one and reparent mstsc under a window that isn't even
-  /// visible, which looks identical to embedding never having happened.
-  int _findOwnWindow() {
-    final ownPid = GetCurrentProcessId();
-    int hwnd = 0;
-    final cb = NativeCallable<BOOL Function(IntPtr, IntPtr)>.isolateLocal(
-      (int h, int lParam) {
-        final winPid = calloc<Uint32>();
-        try {
-          GetWindowThreadProcessId(h, winPid);
-          if (winPid.value != ownPid || IsWindowVisible(h) == 0) return 1;
-          final classBuf = wsalloc(256);
-          try {
-            GetClassName(h, classBuf, 256);
-            if (classBuf.toDartString() == 'FLUTTER_RUNNER_WIN32_WINDOW') {
-              hwnd = h;
-              return 0;
-            }
-          } finally {
-            free(classBuf);
-          }
-        } finally {
-          calloc.free(winPid);
-        }
-        return 1;
-      },
-      exceptionalReturn: 1,
-    );
-    try {
-      EnumWindows(cb.nativeFunction, 0);
-    } finally {
-      cb.close();
-    }
-    return hwnd;
-  }
-
-  static const _warningDialogClass = '#32770';
-
-  /// Finds the unsigned-.rdp "Unknown publisher" warning -- a *top-level*
-  /// window owned by mstsc's main frame, not a child of it, confirmed live
-  /// (class `#32770`, `owner` = the main frame's hwnd) -- and, if present,
-  /// ticks the "Clipboard" checkbox this session actually asked for (those
-  /// resource checkboxes are a second consent gate on top of whatever the
-  /// .rdp file already requests; leaving one unchecked here silently
-  /// overrides the matching `redirect*:i:1` line) before clicking Connect.
-  /// A no-op once the warning is gone, so it is safe to call every tick.
-  void _handleSecurityDialog() {
-    final pid = _process?.pid;
-    if (pid == null) return;
-
-    int dialogHwnd = 0;
-    final enumTop = NativeCallable<BOOL Function(IntPtr, IntPtr)>.isolateLocal(
-      (int hwnd, int lParam) {
-        final winPid = calloc<Uint32>();
-        try {
-          GetWindowThreadProcessId(hwnd, winPid);
-          if (winPid.value != pid || IsWindowVisible(hwnd) == 0) return 1;
-          final classBuf = wsalloc(256);
-          try {
-            GetClassName(hwnd, classBuf, 256);
-            if (classBuf.toDartString() == _warningDialogClass) {
-              dialogHwnd = hwnd;
-              return 0;
-            }
-          } finally {
-            free(classBuf);
-          }
-        } finally {
-          calloc.free(winPid);
-        }
-        return 1;
-      },
-      exceptionalReturn: 1,
-    );
-    try {
-      EnumWindows(enumTop.nativeFunction, 0);
-    } finally {
-      enumTop.close();
-    }
-    if (dialogHwnd == 0) return;
-
-    int connectHwnd = 0;
-    int clipboardHwnd = 0;
-    final enumChild = NativeCallable<BOOL Function(IntPtr, IntPtr)>.isolateLocal(
-      (int hwnd, int lParam) {
-        final classBuf = wsalloc(256);
-        try {
-          GetClassName(hwnd, classBuf, 256);
-          if (classBuf.toDartString() == 'Button') {
-            final len = GetWindowTextLength(hwnd);
-            final textBuf = wsalloc(len + 1);
-            try {
-              GetWindowText(hwnd, textBuf, len + 1);
-              final text = textBuf.toDartString().replaceAll('&', '').toLowerCase();
-              if (text.contains('connect')) connectHwnd = hwnd;
-              if (text.contains('clipboard')) clipboardHwnd = hwnd;
-            } finally {
-              free(textBuf);
-            }
-          }
-        } finally {
-          free(classBuf);
-        }
-        return 1;
-      },
-      exceptionalReturn: 1,
-    );
-    try {
-      EnumChildWindows(dialogHwnd, enumChild.nativeFunction, 0);
-    } finally {
-      enumChild.close();
-    }
-
-    if (conn.rdpClipboard && clipboardHwnd != 0) {
-      final checked = SendMessage(clipboardHwnd, _bmGetCheck, 0, 0);
-      if (checked == 0) SendMessage(clipboardHwnd, _bmClick, 0, 0);
-    }
-    if (connectHwnd != 0) {
-      SendMessage(connectHwnd, _bmClick, 0, 0);
-    }
-  }
-
-  /// Called by [RdpEmbedView] after every layout pass with the placeholder's
-  /// on-screen rectangle, in logical pixels relative to our window's client
-  /// area (i.e. Flutter's own global coordinate space — which already *is*
-  /// client-area-relative, since Flutter doesn't know about OS chrome).
-  void reposition(ui.Rect logicalRect, double devicePixelRatio) {
-    if (!_started) {
-      final w = (logicalRect.width * devicePixelRatio).round();
-      final h = (logicalRect.height * devicePixelRatio).round();
-      _debugLog('reposition(!_started): logicalRect=$logicalRect dpr=$devicePixelRatio -> w=$w h=$h');
-      // A pane can briefly report a zero/tiny size mid-layout (e.g. right
-      // as a split is created, or during a new tab's own entrance
-      // transition even in an already-maximized window) -- not a real size
-      // worth locking in as the negotiated resolution. Trusting the very
-      // first reading over threshold was locking in exactly that kind of
-      // transient bad read with no way to self-correct afterward (nothing
-      // re-checks it unless the window itself is resized again later).
-      // Requiring a few consecutive ticks to agree first (~400-600ms) costs
-      // a beat on every connect but means a transient short-lived read can
-      // never get locked in as the permanent size.
-      if (w >= 200 && h >= 150) {
-        if (w == _pendingW && h == _pendingH) {
-          _pendingStableTicks++;
-        } else {
-          _pendingW = w;
-          _pendingH = h;
-          _pendingStableTicks = 1;
-        }
-        if (_pendingStableTicks >= 3) _beginWith(w, h);
-      } else {
-        _pendingStableTicks = 0;
-      }
-      return;
-    }
-    if (_childHwnd == 0) return;
-    // Width/height are deliberately *not* taken from the live rect here --
-    // confirmed live against RDM that it doesn't resize an active
-    // connection's content to follow the window growing either (you have
-    // to reopen the connection to pick up a new size), and doing it here
-    // means stretching the fixed resolution mstsc actually negotiated
-    // (locked in once, in [_beginWith]) via "smart sizing" -- which was
-    // exactly the blur this app had after maximizing before this. So only
-    // the top-left corner tracks the pane; the negotiated size stays put,
-    // same trade-off RDM itself makes.
-    final left = (logicalRect.left * devicePixelRatio).round();
-    final top = (logicalRect.top * devicePixelRatio).round();
-    // Position tracking is polled on a timer (see RdpEmbedView) rather than
-    // driven purely by layout events, so this runs constantly whether or
-    // not the pane actually moved. Forcing SetWindowPos + a synchronous
-    // RedrawWindow every single tick regardless was repainting the live
-    // RDP surface 5x/second for no reason -- visible as a constant flicker.
-    // Skipping the no-op case fixes that outright, and self-healing (the
-    // actual point of polling instead of only reacting to events) still
-    // works exactly the same on the ticks where something did move.
-    if (left == _lastLeft && top == _lastTop) {
-      // Nothing moved, so skip the repositioning SetWindowPos below (that's
-      // the flicker fix above) -- but the embedded window is a real, separate
-      // Win32 window sitting *behind* Flutter's own GPU-composited surface,
-      // not something Flutter's compositor knows to leave a hole for. Any
-      // repaint Flutter itself triggers elsewhere (hover highlight on a
-      // sidebar item, an animation, anything) can end up drawn on top of it,
-      // and nothing was re-asserting z-order on the ticks where position
-      // didn't change -- confirmed live: the RDP content only stayed visible
-      // while the mouse sat still over it, and blanked the moment it moved
-      // onto some other part of the UI. HWND_TOP here only touches z-order
-      // (NOMOVE/NOSIZE, no repaint of the RDP content itself), so it's cheap
-      // enough to do unconditionally every tick without reintroducing that
-      // flicker.
-      SetWindowPos(_childHwnd, 0 /* HWND_TOP */, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-      return;
-    }
-    _lastLeft = left;
-    _lastTop = top;
-    // SWP_SHOWWINDOW here too: something along the embed/rebuild path was
-    // leaving the reparented window's visible bit cleared even after the
-    // explicit ShowWindow(SW_SHOW) right after SetParent -- moving it is
-    // frequent enough (every layout pass) that just re-asserting visibility
-    // every time is a cheap, self-healing fix regardless of the exact cause.
-    SetWindowPos(
-      _childHwnd,
-      0,
-      left,
-      top,
-      _lockedWidth,
-      _lockedHeight,
-      SWP_NOZORDER | SWP_SHOWWINDOW,
-    );
-    // Belt-and-braces: force mstsc's RDP surface to actually repaint itself
-    // into the new position/parent rather than trusting it noticed on its
-    // own from the resize alone.
-    RedrawWindow(_childHwnd, nullptr, 0, _rdwInvalidate | _rdwUpdateNow | _rdwAllChildren);
-  }
-
-  void hide() {
-    if (_childHwnd != 0) ShowWindow(_childHwnd, SW_HIDE);
-  }
-
-  void show() {
-    if (_childHwnd != 0) ShowWindow(_childHwnd, SW_SHOW);
-  }
-
-  /// Reconnects from scratch, negotiating against whatever size the pane
-  /// actually is *right now* -- the explicit escape hatch for the trade-off
-  /// [reposition] documents (this app, like RDM, doesn't auto-resize a live
-  /// connection's content to follow the window growing). Surfaced as a
-  /// button in [RdpEmbedView] rather than something automatic, so it never
-  /// fires a reconnect the user didn't ask for.
-  ///
-  /// [width]/[height], if given, are the pane's current size in physical
-  /// pixels, read by the caller at the exact moment of the button press --
-  /// before anything here tears the old session down or the widget tree
-  /// changes underneath it. An earlier version left this to the next
-  /// [reposition] tick to pick up after teardown, which raced the status
-  /// change back to `starting` (its own rebuild) and landed on a stale or
-  /// default-sized read; passing the size in up front removes that race
-  /// entirely by never depending on a read taken *after* teardown started.
-  Future<void> refreshForCurrentSize({int? width, int? height}) async {
+  void _onNativeEvent(RdpNativeEvent event) {
     if (_disposed) return;
-    _debugLog('refreshForCurrentSize: called width=$width height=$height');
-    _teardownProcess();
-    _started = false;
-    _lastLeft = null;
-    _lastTop = null;
-    _childHwnd = 0;
-    _ourHwnd = 0;
-    lastError = null;
-    _setStatus(SessionStatus.starting);
-    if (width != null && height != null && width >= 200 && height >= 150) {
-      _beginWith(width, height);
+    switch (event.type) {
+      case 'connecting':
+        _setStatus(SessionStatus.starting);
+      case 'connected':
+      case 'loggedIn':
+      case 'reconnected':
+        lastError = null;
+        _setStatus(SessionStatus.running);
+        // The control is told not to grab focus on connect, so a background
+        // tab finishing its handshake can't steal the keyboard from whatever
+        // the user is actually looking at. The visible pane does want it.
+        if (_active) focus();
+      case 'reconnecting':
+        // Still the same session; the control is retrying on its own. Report
+        // it as starting so the pane shows progress instead of a live-looking
+        // black rectangle.
+        _setStatus(SessionStatus.starting);
+      case 'closed':
+        // Ended the way sessions are meant to end: logged off, disconnected
+        // from inside the session, or ended by the server. The native side
+        // makes that call — the control's reason code can't, since a rejected
+        // password reports the same code as a deliberate disconnect.
+        lastError = null;
+        _hideSurface();
+        _setStatus(SessionStatus.closed);
+      case 'disconnected':
+        lastError = _describe(event);
+        _hideSurface();
+        _setStatus(SessionStatus.error);
+      case 'fatal':
+        lastError = event.message.isEmpty
+            ? 'The Remote Desktop client hit a fatal error (code ${event.code}).'
+            : event.message;
+        _hideSurface();
+        _setStatus(SessionStatus.error);
+      case 'logonError':
+        // Negative codes are informational (e.g. -2 "the user was prompted"),
+        // which is not a failure — the control is showing its own credential
+        // prompt inside the pane and the user can still get in.
+        if (event.code >= 0) {
+          lastError = 'Logon failed (code ${event.code}).';
+          _setStatus(SessionStatus.error);
+        }
+      case 'sizeChanged':
+        _sessionWidth = event.width;
+        _sessionHeight = event.height;
     }
-    // Otherwise fall back to the next reposition() tick picking up the pane's
-    // size, same as first connect.
   }
 
-  /// Kills the running mstsc process and its embedded window without
-  /// touching the controller's own lifecycle state (status stream, disposed
-  /// flag) -- shared by [dispose] and [refreshForCurrentSize], which differ
-  /// only in what happens after.
-  void _teardownProcess() {
-    _pollTimer?.cancel();
-    unawaited(_clearCredential());
-    try {
-      if (_childHwnd != 0) DestroyWindow(_childHwnd);
-    } catch (_) {}
-    try {
-      _process?.kill();
-    } catch (_) {}
-    try {
-      if (_scratchDir != null && _scratchDir!.existsSync()) {
-        _scratchDir!.deleteSync(recursive: true);
+  /// A dead session's window still covers the pane with its last frame (or
+  /// black), and Flutter cannot draw the explanation on top of a native child
+  /// window — so the window goes away and the pane says what happened.
+  void _hideSurface() {
+    final id = _hostId;
+    if (id != null) RdpChannel.instance.setVisible(id, false);
+  }
+
+  /// The control's own wording, plus the one case where its wording is useless.
+  /// A rejected password comes back as "An internal error has occurred." with
+  /// no extended reason — confirmed against a real server — which tells the
+  /// user nothing, so the likely cause is named instead.
+  String _describe(RdpNativeEvent event) {
+    final text = event.message.trim();
+    final unhelpful = text.isEmpty ||
+        text.toLowerCase().startsWith('an internal error');
+    if (unhelpful && event.extendedCode == 0) {
+      return 'Could not sign in to $host. The username, password or domain may '
+          'be wrong, or the server may not allow this account to connect '
+          'remotely.';
+    }
+    if (text.isEmpty) {
+      return 'Disconnected (code ${event.code}/${event.extendedCode}).';
+    }
+    return text;
+  }
+
+  // ---- geometry ----
+
+  ({int x, int y, int width, int height}) _physical(ui.Rect rect, double dpr) => (
+        x: (rect.left * dpr).round(),
+        y: (rect.top * dpr).round(),
+        width: (rect.width * dpr).round(),
+        height: (rect.height * dpr).round(),
+      );
+
+  /// Called by the view after layout and on a light timer with the pane's
+  /// on-screen rectangle in logical pixels, relative to our window's client
+  /// area (which is also Flutter's global coordinate space, since Flutter
+  /// knows nothing about OS chrome).
+  void reposition(ui.Rect bounds, double devicePixelRatio) {
+    if (_disposed) return;
+    if (!_started) {
+      // A pane briefly reports a tiny or zero size mid-layout (a split being
+      // created, a new tab's entrance transition). Negotiating against one of
+      // those locks the session to a size it will never actually be displayed
+      // at, so wait for something believable.
+      if (bounds.width * devicePixelRatio >= 200 &&
+          bounds.height * devicePixelRatio >= 150) {
+        _begin(bounds, devicePixelRatio);
       }
-    } catch (_) {}
-    _process = null;
-    _scratchDir = null;
+      return;
+    }
+    final id = _hostId;
+    if (id == null) return;
+    if (bounds == _lastBounds) return;
+    final previous = _lastBounds;
+    _lastBounds = bounds;
+    final physical = _physical(bounds, devicePixelRatio);
+    RdpChannel.instance.setBounds(
+      id: id,
+      x: physical.x,
+      y: physical.y,
+      width: physical.width,
+      height: physical.height,
+    );
+    // Only a size change needs the remote desktop renegotiated; a pane that
+    // merely moved (the other half of a split being resized, the sidebar
+    // collapsing) keeps the resolution it has.
+    final sizeChanged = previous == null ||
+        previous.width != bounds.width ||
+        previous.height != bounds.height;
+    if (!sizeChanged) return;
+    // Renegotiating on every frame of a drag would ask the server for a new
+    // desktop size dozens of times per second; settle first.
+    _resizeDebounce?.cancel();
+    _resizeDebounce = Timer(const Duration(milliseconds: 350), () {
+      _applySessionSize(physical.width, physical.height, devicePixelRatio);
+    });
+  }
+
+  Future<void> _applySessionSize(int width, int height, double dpr) async {
+    final id = _hostId;
+    if (id == null || _disposed) return;
+    if (width < 200 || height < 200) return;
+    if (width == _sessionWidth && height == _sessionHeight) return;
+    final ok = await RdpChannel.instance.resizeSession(
+      id: id,
+      width: width,
+      height: height,
+      dpi: (dpr * 96).round(),
+    );
+    if (ok) {
+      _sessionWidth = width;
+      _sessionHeight = height;
+    } else {
+      // Either the control predates RDP 8.1 or the server refused the new
+      // size. Leave the image scaled rather than reconnecting behind the
+      // user's back; [reconnectAtCurrentSize] is the deliberate way out.
+      _dynamicResolution = false;
+    }
+  }
+
+  // ---- tab state ----
+
+  void setActive(bool active) {
+    if (_active == active) return;
+    _active = active;
+    final id = _hostId;
+    if (id == null) return;
+    // A session that has already failed or ended had its window hidden so the
+    // pane could explain why; coming back to that tab must not put the dead
+    // window back over the explanation.
+    final dead = status == SessionStatus.error || status == SessionStatus.closed;
+    RdpChannel.instance.setVisible(id, active && !dead);
+    if (active && !dead) RdpChannel.instance.focus(id);
+  }
+
+  void focus() {
+    final id = _hostId;
+    if (id != null && _active) RdpChannel.instance.focus(id);
+  }
+
+  /// Windows swallows the real Ctrl+Alt+Del before any app sees it, so a
+  /// windowed session can only get one by asking the control to inject it.
+  void sendCtrlAltDelete() {
+    final id = _hostId;
+    if (id != null) RdpChannel.instance.sendCtrlAltDel(id);
+  }
+
+  /// Tears the session down and negotiates a fresh one at the pane's current
+  /// size. Needed only where dynamic resolution isn't available (see
+  /// [supportsDynamicResolution]) or to retry after a failure.
+  ///
+  /// [bounds] is read by the caller at the moment of the button press, before
+  /// anything here tears the old session down — the status change back to
+  /// `starting` rebuilds the widget tree, so a size read taken afterwards
+  /// races that rebuild and can land on a stale or default-sized pane.
+  Future<void> reconnect(ui.Rect? bounds, double devicePixelRatio) async {
+    if (_disposed) return;
+    final id = _hostId;
+    _hostId = null;
+    _started = false;
+    _sessionWidth = null;
+    _sessionHeight = null;
+    _lastBounds = null;
+    lastError = null;
+    _dynamicResolution = null;
+    _resizeDebounce?.cancel();
+    _setStatus(SessionStatus.starting);
+    if (id != null) {
+      RdpChannel.instance.unregister(id);
+      await RdpChannel.instance.destroy(id);
+    }
+    if (bounds != null &&
+        bounds.width * devicePixelRatio >= 200 &&
+        bounds.height * devicePixelRatio >= 150) {
+      await _begin(bounds, devicePixelRatio);
+    }
+    // Otherwise the next reposition() supplies the size, same as first connect.
   }
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
-    _teardownProcess();
+    _resizeDebounce?.cancel();
+    final id = _hostId;
+    _hostId = null;
+    if (id != null) {
+      RdpChannel.instance.unregister(id);
+      RdpChannel.instance.destroy(id);
+    }
     _statusController.close();
+  }
+}
+
+/// One event from the native host.
+class RdpNativeEvent {
+  const RdpNativeEvent({
+    required this.type,
+    required this.message,
+    required this.code,
+    required this.extendedCode,
+    required this.width,
+    required this.height,
+  });
+
+  final String type;
+  final String message;
+  final int code;
+  final int extendedCode;
+  final int width;
+  final int height;
+}
+
+/// The single method channel onto `windows/runner/rdp_plugin.cpp`, fanning
+/// native events back out to whichever session they belong to. Sessions are
+/// identified by the integer id the native side mints per host window, so
+/// several RDP tabs (including tiled ones) stay independent.
+class RdpChannel {
+  RdpChannel._() {
+    _channel.setMethodCallHandler(_onCall);
+  }
+
+  static final RdpChannel instance = RdpChannel._();
+
+  final _channel = const MethodChannel('commands/rdp');
+  final _listeners = <int, void Function(RdpNativeEvent)>{};
+
+  void register(int id, void Function(RdpNativeEvent) listener) {
+    _listeners[id] = listener;
+  }
+
+  void unregister(int id) => _listeners.remove(id);
+
+  Future<dynamic> _onCall(MethodCall call) async {
+    if (call.method != 'event') return null;
+    final args = (call.arguments as Map).cast<String, Object?>();
+    final id = args['id'] as int? ?? -1;
+    final listener = _listeners[id];
+    if (listener == null) return null;
+    listener(RdpNativeEvent(
+      type: args['type'] as String? ?? '',
+      message: args['message'] as String? ?? '',
+      code: args['code'] as int? ?? 0,
+      extendedCode: args['extendedCode'] as int? ?? 0,
+      width: args['width'] as int? ?? 0,
+      height: args['height'] as int? ?? 0,
+    ));
+    return null;
+  }
+
+  Future<int> create({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+  }) async {
+    final id = await _channel.invokeMethod<int>('create', {
+      'x': x,
+      'y': y,
+      'width': width,
+      'height': height,
+    });
+    if (id == null) throw PlatformException(code: 'rdp_create_failed');
+    return id;
+  }
+
+  Future<bool> connect({
+    required int id,
+    required String host,
+    required int port,
+    required String username,
+    required String domain,
+    required String password,
+    required int width,
+    required int height,
+    required int dpi,
+    required bool clipboard,
+    required bool wallpaper,
+  }) async {
+    final dynamicResolution = await _channel.invokeMethod<bool>('connect', {
+      'id': id,
+      'host': host,
+      'port': port,
+      'username': username,
+      'domain': domain,
+      'password': password,
+      'width': width,
+      'height': height,
+      'dpi': dpi,
+      'clipboard': clipboard,
+      'wallpaper': wallpaper,
+    });
+    return dynamicResolution ?? false;
+  }
+
+  Future<void> setBounds({
+    required int id,
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+  }) =>
+      _channel.invokeMethod<void>('setBounds', {
+        'id': id,
+        'x': x,
+        'y': y,
+        'width': width,
+        'height': height,
+      });
+
+  Future<bool> resizeSession({
+    required int id,
+    required int width,
+    required int height,
+    required int dpi,
+  }) async {
+    final ok = await _channel.invokeMethod<bool>('resizeSession', {
+      'id': id,
+      'width': width,
+      'height': height,
+      'dpi': dpi,
+    });
+    return ok ?? false;
+  }
+
+  Future<void> setVisible(int id, bool visible) =>
+      _channel.invokeMethod<void>('setVisible', {'id': id, 'visible': visible});
+
+  Future<void> focus(int id) => _channel.invokeMethod<void>('focus', {'id': id});
+
+  Future<void> sendCtrlAltDel(int id) =>
+      _channel.invokeMethod<void>('sendCtrlAltDel', {'id': id});
+
+  Future<void> disconnect(int id) =>
+      _channel.invokeMethod<void>('disconnect', {'id': id});
+
+  Future<void> destroy(int id) =>
+      _channel.invokeMethod<void>('destroy', {'id': id});
+
+  /// Hides every live session while the app has a dialog open, and brings them
+  /// back when it closes. See [RdpModalObserver].
+  Future<void> setSuspended(bool suspended) =>
+      _channel.invokeMethod<void>('setSuspended', {'suspended': suspended});
+}
+
+/// Hides embedded RDP sessions for as long as a dialog, menu or other pushed
+/// route is on screen.
+///
+/// A session is a top-level window owned by the app window, so the compositor
+/// always draws it above the app — which is exactly what makes it stay visible
+/// while Flutter repaints, and exactly what would put it in front of a modal
+/// dialog that is meant to be in front of everything. Since the dialog is the
+/// thing the user is currently interacting with, the session gives way.
+///
+/// Only on Windows; nothing else has an embedded session to hide.
+class RdpModalObserver extends NavigatorObserver {
+  int _depth = 0;
+
+  void _apply(int delta) {
+    if (!Platform.isWindows) return;
+    final wasOpen = _depth > 0;
+    _depth = (_depth + delta).clamp(0, 1 << 20);
+    final isOpen = _depth > 0;
+    if (wasOpen != isOpen) RdpChannel.instance.setSuspended(isOpen);
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    // The app's own home route is pushed at startup with nothing beneath it;
+    // it is the page, not something covering it.
+    if (previousRoute != null) _apply(1);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null) _apply(-1);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null) _apply(-1);
   }
 }

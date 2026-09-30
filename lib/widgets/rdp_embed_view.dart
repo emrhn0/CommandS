@@ -1,19 +1,33 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
 import '../services/rdp_session.dart';
 import '../services/session_controller.dart';
 
-/// The Flutter-side half of RDP embedding: a plain container that reports
-/// its own on-screen rectangle to [RdpSessionController.reposition] — both
-/// after every layout and on a short timer the whole time it's the active
-/// pane — so the native mstsc window it parented stays glued to this exact
-/// spot, including as the tab is resized or the window is simply dragged
-/// (which fires none of Flutter's own layout/metrics callbacks).
+/// Height of the session bar above an embedded RDP surface.
 ///
-/// The native window is a separate OS-level surface, so switching tabs in
-/// our own [IndexedStack] does nothing to it on its own — [active] drives an
-/// explicit show/hide so a background RDP tab doesn't sit on top of
-/// whichever tab you actually switched to.
+/// The session *is* a native child window sitting over its share of the pane,
+/// which means Flutter cannot draw anything on top of it — a floating overlay
+/// button inside the pane is painted behind the session and can be neither seen
+/// nor clicked. (The previous implementation's "reconnect to fit" button was
+/// positioned exactly there.) So the controls get their own strip that the
+/// native window is kept out of, rather than an overlay that silently doesn't
+/// work.
+const double _kSessionBarHeight = 26;
+
+/// The Flutter-side half of an embedded RDP session: a strip of controls, and
+/// below it a black placeholder whose on-screen rectangle is reported to
+/// [RdpSessionController.reposition] so the native ActiveX host window stays
+/// exactly over it.
+///
+/// The native window is a real child of the app's top-level window, a sibling
+/// of Flutter's view, created `WS_CLIPSIBLINGS` under a `WS_CLIPCHILDREN`
+/// parent. That is what keeps it visible: the previous implementation embedded
+/// a window it did not own and could not restyle, and had to re-assert z-order
+/// on a 30ms timer for the whole life of a session because any repaint
+/// elsewhere in the app would otherwise cover the session up. Here z-order is
+/// asserted once, when the pane becomes visible.
 class RdpEmbedView extends StatefulWidget {
   const RdpEmbedView({super.key, required this.controller, required this.active});
   final RdpSessionController controller;
@@ -26,133 +40,127 @@ class RdpEmbedView extends StatefulWidget {
 class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver {
   final _key = GlobalKey();
   Timer? _pollTimer;
-  Timer? _resizeDebounce;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.controller.setActive(widget.active);
     if (widget.active) _startPolling();
   }
 
   @override
   void didUpdateWidget(RdpEmbedView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.active && !oldWidget.active) {
-      widget.controller.show();
-      _startPolling();
-    } else if (!widget.active && oldWidget.active) {
-      widget.controller.hide();
-      _pollTimer?.cancel();
+    if (widget.active != oldWidget.active) {
+      widget.controller.setActive(widget.active);
+      if (widget.active) {
+        _startPolling();
+      } else {
+        _pollTimer?.cancel();
+      }
     }
   }
 
   @override
   void didChangeMetrics() {
-    if (!widget.active) return;
-    _reposition();
-    // A live connection's content is negotiated once and doesn't follow the
-    // window growing on its own (see RdpSessionController.reposition) --
-    // window resizes/maximizes fire this repeatedly while dragging, so
-    // debounce and pick up the settled size once things stop moving, the
-    // same size read [_refresh] already does safely for the manual button.
-    _resizeDebounce?.cancel();
-    _resizeDebounce = Timer(const Duration(milliseconds: 600), () {
-      if (mounted && widget.active && widget.controller.status == SessionStatus.running) {
-        _refresh();
-      }
-    });
+    if (widget.active) _reposition();
   }
 
-  /// Flutter only calls [didChangeMetrics] when the window's *size* changes
-  /// (e.g. maximizing) -- a plain move/drag fires nothing here at all, and
-  /// yet the native child is real enough of an OS window that a drag can
-  /// still visibly desync it from the placeholder for a moment. Rather than
-  /// chase every OS event that could possibly move things, just re-assert
-  /// the position on a short timer the whole time this pane is active --
-  /// the same self-healing approach already used natively for parenting.
+  /// Flutter reports a window *resize* through [didChangeMetrics], but a pane
+  /// can move or change size without either that or a rebuild of this widget —
+  /// a split divider being dragged, the sidebar animating open. Rather than
+  /// chase every one, the rectangle is re-read on a light timer; the controller
+  /// drops the read when nothing changed, so an idle session costs a
+  /// `localToGlobal` call and no platform-channel traffic at all.
   void _startPolling() {
     _pollTimer?.cancel();
     _reposition();
-    // 200ms wasn't fast enough to beat it: this app's own GPU-composited
-    // surface can end up painted over the embedded native window's region
-    // on any repaint (a sidebar hover highlight, anything) -- see
-    // [RdpSessionController.reposition] -- and Flutter re-presents on every
-    // pointer move even when nothing else in the tree actually changed, so
-    // moving the mouse over the sidebar was triggering that far more often
-    // than once per 200ms, leaving the RDP content hidden behind it for
-    // as long as the mouse kept moving. 30ms (~33Hz) is cheap on an
-    // otherwise-idle timer (no repaint of the RDP content itself on the
-    // no-op path, just a z-order nudge) and keeps up with that rate.
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 30), (_) => _reposition());
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) => _reposition());
   }
 
   void _reposition() {
     if (!mounted || !widget.active) return;
-    final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
-    final origin = box.localToGlobal(Offset.zero);
-    final rect = origin & box.size;
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    widget.controller.reposition(rect, dpr);
+    final rect = _surfaceRect();
+    if (rect == null) return;
+    widget.controller.reposition(rect, MediaQuery.of(context).devicePixelRatio);
   }
 
-  /// Reads the pane's current size *right now*, before triggering the
-  /// reconnect -- see [RdpSessionController.refreshForCurrentSize] for why
-  /// this can't wait for the next poll tick to do it instead.
-  void _refresh() {
+  Rect? _surfaceRect() {
     final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) {
-      widget.controller.refreshForCurrentSize();
-      return;
-    }
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    final w = (box.size.width * dpr).round();
-    final h = (box.size.height * dpr).round();
-    widget.controller.refreshForCurrentSize(width: w, height: h);
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  void _reconnect() {
+    widget.controller.reconnect(_surfaceRect(), MediaQuery.of(context).devicePixelRatio);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
-    _resizeDebounce?.cancel();
-    widget.controller.hide();
+    widget.controller.setActive(false);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.active) WidgetsBinding.instance.addPostFrameCallback((_) => _reposition());
+    if (widget.active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reposition());
+    }
     return StreamBuilder<SessionStatus>(
       stream: widget.controller.statusStream,
       initialData: widget.controller.status,
-      builder: (context, snap) {
-        final status = snap.data;
-        return Stack(
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? SessionStatus.starting;
+        return Column(
           children: [
-            // The native mstsc window is parented on top of this — it's the
-            // hole we're keeping clear for it.
-            Container(key: _key, color: Colors.black),
-            if (status == SessionStatus.starting)
-              const Center(child: CircularProgressIndicator())
-            else if (status == SessionStatus.error)
-              Center(
-                child: Text(
-                  widget.controller.lastError ?? 'RDP session failed to start.',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              )
-            else if (status == SessionStatus.closed)
-              const Center(
-                child: Text('Session ended.', style: TextStyle(color: Colors.white70)),
+            _SessionBar(
+              host: widget.controller.tabTitle ?? widget.controller.host,
+              status: status,
+              // Where the server renegotiates resolution on resize there is
+              // nothing for a manual reconnect to fix, so it isn't offered.
+              showRefit: status == SessionStatus.running &&
+                  !widget.controller.supportsDynamicResolution,
+              onRefit: _reconnect,
+              onCtrlAltDel: status == SessionStatus.running
+                  ? widget.controller.sendCtrlAltDelete
+                  : null,
+              onReconnect: status == SessionStatus.running ? null : _reconnect,
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  // The native session window sits over this — it's the hole
+                  // being kept clear for it. A tap only reaches Flutter before
+                  // that window exists (or after it is hidden on failure), and
+                  // means the user wants to type into the session.
+                  Listener(
+                    onPointerDown: (_) => widget.controller.focus(),
+                    child: Container(key: _key, color: Colors.black),
+                  ),
+                  if (status == SessionStatus.starting)
+                    const Center(child: CircularProgressIndicator())
+                  else if (status == SessionStatus.error)
+                    _RdpMessage(
+                      icon: Icons.error_outline,
+                      title: 'Remote Desktop disconnected',
+                      detail: widget.controller.lastError ??
+                          'The session could not be started.',
+                      onRetry: _reconnect,
+                    )
+                  else if (status == SessionStatus.closed)
+                    _RdpMessage(
+                      icon: Icons.power_settings_new,
+                      title: 'Session ended',
+                      detail: widget.controller.lastError ??
+                          'The remote session was closed. Reconnect to start a new one.',
+                      onRetry: _reconnect,
+                    ),
+                ],
               ),
-            if (status == SessionStatus.running)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: _RefreshForResizeButton(onPressed: _refresh),
-              ),
+            ),
           ],
         );
       },
@@ -160,42 +168,156 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
   }
 }
 
-/// A connection's content is negotiated once, at connect time, and doesn't
-/// track the pane growing on its own (see [RdpSessionController]) -- window
-/// resizes already trigger a debounced auto-refresh (see
-/// [_RdpEmbedViewState.didChangeMetrics]), but a plain drag between split
-/// panes changes the pane's size without ever resizing the window, so this
-/// stays as the immediate manual escape hatch. Tucked in a corner and only
-/// shown once connected, so it stays out of the way of the actual remote
-/// desktop underneath.
-class _RefreshForResizeButton extends StatefulWidget {
-  const _RefreshForResizeButton({required this.onPressed});
-  final VoidCallback onPressed;
+/// The strip above the session. Holds the two things that cannot be done from
+/// inside a windowed RDP session — sending Ctrl+Alt+Del, which Windows
+/// intercepts locally before any app sees it, and (on servers with no dynamic
+/// resolution) reconnecting to fit a resized pane — plus the session's state,
+/// which is otherwise invisible once the desktop is drawing.
+class _SessionBar extends StatelessWidget {
+  const _SessionBar({
+    required this.host,
+    required this.status,
+    required this.showRefit,
+    required this.onRefit,
+    required this.onCtrlAltDel,
+    required this.onReconnect,
+  });
 
-  @override
-  State<_RefreshForResizeButton> createState() => _RefreshForResizeButtonState();
-}
-
-class _RefreshForResizeButtonState extends State<_RefreshForResizeButton> {
-  bool _hover = false;
+  final String host;
+  final SessionStatus status;
+  final bool showRefit;
+  final VoidCallback onRefit;
+  final VoidCallback? onCtrlAltDel;
+  final VoidCallback? onReconnect;
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: AnimatedOpacity(
-        opacity: _hover ? 1 : 0.45,
-        duration: const Duration(milliseconds: 120),
-        child: Material(
-          color: Colors.black87,
-          shape: const CircleBorder(),
-          child: IconButton(
-            tooltip: 'Reconnect to fill the current pane size',
-            icon: const Icon(Icons.aspect_ratio, size: 16, color: Colors.white),
-            visualDensity: VisualDensity.compact,
-            onPressed: widget.onPressed,
-          ),
+    final scheme = Theme.of(context).colorScheme;
+    final (label, color) = switch (status) {
+      SessionStatus.starting => ('Connecting', scheme.onSurface.withValues(alpha: 0.5)),
+      SessionStatus.running => ('Connected', scheme.onSurface.withValues(alpha: 0.5)),
+      SessionStatus.closed => ('Ended', scheme.onSurface.withValues(alpha: 0.5)),
+      SessionStatus.error => ('Disconnected', scheme.error),
+    };
+    return SizedBox(
+      height: _kSessionBarHeight,
+      child: Material(
+        color: scheme.surface,
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            Icon(Icons.desktop_windows_outlined, size: 12, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                host,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(fontSize: 10, color: color)),
+            const Spacer(),
+            if (onCtrlAltDel != null)
+              _BarButton(
+                tooltip: 'Send Ctrl+Alt+Del',
+                icon: Icons.keyboard,
+                onPressed: onCtrlAltDel!,
+              ),
+            if (showRefit)
+              _BarButton(
+                tooltip: 'Reconnect to fill the current pane size',
+                icon: Icons.aspect_ratio,
+                onPressed: onRefit,
+              ),
+            if (onReconnect != null)
+              _BarButton(
+                tooltip: 'Reconnect',
+                icon: Icons.refresh,
+                onPressed: onReconnect!,
+              ),
+            const SizedBox(width: 4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BarButton extends StatelessWidget {
+  const _BarButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      // Above the bar, not below it: below is the session's own window, which
+      // is drawn over anything Flutter puts there.
+      preferBelow: false,
+      child: InkWell(
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+          child: Icon(icon, size: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _RdpMessage extends StatelessWidget {
+  const _RdpMessage({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.onRetry,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 34, color: Colors.white38),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 12, height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white24),
+              ),
+              onPressed: onRetry,
+              child: const Text('Reconnect'),
+            ),
+          ],
         ),
       ),
     );
