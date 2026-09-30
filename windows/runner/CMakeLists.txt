@@ -9,6 +9,8 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
+  "rdp_ax_host.cpp"
+  "rdp_plugin.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
@@ -34,6 +36,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+# OLE/COM: hosting the Remote Desktop ActiveX control in place (rdp_ax_host).
+target_link_libraries(${BINARY_NAME} PRIVATE "ole32.lib" "oleaut32.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

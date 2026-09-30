@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'providers/app_state.dart';
+import 'services/rdp_session.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -39,6 +40,12 @@ void main() async {
 class CommandSApp extends StatelessWidget {
   const CommandSApp({super.key});
 
+  /// One instance for the life of the app: this whole subtree rebuilds on
+  /// every AppState change, and handing MaterialApp a fresh observer list each
+  /// time would detach and re-attach it constantly, losing the count of how
+  /// many routes are currently open.
+  static final _rdpModalObserver = RdpModalObserver();
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
@@ -50,6 +57,10 @@ class CommandSApp extends StatelessWidget {
           themeMode: app.themeMode,
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
+          // Embedded RDP sessions are windows of their own, drawn above the
+          // app; this tells them to step aside while a dialog is open. See
+          // [RdpModalObserver].
+          navigatorObservers: [_rdpModalObserver],
           home: const HomeScreen(),
         ),
       ),

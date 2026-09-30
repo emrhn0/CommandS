@@ -226,7 +226,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                   const SizedBox(width: 8),
                   OutlinedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save')),
                   const SizedBox(width: 8),
-                  ElevatedButton(onPressed: () => _save(alsoConnect: true), child: const Text('Save && Connect')),
+                  ElevatedButton(onPressed: () => _save(alsoConnect: true), child: const Text('Save and Connect')),
                 ],
               ),
             ],

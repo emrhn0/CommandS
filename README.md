@@ -17,14 +17,23 @@ WebView: built with Flutter, rendered natively.
 - Tabbed sessions — each tab is independent and live; switching tabs never
   drops the connection. Drag a tab to an edge of the terminal area to
   split the view, Windows-Snap style.
-- RDP sessions on Windows run through the OS's own client (`mstsc`) but are
-  embedded directly in a tab, not a separate window — credential prompts and
-  the unsigned-`.rdp` security warning are handled automatically. On macOS
-  the session opens in the installed Microsoft client ("Windows App", or the
-  older "Microsoft Remote Desktop") with the host, user and password filled
-  in: AppKit does not let one app place another app's window inside its own,
-  so drawing the session in the tab means speaking RDP in-process, which is
-  planned but not here yet.
+- RDP sessions on Windows are drawn **inside a tab**, through Microsoft's own
+  Remote Desktop ActiveX control (`mstscax.dll`) hosted in-process — the same
+  engine `mstsc.exe` is a shell over, so fidelity, input and performance are
+  the real client's. Credentials go straight to the control (nothing is
+  written to Windows Credential Manager), there is no `.rdp` file and so no
+  "unknown publisher" warning, and resizing a pane renegotiates the remote
+  desktop at its exact pixel size instead of stretching the old one.
+  Ctrl+Alt+Del can be sent from the session bar.
+- RDP on macOS opens in the best client installed. FreeRDP
+  (`brew install freerdp`) is preferred and is handed the whole connection
+  including the saved password, so nothing is typed; otherwise the Microsoft
+  client ("Windows App", or the older "Microsoft Remote Desktop") is launched
+  with the host and username filled in, and the tab offers the password for
+  pasting. Either way the session is its own window: macOS has no embeddable
+  RDP component, and AppKit does not let one app place another app's window
+  inside its own, so drawing the session in the tab means speaking RDP
+  in-process — planned, not here yet.
 - PuTTY-style in-terminal `login as:` / `password:` prompts when a
   connection is opened with host only.
 - Folder-organized saved connections (create/rename/delete folders;
