@@ -101,13 +101,6 @@ void RdpPlugin::OnOwnerMinimized(bool minimized) {
   for (auto& entry : hosts_) entry.second->SetOwnerMinimized(minimized);
 }
 
-HWND RdpPlugin::FocusTarget() const {
-  for (const auto& entry : hosts_) {
-    if (entry.second->wants_focus()) return entry.second->window();
-  }
-  return nullptr;
-}
-
 void RdpPlugin::SendEvent(int id, const RdpHostEvent& event) {
   if (channel_ == nullptr) return;
   EncodableMap payload{

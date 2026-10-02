@@ -648,7 +648,13 @@ void RdpAxHost::SetVisible(bool visible) {
 }
 
 void RdpAxHost::Focus() {
-  if (hwnd_ == nullptr || !visible_) return;
+  if (hwnd_ == nullptr || !visible_ || owner_minimized_ || suspended_) return;
+  // Only while this app is already the one the user is working in. The
+  // session lives in a top-level window, so focusing it also activates it --
+  // which, done unconditionally, meant a tab finishing its connection could
+  // pull the foreground away from whatever else the user had switched to.
+  const HWND foreground = GetForegroundWindow();
+  if (foreground != owner_ && foreground != hwnd_) return;
   // UI-activating the control is what actually hands it the keyboard; without
   // it a click lands in the session but typing goes nowhere.
   if (ole_object_ != nullptr) {

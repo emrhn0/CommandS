@@ -70,6 +70,7 @@ class UpdateService {
         assetUrl: asset?.url,
         assetSize: asset?.size ?? 0,
         checksumsUrl: _findAssetUrl(assets, _checksumsAsset),
+        canSelfInstall: asset != null && await _canSelfInstall(),
       );
     } catch (_) {
       return null;
@@ -83,10 +84,8 @@ class UpdateService {
     await prefs.setString(_kSkippedVersion, version);
   }
 
-  /// The build for this platform. Windows gets the installer (per-user, so it
-  /// never raises a UAC prompt); macOS gets the zipped app, which is handed to
-  /// the browser rather than installed, since replacing a running .app from
-  /// inside itself is not something to do quietly.
+  /// The build for this platform: the installer on Windows (per-user, so it
+  /// never raises a UAC prompt), the zipped app on macOS.
   static String? _findAssetUrl(List<dynamic> assets, String name) {
     for (final raw in assets) {
       if (raw is! Map) continue;
@@ -183,71 +182,187 @@ class UpdateService {
     }
   }
 
-  /// Downloads [info]'s installer and hands over to it.
+  /// Downloads [info]'s build for this platform and hands over to it.
   ///
-  /// Windows only. The installer is the one published alongside the release,
-  /// fetched over HTTPS from GitHub; it installs per-user into
-  /// `%LOCALAPPDATA%\Programs\CommandS`, so it asks for no elevation, and it
-  /// is run through a detached `cmd` that waits for it to finish and then
-  /// starts the new build — this process has to exit for its own files to be
-  /// replaced, so it cannot do the relaunch itself.
+  /// Windows: runs the published installer. It installs per-user into
+  /// `%LOCALAPPDATA%\Programs\CommandS`, so it asks for no elevation, and it is
+  /// started through a detached `cmd` that waits for it and then relaunches
+  /// the app -- this process has to exit before its own files can be replaced,
+  /// so it cannot do the relaunch itself.
+  ///
+  /// macOS: unpacks the new `CommandS.app` next to the running one and swaps
+  /// them once this process has exited, through a detached shell script. The
+  /// old bundle is moved aside rather than deleted until the new one is in
+  /// place, and moved back if the swap fails, so a failed update leaves the
+  /// working app where it was.
+  ///
+  /// Either way the download is checked against the size the release API
+  /// reported and the checksum the release published before anything runs.
   ///
   /// [onProgress] reports 0..1, or null when the server sends no length.
-  /// Returns an error string, or null once the installer has been handed off
-  /// (at which point the caller should quit the app).
+  /// Returns an error string, or null once the update has been handed off --
+  /// at which point the caller must quit the app.
   static Future<String?> downloadAndInstall(
     UpdateInfo info, {
     void Function(double? progress)? onProgress,
   }) async {
-    if (!Platform.isWindows) return 'Automatic install is Windows-only.';
-    final url = info.assetUrl;
-    if (url == null) return 'This release has no Windows installer.';
-
-    Directory? dir;
+    if (!info.canSelfInstall) return 'This copy of CommandS cannot update itself.';
+    final url = info.assetUrl!;
     try {
-      dir = await Directory.systemTemp.createTemp('commands_update_');
-      final file = File('${dir.path}\\${info.assetName ?? 'CommandS_Setup.exe'}');
+      final dir = await Directory.systemTemp.createTemp('commands_update_');
+      final sep = Platform.pathSeparator;
+      final file = File('${dir.path}$sep${info.assetName ?? 'update'}');
       final ok = await _download(url, file, onProgress);
       if (!ok) return 'The download did not complete.';
+      final problem = await _verify(info, file);
+      if (problem != null) return problem;
 
-      final size = await file.length();
-      // A truncated download, or an error page saved as if it were the
-      // installer, would otherwise be executed. The release API already told
-      // us how big the asset is, so a mismatch means this is not it.
-      if (info.assetSize > 0 && size != info.assetSize) {
-        return 'The downloaded installer is incomplete.';
-      }
-      if (size < 1024 * 1024) return 'The downloaded installer looks wrong.';
-
-      // This method ends by running the file it just downloaded, so matching
-      // the checksum published with the release is worth the extra request:
-      // size alone would not notice a substituted file of the same length.
-      // Releases predating SHA256SUMS.txt have none to check against, and are
-      // accepted on the size check alone rather than made un-updatable.
-      final expected = await _expectedChecksum(info);
-      if (expected != null) {
-        final actual = sha256.convert(await file.readAsBytes()).toString();
-        if (actual.toLowerCase() != expected.toLowerCase()) {
-          return 'The downloaded installer failed its checksum and was not run.';
-        }
-      }
-
-      final installerPath = file.path;
-      final appDir = Platform.resolvedExecutable;
-      // /SILENT shows a progress window but asks nothing; CLOSEAPPLICATIONS
-      // lets the installer replace files belonging to this app once it exits;
-      // NORESTART keeps it from ever rebooting the machine.
-      final command = '"$installerPath" /SILENT /CLOSEAPPLICATIONS /NORESTART '
-          '&& start "" "$appDir"';
-      await Process.start(
-        'cmd.exe',
-        ['/c', command],
-        mode: ProcessStartMode.detached,
-        runInShell: false,
-      );
-      return null;
+      if (Platform.isWindows) return await _handOverWindows(file);
+      if (Platform.isMacOS) return await _handOverMac(file, dir);
+      return 'Automatic install is not supported on this platform.';
     } catch (e) {
       return e.toString();
+    }
+  }
+
+  /// Null if [file] is the build the release published.
+  static Future<String?> _verify(UpdateInfo info, File file) async {
+    final size = await file.length();
+    // A truncated download, or an error page saved as if it were the build,
+    // would otherwise be run. The release API already said how big the asset
+    // is, so a mismatch means this is not it.
+    if (info.assetSize > 0 && size != info.assetSize) {
+      return 'The download is incomplete.';
+    }
+    if (size < 1024 * 1024) return 'The download does not look like a CommandS build.';
+
+    // This ends by running what was just downloaded, so matching the checksum
+    // published with the release is worth the extra request: size alone would
+    // not notice a substituted file of the same length. Releases predating
+    // SHA256SUMS.txt have none to check against and are accepted on size
+    // alone, rather than being made impossible to update to.
+    final expected = await _expectedChecksum(info);
+    if (expected != null) {
+      final actual = sha256.convert(await file.readAsBytes()).toString();
+      if (actual.toLowerCase() != expected.toLowerCase()) {
+        return 'The download failed its checksum and was not run.';
+      }
+    }
+    return null;
+  }
+
+  static Future<String?> _handOverWindows(File installer) async {
+    final exe = Platform.resolvedExecutable;
+    // /SILENT shows a progress window but asks nothing; CLOSEAPPLICATIONS
+    // lets the installer replace this app's files once it exits; NORESTART
+    // keeps it from ever rebooting the machine. The installer's own "launch
+    // when done" step is skipped in silent mode, hence the explicit start.
+    final command = '"${installer.path}" /SILENT /CLOSEAPPLICATIONS /NORESTART '
+        '&& start "" "$exe"';
+    await Process.start('cmd.exe', ['/c', command],
+        mode: ProcessStartMode.detached);
+    return null;
+  }
+
+  static Future<String?> _handOverMac(File zip, Directory work) async {
+    final bundle = _runningMacBundle();
+    if (bundle == null) return 'Could not find the running CommandS.app.';
+
+    final extractTo = Directory('${work.path}/extracted');
+    await extractTo.create();
+    final unzip = await Process.run(
+        '/usr/bin/ditto', ['-x', '-k', zip.path, extractTo.path]);
+    if (unzip.exitCode != 0) return 'Could not unpack the update.';
+    final fresh = extractTo
+        .listSync()
+        .whereType<Directory>()
+        .where((d) => d.path.endsWith('.app'))
+        .toList();
+    if (fresh.length != 1) return 'The update does not contain an app.';
+
+    final script = File('${work.path}/swap.sh');
+    await script.writeAsString(_macSwapScript);
+    await Process.start(
+      '/bin/sh',
+      [script.path, '$pid', bundle, fresh.single.path, work.path],
+      mode: ProcessStartMode.detached,
+    );
+    return null;
+  }
+
+  /// Waits for the app to exit, swaps the bundles, and relaunches. Every step
+  /// that can fail leaves the old app in place: it is renamed aside, not
+  /// deleted, until the new one has actually been moved in, and renamed back
+  /// if that move fails. The quarantine attribute is cleared because the old
+  /// bundle had it cleared by hand (see the release notes) and the new one
+  /// should not bring the warning back.
+  static const _macSwapScript = r"""#!/bin/sh
+PID="$1"; OLD="$2"; NEW="$3"; WORK="$4"
+i=0
+while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 120 ]; do
+  sleep 0.25; i=$((i + 1))
+done
+BACKUP="$OLD.previous"
+rm -rf "$BACKUP"
+if ! mv "$OLD" "$BACKUP"; then
+  open "$OLD"; exit 1
+fi
+if mv "$NEW" "$OLD"; then
+  xattr -dr com.apple.quarantine "$OLD" 2>/dev/null
+  rm -rf "$BACKUP"
+else
+  mv "$BACKUP" "$OLD"
+fi
+open "$OLD"
+rm -rf "$WORK"
+""";
+
+  /// The `.app` this process is running from, or null if it is somewhere an
+  /// update cannot be written: inside App Translocation (a read-only copy
+  /// macOS makes of an app launched straight from Downloads), or in a folder
+  /// this user cannot write to.
+  static String? _runningMacBundle() {
+    // .../CommandS.app/Contents/MacOS/CommandS
+    final exe = File(Platform.resolvedExecutable);
+    final bundle = exe.parent.parent.parent;
+    if (!bundle.path.endsWith('.app')) return null;
+    if (bundle.path.contains('/AppTranslocation/')) return null;
+    final probe = File('${bundle.parent.path}/.commands_update_probe_$pid');
+    try {
+      probe.writeAsStringSync('');
+      probe.deleteSync();
+    } catch (_) {
+      return null;
+    }
+    return bundle.path;
+  }
+
+  /// Whether this copy can replace itself, decided before the user is offered
+  /// the button rather than discovered after they press it.
+  static Future<bool> _canSelfInstall() async {
+    if (Platform.isMacOS) return _runningMacBundle() != null;
+    if (!Platform.isWindows) return false;
+    // Only the installed copy. Run from the portable zip, the installer would
+    // put a new copy in %LOCALAPPDATA%\Programs and then relaunch the old
+    // portable one -- which would offer the same update again, forever.
+    try {
+      final result = await Process.run('reg', [
+        'query',
+        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{4C6F0A1E-7B2A-4E1B-9F0C-3A6D1C2E7B90}_is1',
+        '/v',
+        'InstallLocation',
+      ]);
+      if (result.exitCode != 0) return false;
+      final match = RegExp(r'InstallLocation\s+REG_SZ\s+(.+)')
+          .firstMatch(result.stdout as String);
+      if (match == null) return false;
+      String norm(String p) => p.trim().replaceAll('/', r'\')
+          .replaceFirst(RegExp(r'\\+$'), '').toLowerCase();
+      final installDir = norm(match.group(1)!);
+      final exeDir = norm(File(Platform.resolvedExecutable).parent.path);
+      return installDir == exeDir;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -300,8 +415,8 @@ class UpdateService {
     }
   }
 
-  /// Opens the release page in the user's browser — the macOS path, and the
-  /// fallback anywhere the installer could not be run.
+  /// Opens the release page in the user's browser -- for a copy that cannot
+  /// update itself, or after an automatic update failed.
   static Future<void> openReleasePage(UpdateInfo info) async {
     try {
       if (Platform.isWindows) {
@@ -353,6 +468,7 @@ class UpdateInfo {
     required this.assetUrl,
     required this.assetSize,
     required this.checksumsUrl,
+    required this.canSelfInstall,
   });
 
   /// The release tag, e.g. `v1.0.26`.
@@ -370,9 +486,10 @@ class UpdateInfo {
   /// Where the release published its `SHA256SUMS.txt`, if it did.
   final String? checksumsUrl;
 
-  /// Whether this app can install the update itself, rather than sending the
-  /// user to a download page.
-  bool get canSelfInstall => Platform.isWindows && assetUrl != null;
+  /// Whether this copy can install the update itself, rather than sending the
+  /// user to a download page: the installed copy on Windows, or an app bundle
+  /// in a folder this user can write to on macOS.
+  final bool canSelfInstall;
 
   String get sizeLabel {
     if (assetSize <= 0) return '';

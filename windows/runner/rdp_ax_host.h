@@ -125,8 +125,9 @@ class RdpAxHost : public IOleClientSite,
   bool ResizeSession(int width, int height, int dpi);
 
   void SetVisible(bool visible);
+  // Moves keyboard focus into the session. Deliberately does nothing unless
+  // this app is already the active one -- see the implementation.
   void Focus();
-  bool wants_focus() const { return visible_ && connected_; }
 
   // Ctrl+Alt+Del, which cannot be typed into a windowed session because the
   // local Secure Attention Sequence swallows it.

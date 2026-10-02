@@ -35,13 +35,6 @@ class RdpPlugin {
   // The app window was minimised or restored.
   void OnOwnerMinimized(bool minimized);
 
-  // The runner forces focus back to the Flutter view whenever the top-level
-  // window is activated. That is right for every tab except an RDP one, where
-  // it silently takes the keyboard away from a session the user is typing
-  // into, so the runner asks here first. Returns the window that should get
-  // focus, or nullptr to leave the default alone.
-  HWND FocusTarget() const;
-
   RdpPlugin(const RdpPlugin&) = delete;
   RdpPlugin& operator=(const RdpPlugin&) = delete;
 

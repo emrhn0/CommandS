@@ -131,6 +131,17 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           ls -la artifacts/*/
 
+          # The in-app updater downloads the Windows installer and runs it, so
+          # it checks the file against this list first (see
+          # lib/services/update_service.dart). Bare file names, one per line in
+          # sha256sum format, matching the asset names exactly.
+          FILES=(artifacts/windows-build/*.zip artifacts/windows-build/*Setup.exe artifacts/macos-build/*.zip)
+          : > SHA256SUMS.txt
+          for f in "${FILES[@]}"; do
+            printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f")" >> SHA256SUMS.txt
+          done
+          cat SHA256SUMS.txt
+
           PREV_TAG=$(git tag --list 'v*.*.*' --sort=-v:refname | grep -v "^${TAG}\$" | head -n1 || true)
           if [ -n "$PREV_TAG" ]; then
             CHANGELOG=$(git log --pretty=format:'- %s' "${PREV_TAG}..${TAG}" | grep -v '^- Merge ' || true)
@@ -160,7 +171,7 @@ jobs:
           "
 
           set +e
-          CREATE_OUT=$(gh release create "$TAG" artifacts/windows-build/*.zip artifacts/windows-build/*Setup.exe artifacts/macos-build/*.zip \
+          CREATE_OUT=$(gh release create "$TAG" "${FILES[@]}" SHA256SUMS.txt \
             --title "CommandS $TAG" \
             --notes "$NOTES" 2>&1)
           CREATE_STATUS=$?
@@ -169,7 +180,7 @@ jobs:
 
           if [ $CREATE_STATUS -ne 0 ]; then
             echo "gh release create failed (exit $CREATE_STATUS), trying upload+edit on an existing release..."
-            gh release upload "$TAG" artifacts/windows-build/*.zip artifacts/windows-build/*Setup.exe artifacts/macos-build/*.zip --clobber
+            gh release upload "$TAG" "${FILES[@]}" SHA256SUMS.txt --clobber
             gh release edit "$TAG" --title "CommandS $TAG" --notes "$NOTES"
           fi
 
