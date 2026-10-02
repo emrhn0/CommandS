@@ -252,15 +252,24 @@ class UpdateService {
   }
 
   static Future<String?> _handOverWindows(File installer) async {
-    final exe = Platform.resolvedExecutable;
-    // /SILENT shows a progress window but asks nothing; CLOSEAPPLICATIONS
-    // lets the installer replace this app's files once it exits; NORESTART
-    // keeps it from ever rebooting the machine. The installer's own "launch
-    // when done" step is skipped in silent mode, hence the explicit start.
-    final command = '"${installer.path}" /SILENT /CLOSEAPPLICATIONS /NORESTART '
-        '&& start "" "$exe"';
-    await Process.start('cmd.exe', ['/c', command],
-        mode: ProcessStartMode.detached);
+    // Started directly, never through `cmd /c`. The first version of this
+    // chained the installer and a relaunch in one cmd line, and cmd.exe strips
+    // the first and last quote of any /c argument that starts with one -- so
+    // with a quoted installer path the line was mangled, cmd failed with "The
+    // filename, directory name, or volume label syntax is incorrect", and the
+    // app quit with no installer running. Arguments passed to the installer
+    // directly are quoted the way every ordinary Win32 program parses them.
+    //
+    // /SILENT shows a progress window but asks nothing; CLOSEAPPLICATIONS lets
+    // the installer replace this app's files once it exits; NORESTART keeps it
+    // from ever rebooting the machine; RELAUNCH is this app's own switch (see
+    // windows/installer.iss), since the installer's usual "launch when done"
+    // step is skipped in silent mode and this process will be gone by then.
+    await Process.start(
+      installer.path,
+      const ['/SILENT', '/CLOSEAPPLICATIONS', '/NORESTART', '/RELAUNCH'],
+      mode: ProcessStartMode.detached,
+    );
     return null;
   }
 

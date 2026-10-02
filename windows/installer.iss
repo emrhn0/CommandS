@@ -49,6 +49,19 @@ Name: "{userdesktop}\CommandS"; Filename: "{app}\commands.exe"
 
 [Run]
 Filename: "{app}\commands.exe"; Description: "Launch CommandS"; Flags: nowait postinstall skipifsilent
+; The in-app updater runs this installer silently and then has nothing left to
+; relaunch the app with: it had to exit for its files to be replaced, and the
+; entry above is skipped in silent mode. /RELAUNCH asks the installer to do it.
+; Started from here rather than from a `cmd /c "... && start ..."` chain in the
+; app, because cmd.exe's quote handling mangles any such line that begins with
+; a quoted path -- the updater shipped that way and never ran the installer.
+Filename: "{app}\commands.exe"; Flags: nowait; Check: RelaunchRequested
+
+[Code]
+function RelaunchRequested: Boolean;
+begin
+  Result := WizardSilent and (Pos('/RELAUNCH', UpperCase(GetCmdTail)) > 0);
+end;
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
