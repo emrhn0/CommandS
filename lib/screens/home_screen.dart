@@ -1,20 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/app_state.dart';
 import '../widgets/connection_tree.dart';
 import '../widgets/custom_title_bar.dart';
-import '../widgets/import_export_dialog.dart';
 import '../widgets/new_connection_dialog.dart';
 import '../widgets/quick_connect_bar.dart';
-import '../widgets/terminal_appearance_dialog.dart';
 import '../widgets/terminal_tabs.dart';
+import '../widgets/update_dialog.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
     return Scaffold(
       body: Column(
         children: [
@@ -33,19 +30,17 @@ class HomeScreen extends StatelessWidget {
                           border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            _HeaderIcon(icon: Icons.file_upload_outlined, tooltip: 'Export', onTap: () => showExportDialog(context)),
-                            _HeaderIcon(icon: Icons.file_download_outlined, tooltip: 'Import', onTap: () => showImportDialog(context)),
+                            // Only appears once a newer release has been found.
+                            const UpdateButton(),
+                            const Spacer(),
+                            // Theme, terminal colours, import/export and
+                            // updates all live on the Settings page now,
+                            // instead of four unlabelled icons here.
                             _HeaderIcon(
-                              icon: Icons.palette_outlined,
-                              tooltip: 'Terminal appearance',
-                              onTap: () => showTerminalAppearanceDialog(context),
-                            ),
-                            _HeaderIcon(
-                              icon: app.themeMode == ThemeMode.dark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
-                              tooltip: 'Toggle theme',
-                              onTap: app.toggleTheme,
+                              icon: Icons.settings_outlined,
+                              tooltip: 'Settings',
+                              onTap: () => showSettings(context),
                             ),
                           ],
                         ),

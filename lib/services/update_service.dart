@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
@@ -11,8 +12,9 @@ import '../app_version.dart';
 /// The repository is public, so the releases API is reachable without a token
 /// — which matters, because there is no credential this app could ship that
 /// wouldn't also be handed to everyone who installs it. Unauthenticated
-/// requests are rate-limited per IP (60/hour); one check per launch, with a
-/// floor between checks, stays far inside that.
+/// requests are rate-limited per IP (60/hour); one check per launch stays well
+/// inside that even for an office full of people behind one address, and a
+/// check that does get refused fails silently like any other.
 class UpdateService {
   static const _owner = 'emrhn0';
   static const _repo = 'CommandS';
@@ -27,65 +29,69 @@ class UpdateService {
   static const _checksumsAsset = 'SHA256SUMS.txt';
 
   static const _kSkippedVersion = 'commands.update.skippedVersion';
-  static const _kLastCheck = 'commands.update.lastCheckMs';
 
-  /// Only one check per launch anyway; this stops a user who restarts the app
-  /// repeatedly from spending the hour's unauthenticated quota.
-  static const _minCheckInterval = Duration(hours: 4);
+  /// The newer release found at launch, if any. Outlives the prompt: someone
+  /// who answered "Remind me later" can still update from the button in the
+  /// sidebar header without restarting the app to get the prompt back.
+  static final available = ValueNotifier<UpdateInfo?>(null);
 
-  /// Looks for a release newer than [appVersion].
+  /// Looks for a release newer than [appVersion]. Runs on every launch -- an
+  /// earlier version only checked once every four hours, so "Remind me later"
+  /// followed by a restart quietly did not remind.
   ///
-  /// Returns null when there is nothing to offer — already current, the user
-  /// chose to skip this version, checked too recently, or the network/API
-  /// didn't cooperate. A failed update check is never worth interrupting
-  /// someone over, so every failure here is silent.
-  static Future<UpdateInfo?> check({bool force = false}) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (!force) {
-        final last = prefs.getInt(_kLastCheck) ?? 0;
-        final since = DateTime.now().millisecondsSinceEpoch - last;
-        if (since < _minCheckInterval.inMilliseconds) return null;
-      }
+  /// Returns null when there is nothing newer, or the network/API didn't
+  /// cooperate: a failed update check is never worth interrupting someone
+  /// over, so every failure here is silent. A version the user chose to skip
+  /// is still returned; whether to prompt about it is [isSkipped]'s question.
+  static Future<UpdateInfo?> check() async => (await checkNow()).info;
 
+  /// [check], but distinguishing "nothing newer" from "could not find out",
+  /// for the Settings page's "Check for updates", which has to tell the user
+  /// which one happened.
+  static Future<UpdateCheck> checkNow() async {
+    try {
       final release = await _fetchJson(_latestUrl);
-      if (release == null) return null;
-      await prefs.setInt(_kLastCheck, DateTime.now().millisecondsSinceEpoch);
+      if (release == null) return const UpdateCheck.failed();
 
       final tag = release['tag_name'] as String?;
-      if (tag == null || tag.isEmpty) return null;
-      if (release['draft'] == true || release['prerelease'] == true) return null;
-      if (compareVersions(tag, appVersion) <= 0) return null;
-      if (!force && prefs.getString(_kSkippedVersion) == tag) return null;
+      if (tag == null || tag.isEmpty) return const UpdateCheck.failed();
+      if (release['draft'] == true || release['prerelease'] == true) {
+        return const UpdateCheck.upToDate();
+      }
+      if (compareVersions(tag, appVersion) <= 0) return const UpdateCheck.upToDate();
 
       final assets = (release['assets'] as List?) ?? const [];
-      final asset = _pickAsset(assets);
+      final plan = await _plan(assets);
 
-      return UpdateInfo(
+      return UpdateCheck.available(UpdateInfo(
         version: tag,
         releaseUrl: release['html_url'] as String? ??
             'https://github.com/$_owner/$_repo/releases/latest',
         notes: (release['body'] as String? ?? '').trim(),
-        assetName: asset?.name,
-        assetUrl: asset?.url,
-        assetSize: asset?.size ?? 0,
+        assetName: plan?.asset.name,
+        assetUrl: plan?.asset.url,
+        assetSize: plan?.asset.size ?? 0,
         checksumsUrl: _findAssetUrl(assets, _checksumsAsset),
-        canSelfInstall: asset != null && await _canSelfInstall(),
-      );
+        method: plan?.method,
+      ));
     } catch (_) {
-      return null;
+      return const UpdateCheck.failed();
     }
   }
 
-  /// Remembers that the user does not want to be asked about [version] again.
-  /// A later release still prompts.
+  /// Whether the user asked not to be prompted about [version].
+  static Future<bool> isSkipped(String version) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_kSkippedVersion) == version;
+  }
+
+  /// Remembers that the user does not want to be prompted about [version] at
+  /// launch again. A later release still prompts.
   static Future<void> skip(String version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kSkippedVersion, version);
   }
 
-  /// The build for this platform: the installer on Windows (per-user, so it
-  /// never raises a UAC prompt), the zipped app on macOS.
   static String? _findAssetUrl(List<dynamic> assets, String name) {
     for (final raw in assets) {
       if (raw is! Map) continue;
@@ -96,20 +102,49 @@ class UpdateService {
     return null;
   }
 
-  static _Asset? _pickAsset(List<dynamic> assets) {
-    bool matches(String name) {
-      final lower = name.toLowerCase();
-      if (Platform.isWindows) return lower.endsWith('setup.exe');
-      if (Platform.isMacOS) return lower.endsWith('macos.zip');
-      return false;
+  /// How this copy will update itself, and which build it needs for that.
+  ///
+  /// Every copy updates in place -- there is deliberately no "go to the
+  /// download page" outcome for a release that published the builds it should
+  /// have. Only a release missing this platform's build returns null.
+  ///
+  /// * Windows, installed copy: run the installer.
+  /// * Windows, anywhere else (the portable zip, unpacked wherever the user
+  ///   put it): replace the files in that folder with the new portable build.
+  ///   If that folder cannot be written to, fall back to the installer, which
+  ///   installs per-user and relaunches the installed copy.
+  /// * macOS: replace the running app, or put the new one in Applications if
+  ///   the running one is somewhere it cannot be replaced (see [_macTarget]).
+  static Future<_Plan?> _plan(List<dynamic> assets) async {
+    _Asset? find(String suffix) {
+      for (final raw in assets) {
+        if (raw is! Map) continue;
+        final name = raw['name'] as String?;
+        final url = raw['browser_download_url'] as String?;
+        if (name == null || url == null) continue;
+        if (!name.toLowerCase().endsWith(suffix)) continue;
+        return _Asset(name, url, (raw['size'] as num?)?.toInt() ?? 0);
+      }
+      return null;
     }
 
-    for (final raw in assets) {
-      if (raw is! Map) continue;
-      final name = raw['name'] as String?;
-      final url = raw['browser_download_url'] as String?;
-      if (name == null || url == null || !matches(name)) continue;
-      return _Asset(name, url, (raw['size'] as num?)?.toInt() ?? 0);
+    if (Platform.isWindows) {
+      final installer = find('setup.exe');
+      final portable = find('windows_portable.zip');
+      if (installer != null && await _isInstalledCopy()) {
+        return _Plan(UpdateMethod.windowsInstaller, installer);
+      }
+      if (portable != null && _canWriteNextToExe()) {
+        return _Plan(UpdateMethod.windowsPortable, portable);
+      }
+      if (installer != null) return _Plan(UpdateMethod.windowsInstaller, installer);
+      return null;
+    }
+    if (Platform.isMacOS) {
+      final app = find('macos.zip');
+      if (app != null && _macTarget() != null) {
+        return _Plan(UpdateMethod.macApp, app);
+      }
     }
     return null;
   }
@@ -182,32 +217,24 @@ class UpdateService {
     }
   }
 
-  /// Downloads [info]'s build for this platform and hands over to it.
-  ///
-  /// Windows: runs the published installer. It installs per-user into
-  /// `%LOCALAPPDATA%\Programs\CommandS`, so it asks for no elevation, and it is
-  /// started through a detached `cmd` that waits for it and then relaunches
-  /// the app -- this process has to exit before its own files can be replaced,
-  /// so it cannot do the relaunch itself.
-  ///
-  /// macOS: unpacks the new `CommandS.app` next to the running one and swaps
-  /// them once this process has exited, through a detached shell script. The
-  /// old bundle is moved aside rather than deleted until the new one is in
-  /// place, and moved back if the swap fails, so a failed update leaves the
-  /// working app where it was.
-  ///
-  /// Either way the download is checked against the size the release API
-  /// reported and the checksum the release published before anything runs.
+  /// Downloads [info]'s build for this platform and hands over to it -- see
+  /// [_plan] for which build and how. The download is checked against the size
+  /// the release API reported and the checksum the release published before
+  /// anything is run or replaced.
   ///
   /// [onProgress] reports 0..1, or null when the server sends no length.
   /// Returns an error string, or null once the update has been handed off --
-  /// at which point the caller must quit the app.
+  /// at which point the caller must quit the app, since every method finishes
+  /// by replacing this app's own files.
   static Future<String?> downloadAndInstall(
     UpdateInfo info, {
     void Function(double? progress)? onProgress,
   }) async {
-    if (!info.canSelfInstall) return 'This copy of CommandS cannot update itself.';
-    final url = info.assetUrl!;
+    final method = info.method;
+    final url = info.assetUrl;
+    if (method == null || url == null) {
+      return 'This release has no ${Platform.isMacOS ? 'macOS' : 'Windows'} build.';
+    }
     try {
       final dir = await Directory.systemTemp.createTemp('commands_update_');
       final sep = Platform.pathSeparator;
@@ -217,9 +244,14 @@ class UpdateService {
       final problem = await _verify(info, file);
       if (problem != null) return problem;
 
-      if (Platform.isWindows) return await _handOverWindows(file);
-      if (Platform.isMacOS) return await _handOverMac(file, dir);
-      return 'Automatic install is not supported on this platform.';
+      switch (method) {
+        case UpdateMethod.windowsInstaller:
+          return await _handOverWindows(file);
+        case UpdateMethod.windowsPortable:
+          return await _handOverWindowsPortable(file, dir);
+        case UpdateMethod.macApp:
+          return await _handOverMac(file, dir);
+      }
     } catch (e) {
       return e.toString();
     }
@@ -273,9 +305,75 @@ class UpdateService {
     return null;
   }
 
+  static Future<String?> _handOverWindowsPortable(File zip, Directory work) async {
+    final target = File(Platform.resolvedExecutable).parent.path;
+    final sep = Platform.pathSeparator;
+    final extractTo = Directory('${work.path}${sep}extracted');
+    await extractTo.create();
+    // Windows' own bsdtar reads zip (Windows 10 1803 and later), so no archive
+    // package is needed for one extraction. Named by full path: a Git or
+    // MSYS `tar` earlier on PATH is GNU tar, which does not.
+    final systemRoot = Platform.environment['SystemRoot'] ?? r'C:\Windows';
+    final unzip = await Process.run(
+        '$systemRoot${sep}System32${sep}tar.exe', ['-xf', zip.path, '-C', extractTo.path]);
+    if (unzip.exitCode != 0) return 'Could not unpack the update.';
+    // The zip holds a single CommandS_<version>_windows_portable folder.
+    final folders = extractTo.listSync().whereType<Directory>().toList();
+    if (folders.length != 1 ||
+        !File('${folders.single.path}${sep}commands.exe').existsSync()) {
+      return 'The update does not contain CommandS.';
+    }
+
+    final script = File('${work.path}${sep}update.ps1');
+    await script.writeAsString(_windowsPortableScript);
+    // powershell -File takes each following argument as one parameter value,
+    // so the paths travel as plain argv entries -- no shell quoting to get
+    // wrong, unlike the `cmd /c` line the first Windows updater was undone by.
+    //
+    // Started in the normal mode, not detached, on purpose. Detached means
+    // DETACHED_PROCESS, which gives a console program no console at all, and
+    // powershell.exe started that way exits without running its script --
+    // measured: three detached variants never ran, while a GUI program
+    // started the identical way survived the launcher exiting. Normal mode
+    // gives it a console of its own (hidden by -WindowStyle), and the process
+    // keeps running after this one exits, which is all the hand-off needs.
+    await Process.start(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-File', script.path,
+        '-ProcessId', '$pid',
+        '-Source', folders.single.path,
+        '-Target', target,
+        '-Backup', '${work.path}${sep}previous',
+      ],
+    );
+    return null;
+  }
+
+  /// Waits for the app to exit, copies the new build over the old one and
+  /// relaunches it. The old files are copied aside first and copied back if
+  /// replacing them fails part-way, so a failed update leaves a working app.
+  static const _windowsPortableScript = r"""
+param([int]$ProcessId, [string]$Source, [string]$Target, [string]$Backup)
+$ErrorActionPreference = 'Stop'
+try { Wait-Process -Id $ProcessId -Timeout 60 -ErrorAction SilentlyContinue } catch {}
+Start-Sleep -Milliseconds 500
+try {
+  New-Item -ItemType Directory -Force -Path $Backup | Out-Null
+  Copy-Item -Path (Join-Path $Target '*') -Destination $Backup -Recurse -Force
+  Copy-Item -Path (Join-Path $Source '*') -Destination $Target -Recurse -Force
+} catch {
+  try { Copy-Item -Path (Join-Path $Backup '*') -Destination $Target -Recurse -Force } catch {}
+}
+Start-Process -FilePath (Join-Path $Target 'commands.exe')
+""";
+
   static Future<String?> _handOverMac(File zip, Directory work) async {
-    final bundle = _runningMacBundle();
-    if (bundle == null) return 'Could not find the running CommandS.app.';
+    final target = _macTarget();
+    if (target == null) return 'There is nowhere this user can install the update.';
 
     final extractTo = Directory('${work.path}/extracted');
     await extractTo.create();
@@ -293,18 +391,19 @@ class UpdateService {
     await script.writeAsString(_macSwapScript);
     await Process.start(
       '/bin/sh',
-      [script.path, '$pid', bundle, fresh.single.path, work.path],
+      [script.path, '$pid', target, fresh.single.path, work.path],
       mode: ProcessStartMode.detached,
     );
     return null;
   }
 
-  /// Waits for the app to exit, swaps the bundles, and relaunches. Every step
-  /// that can fail leaves the old app in place: it is renamed aside, not
-  /// deleted, until the new one has actually been moved in, and renamed back
-  /// if that move fails. The quarantine attribute is cleared because the old
-  /// bundle had it cleared by hand (see the release notes) and the new one
-  /// should not bring the warning back.
+  /// Waits for the app to exit, puts the new bundle at OLD, and opens it. If
+  /// something is already at OLD it is renamed aside, not deleted, until the
+  /// new one has actually been moved in, and renamed back if that fails -- so
+  /// a failed update leaves the working app where it was. OLD may not exist
+  /// yet, when the update is going into Applications rather than over the
+  /// running copy. The quarantine attribute is cleared so the new bundle does
+  /// not bring back the warning the user already dismissed for the old one.
   static const _macSwapScript = r"""#!/bin/sh
 PID="$1"; OLD="$2"; NEW="$3"; WORK="$4"
 i=0
@@ -313,47 +412,62 @@ while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 120 ]; do
 done
 BACKUP="$OLD.previous"
 rm -rf "$BACKUP"
-if ! mv "$OLD" "$BACKUP"; then
-  open "$OLD"; exit 1
+if [ -e "$OLD" ]; then
+  if ! mv "$OLD" "$BACKUP"; then
+    open "$OLD"; exit 1
+  fi
 fi
 if mv "$NEW" "$OLD"; then
   xattr -dr com.apple.quarantine "$OLD" 2>/dev/null
   rm -rf "$BACKUP"
-else
+elif [ -e "$BACKUP" ]; then
   mv "$BACKUP" "$OLD"
 fi
 open "$OLD"
 rm -rf "$WORK"
 """;
 
-  /// The `.app` this process is running from, or null if it is somewhere an
-  /// update cannot be written: inside App Translocation (a read-only copy
-  /// macOS makes of an app launched straight from Downloads), or in a folder
-  /// this user cannot write to.
-  static String? _runningMacBundle() {
-    // .../CommandS.app/Contents/MacOS/CommandS
-    final exe = File(Platform.resolvedExecutable);
-    final bundle = exe.parent.parent.parent;
-    if (!bundle.path.endsWith('.app')) return null;
-    if (bundle.path.contains('/AppTranslocation/')) return null;
-    final probe = File('${bundle.parent.path}/.commands_update_probe_$pid');
-    try {
-      probe.writeAsStringSync('');
-      probe.deleteSync();
-    } catch (_) {
-      return null;
+  /// Where the new `.app` goes on macOS.
+  ///
+  /// Over the running copy when that is possible. When it is not -- the app
+  /// was opened straight from Downloads, so macOS is running it from a
+  /// read-only App Translocation copy, or it sits in a folder this user
+  /// cannot write to -- into /Applications, or ~/Applications for a user who
+  /// cannot write there either. Null only if none of those is writable.
+  static String? _macTarget() {
+    bool writable(String dir) {
+      final probe = File('$dir/.commands_update_probe_$pid');
+      try {
+        probe.writeAsStringSync('');
+        probe.deleteSync();
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
-    return bundle.path;
+
+    // .../CommandS.app/Contents/MacOS/CommandS
+    final bundle = File(Platform.resolvedExecutable).parent.parent.parent;
+    if (bundle.path.endsWith('.app') &&
+        !bundle.path.contains('/AppTranslocation/') &&
+        writable(bundle.parent.path)) {
+      return bundle.path;
+    }
+    if (writable('/Applications')) return '/Applications/CommandS.app';
+    final home = Platform.environment['HOME'];
+    if (home != null) {
+      final userApps = Directory('$home/Applications');
+      try {
+        userApps.createSync(recursive: true);
+      } catch (_) {}
+      if (writable(userApps.path)) return '${userApps.path}/CommandS.app';
+    }
+    return null;
   }
 
-  /// Whether this copy can replace itself, decided before the user is offered
-  /// the button rather than discovered after they press it.
-  static Future<bool> _canSelfInstall() async {
-    if (Platform.isMacOS) return _runningMacBundle() != null;
-    if (!Platform.isWindows) return false;
-    // Only the installed copy. Run from the portable zip, the installer would
-    // put a new copy in %LOCALAPPDATA%\Programs and then relaunch the old
-    // portable one -- which would offer the same update again, forever.
+  /// Whether this is the copy the installer put in place -- the one the
+  /// installer's update will replace and relaunch.
+  static Future<bool> _isInstalledCopy() async {
     try {
       final result = await Process.run('reg', [
         'query',
@@ -370,6 +484,19 @@ rm -rf "$WORK"
       final installDir = norm(match.group(1)!);
       final exeDir = norm(File(Platform.resolvedExecutable).parent.path);
       return installDir == exeDir;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Whether the folder this copy runs from can have its files replaced.
+  static bool _canWriteNextToExe() {
+    final dir = File(Platform.resolvedExecutable).parent.path;
+    final probe = File('$dir${Platform.pathSeparator}.commands_update_probe_$pid');
+    try {
+      probe.writeAsStringSync('');
+      probe.deleteSync();
+      return true;
     } catch (_) {
       return false;
     }
@@ -424,8 +551,9 @@ rm -rf "$WORK"
     }
   }
 
-  /// Opens the release page in the user's browser -- for a copy that cannot
-  /// update itself, or after an automatic update failed.
+  /// Opens the release page in the user's browser -- only offered after an
+  /// automatic update has failed, or for a release missing this platform's
+  /// build.
   static Future<void> openReleasePage(UpdateInfo info) async {
     try {
       if (Platform.isWindows) {
@@ -467,6 +595,32 @@ class _Asset {
   final int size;
 }
 
+class _Plan {
+  const _Plan(this.method, this.asset);
+  final UpdateMethod method;
+  final _Asset asset;
+}
+
+/// How a copy replaces itself. See [UpdateService._plan].
+enum UpdateMethod { windowsInstaller, windowsPortable, macApp }
+
+/// The outcome of asking GitHub for the latest release.
+class UpdateCheck {
+  const UpdateCheck.available(UpdateInfo this.info) : failed = false;
+  const UpdateCheck.upToDate()
+      : info = null,
+        failed = false;
+  const UpdateCheck.failed()
+      : info = null,
+        failed = true;
+
+  /// The newer release, when there is one.
+  final UpdateInfo? info;
+
+  /// True when the question could not be answered (offline, rate-limited, ...).
+  final bool failed;
+}
+
 /// A release newer than the running build.
 class UpdateInfo {
   const UpdateInfo({
@@ -477,15 +631,44 @@ class UpdateInfo {
     required this.assetUrl,
     required this.assetSize,
     required this.checksumsUrl,
-    required this.canSelfInstall,
+    required this.method,
   });
 
   /// The release tag, e.g. `v1.0.26`.
   final String version;
   final String releaseUrl;
 
-  /// The release notes, as written on GitHub.
+  /// The release notes, as written on GitHub (Markdown).
   final String notes;
+
+  /// [notes] as plain text, for showing inside the app.
+  ///
+  /// The notes are written for the GitHub release page, so shown verbatim
+  /// they came through as raw Markdown -- `## What's new`, `**bold**` -- and
+  /// ended in download instructions that make no sense to someone who is
+  /// about to be updated automatically. This keeps what changed and drops
+  /// the rest.
+  String get plainNotes {
+    final out = <String>[];
+    for (final raw in notes.split(RegExp(r'\r?\n'))) {
+      final line = raw.trimRight();
+      // Everything from the per-platform download sections on is for people
+      // installing by hand.
+      if (RegExp(r'^#{1,6}\s*(windows|macos)\b', caseSensitive: false).hasMatch(line)) {
+        break;
+      }
+      if (line.trim().startsWith('```')) continue;
+      var text = line
+          .replaceFirst(RegExp(r'^#{1,6}\s*'), '')
+          .replaceFirst(RegExp(r'^>\s?'), '')
+          .replaceAll('**', '')
+          .replaceAll('`', '');
+      text = text.replaceFirstMapped(
+          RegExp(r'^(\s*)[-*]\s+'), (m) => '${m[1]}• ');
+      out.add(text);
+    }
+    return out.join('\n').replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+  }
 
   /// The build for this platform, if the release published one.
   final String? assetName;
@@ -495,10 +678,11 @@ class UpdateInfo {
   /// Where the release published its `SHA256SUMS.txt`, if it did.
   final String? checksumsUrl;
 
-  /// Whether this copy can install the update itself, rather than sending the
-  /// user to a download page: the installed copy on Windows, or an app bundle
-  /// in a folder this user can write to on macOS.
-  final bool canSelfInstall;
+  /// How this copy will install the update; null only when the release did
+  /// not publish a build for this platform.
+  final UpdateMethod? method;
+
+  bool get canSelfInstall => method != null;
 
   String get sizeLabel {
     if (assetSize <= 0) return '';
