@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import '../app_version.dart';
 import '../services/update_service.dart';
 
-/// Checks for a new release in the background and, if there is one, asks
-/// whether to install it.
+/// Checks for a new release in the background on every launch and, if there
+/// is one, asks whether to install it -- unless the user chose to skip that
+/// version, in which case only [UpdateButton] offers it.
 ///
 /// Wrapped around the app's home screen rather than run from `main()` so the
 /// prompt has a [Navigator] to open on and the window is already up: a dialog
@@ -38,11 +39,27 @@ class _UpdateGateState extends State<UpdateGate> {
     await Future.delayed(const Duration(seconds: 3));
     final info = await UpdateService.check();
     if (!mounted || info == null) return;
+    UpdateService.available.value = info;
+    if (await UpdateService.isSkipped(info.version)) return;
+    if (!mounted) return;
     await showUpdateDialog(context, info);
   }
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// Downloads and installs [info], then quits so the update can replace this
+/// app's files; the update relaunches it. Only returns if something went
+/// wrong, with the reason. Shared by the launch prompt and the Settings page,
+/// which offer the same update in two places.
+Future<String?> installUpdate(
+  UpdateInfo info, {
+  void Function(double? progress)? onProgress,
+}) async {
+  final error = await UpdateService.downloadAndInstall(info, onProgress: onProgress);
+  if (error != null) return error;
+  exit(0);
 }
 
 /// Shows the "a new version is available" prompt for [info].
@@ -73,23 +90,17 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       _error = null;
       _progress = 0;
     });
-    final error = await UpdateService.downloadAndInstall(
+    final error = await installUpdate(
       widget.info,
       onProgress: (p) {
         if (mounted) setState(() => _progress = p);
       },
     );
     if (!mounted) return;
-    if (error != null) {
-      setState(() {
-        _busy = false;
-        _error = error;
-      });
-      return;
-    }
-    // The installer is running and is waiting for this process to let go of
-    // its own files; it relaunches the new build once it is done.
-    exit(0);
+    setState(() {
+      _busy = false;
+      _error = error;
+    });
   }
 
   Future<void> _openPage() async {
@@ -101,7 +112,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   Widget build(BuildContext context) {
     final info = widget.info;
     final dim = Theme.of(context).textTheme.bodySmall?.color;
-    final notes = info.notes;
+    final notes = info.plainNotes;
     return AlertDialog(
       title: Text('CommandS ${info.version} is available'),
       content: ConstrainedBox(
@@ -172,7 +183,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Later'),
+                child: const Text('Remind me later'),
               ),
               if (info.canSelfInstall && _error == null)
                 ElevatedButton(
@@ -185,6 +196,56 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                   child: const Text('Open download page'),
                 ),
             ],
+    );
+  }
+}
+
+/// The way back to an update after "Remind me later" (or "Skip"), without
+/// restarting the app to get the prompt again. Lives in the sidebar header and
+/// takes no space at all until there is something to offer.
+class UpdateButton extends StatelessWidget {
+  const UpdateButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<UpdateInfo?>(
+      valueListenable: UpdateService.available,
+      builder: (context, info, _) {
+        if (info == null) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        return Tooltip(
+          message: 'CommandS ${info.version} is available',
+          child: Material(
+            // Filled, unlike everything else in the header: it is the one
+            // control there that is not always present, and it should be
+            // noticed the first time it is.
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(4),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () => showUpdateDialog(context, info),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.system_update_alt, size: 13, color: scheme.onPrimary),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Update to ${info.version}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
