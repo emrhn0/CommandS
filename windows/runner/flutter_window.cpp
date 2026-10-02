@@ -90,20 +90,6 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
-    case WM_ACTIVATE:
-      // Win32Window's own handler hands focus to the Flutter view on every
-      // activation. That is right for a terminal tab, but it silently takes
-      // the keyboard away from an RDP session the user was typing into -- the
-      // session is a separate child window, so Flutter having focus means
-      // keystrokes go nowhere the remote host can see. Give focus back to the
-      // visible session instead, and only then fall through to the default.
-      if (wparam != WA_INACTIVE && rdp_plugin_) {
-        if (const HWND target = rdp_plugin_->FocusTarget()) {
-          SetFocus(target);
-          return 0;
-        }
-      }
-      break;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
