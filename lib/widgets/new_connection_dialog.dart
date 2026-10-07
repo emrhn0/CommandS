@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import 'folder_picker.dart';
 
 /// RDM-style session popup — connections are never edited in an inline
 /// panel, only through this dialog. Opened from the "+ New Connection"
@@ -192,13 +193,10 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                 ),
               ),
               const SizedBox(height: 8),
-              DropdownButtonFormField<String?>(
-                initialValue: _folderId,
-                decoration: const InputDecoration(labelText: 'Folder'),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('(none)')),
-                  ...app.folders.map((f) => DropdownMenuItem(value: f.id, child: Text(f.name))),
-                ],
+              FolderField(
+                folders: app.folders,
+                connections: app.connections,
+                value: _folderId,
                 onChanged: (v) => setState(() => _folderId = v),
               ),
               if (_protocol == ConnectionProtocol.rdp) ...[

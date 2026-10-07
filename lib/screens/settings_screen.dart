@@ -336,7 +336,7 @@ class _TerminalColors extends StatelessWidget {
           child: Text(
             'admin@core-sw1:~\$ show ip interface brief\n'
             'Interface        IP-Address      Status   Protocol\n'
-            'Vlan10           192.0.2.21      up       up\n'
+            'Vlan10           192.0.2.1       up       up\n'
             'Gi1/0/1          unassigned      up       up',
             style: TextStyle(color: fg, fontFamily: mono, fontSize: 13, height: 1.5),
           ),

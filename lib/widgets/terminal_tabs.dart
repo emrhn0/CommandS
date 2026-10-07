@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
@@ -13,6 +11,8 @@ import '../services/rdp_session.dart';
 import '../services/session_controller.dart';
 import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
+import 'split_view_dialog.dart';
+import 'terminal_clipboard.dart';
 
 class TerminalTabsArea extends StatelessWidget {
   const TerminalTabsArea({super.key});
@@ -66,24 +66,60 @@ class _TabBarRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final visible = tabIdsInLayout(app.paneLayout);
+    final split = visible.length > 1;
     return SizedBox(
       height: 36,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: app.tabs.length,
-        itemBuilder: (ctx, i) {
-          final tab = app.tabs[i];
-          final active = visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex);
-          return _TabChip(
-            tabId: tab.id,
-            title: tab.controller.tabTitle ?? tab.controller.host,
-            active: active,
-            isRdp: tab.controller is RdpSessionController || tab.controller is MacRdpSessionController,
-            statusStream: tab.controller.statusStream,
-            onTap: () => app.setActiveTab(i),
-            onClose: () => app.closeTab(i),
-          );
-        },
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: app.tabs.length,
+              itemBuilder: (ctx, i) {
+                final tab = app.tabs[i];
+                final active = visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex);
+                return _TabChip(
+                  title: tab.controller.tabTitle ?? tab.controller.host,
+                  active: active,
+                  isRdp: tab.controller is RdpSessionController || tab.controller is MacRdpSessionController,
+                  statusStream: tab.controller.statusStream,
+                  onTap: () => app.setActiveTab(i),
+                  onClose: () => app.closeTab(i),
+                );
+              },
+            ),
+          ),
+          _SplitViewButton(active: split, enabled: app.tabs.length > 1),
+        ],
+      ),
+    );
+  }
+}
+
+/// Opens Split view. Highlighted while the tab area is split, so it is also
+/// where to look to undo one.
+class _SplitViewButton extends StatelessWidget {
+  const _SplitViewButton({required this.active, required this.enabled});
+  final bool active;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: enabled ? 'Split view' : 'Open a second tab to split the view',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: TextButton.icon(
+          onPressed: enabled ? () => showSplitViewDialog(context) : null,
+          style: TextButton.styleFrom(
+            backgroundColor: active ? theme.colorScheme.primary.withValues(alpha: 0.10) : null,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            visualDensity: VisualDensity.compact,
+          ),
+          icon: const Icon(Icons.vertical_split_outlined, size: 16),
+          label: const Text('Split view', style: TextStyle(fontSize: 12)),
+        ),
       ),
     );
   }
@@ -91,7 +127,6 @@ class _TabBarRow extends StatelessWidget {
 
 class _TabChip extends StatelessWidget {
   const _TabChip({
-    required this.tabId,
     required this.title,
     required this.active,
     required this.isRdp,
@@ -100,7 +135,6 @@ class _TabChip extends StatelessWidget {
     required this.onClose,
   });
 
-  final String tabId;
   final String title;
   final bool active;
   final bool isRdp;
@@ -108,7 +142,7 @@ class _TabChip extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClose;
 
-  Widget _chip(BuildContext context, {bool dragging = false}) {
+  Widget _chip(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       constraints: const BoxConstraints(minWidth: 120, maxWidth: 200),
@@ -117,11 +151,11 @@ class _TabChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: active ? scheme.surface : Colors.transparent,
         border: Border(
-          bottom: BorderSide(color: active && !dragging ? scheme.primary : Colors.transparent, width: 2),
+          bottom: BorderSide(color: active ? scheme.primary : Colors.transparent, width: 2),
         ),
       ),
       child: Row(
-        mainAxisSize: dragging ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.max,
         children: [
           StreamBuilder<SessionStatus>(
             stream: statusStream,
@@ -140,40 +174,23 @@ class _TabChip extends StatelessWidget {
           const SizedBox(width: 6),
           Icon(isRdp ? Icons.desktop_windows_outlined : Icons.terminal, size: 12),
           const SizedBox(width: 4),
-          if (dragging)
-            Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))
-          else ...[
-            Expanded(
-              child: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+          Expanded(
+            child: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+          ),
+          InkWell(
+            onTap: onClose,
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(Icons.close, size: 14),
             ),
-            InkWell(
-              onTap: onClose,
-              child: const Padding(
-                padding: EdgeInsets.all(2),
-                child: Icon(Icons.close, size: 14),
-              ),
-            ),
-          ],
+          ),
         ],
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    // Drag a tab onto the terminal area (Termius/Windows-Snap style) to tile
-    // it alongside whatever pane it's dropped on.
-    return Draggable<String>(
-      data: tabId,
-      feedback: Material(
-        color: Colors.transparent,
-        elevation: 4,
-        child: Opacity(opacity: 0.9, child: _chip(context, dragging: true)),
-      ),
-      childWhenDragging: Opacity(opacity: 0.35, child: _chip(context)),
-      child: GestureDetector(onTap: onTap, child: _chip(context)),
-    );
-  }
+  Widget build(BuildContext context) => GestureDetector(onTap: onTap, child: _chip(context));
 }
 
 /// Renders the tiling tree: a single pane, or a resizable split of two
@@ -197,10 +214,7 @@ class _PaneTreeView extends StatelessWidget {
         }
       }
       if (tab == null) return const SizedBox.shrink();
-      return _DropZone(
-        tabId: n.tabId,
-        child: _SessionPane(key: ValueKey(tab.id), controller: tab.controller, active: true),
-      );
+      return _SessionPane(key: ValueKey(tab.id), controller: tab.controller, active: true);
     }
     final split = n as PaneSplit;
     return _ResizableSplit(split: split);
@@ -253,114 +267,6 @@ class _ResizableSplitState extends State<_ResizableSplit> {
           ],
         );
       },
-    );
-  }
-}
-
-/// Wraps one pane so dragging a tab chip over it previews and, on drop,
-/// commits a split on whichever edge (left/right/top/bottom) the cursor is
-/// nearest — a center drop is ignored (no split, matches "just switch tabs"
-/// expectations instead of tiling by accident).
-class _DropZone extends StatefulWidget {
-  const _DropZone({required this.tabId, required this.child});
-  final String tabId;
-  final Widget child;
-
-  @override
-  State<_DropZone> createState() => _DropZoneState();
-}
-
-class _DropZoneState extends State<_DropZone> {
-  final _key = GlobalKey();
-  SplitEdge? _hoverEdge;
-
-  SplitEdge? _edgeFor(Offset globalPosition) {
-    final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return null;
-    final local = box.globalToLocal(globalPosition);
-    final size = box.size;
-    if (local.dx < 0 || local.dy < 0 || local.dx > size.width || local.dy > size.height) return null;
-
-    final left = local.dx;
-    final right = size.width - local.dx;
-    final top = local.dy;
-    final bottom = size.height - local.dy;
-    final minDist = math.min(math.min(left, right), math.min(top, bottom));
-
-    // Middle 44% of the pane in both axes is a dead zone — drop there to
-    // just cancel (no accidental splits from an imprecise drop).
-    if (minDist > size.width * 0.28 && minDist > size.height * 0.28) return null;
-
-    if (minDist == left) return SplitEdge.left;
-    if (minDist == right) return SplitEdge.right;
-    if (minDist == top) return SplitEdge.top;
-    return SplitEdge.bottom;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (details) => details.data != widget.tabId,
-      onMove: (details) => setState(() => _hoverEdge = _edgeFor(details.offset)),
-      onLeave: (_) => setState(() => _hoverEdge = null),
-      onAcceptWithDetails: (details) {
-        final edge = _edgeFor(details.offset);
-        setState(() => _hoverEdge = null);
-        if (edge != null) {
-          context.read<AppState>().splitPane(draggedTabId: details.data, targetTabId: widget.tabId, edge: edge);
-        }
-      },
-      builder: (context, candidateData, rejectedData) {
-        return Stack(
-          key: _key,
-          fit: StackFit.expand,
-          children: [
-            widget.child,
-            if (_hoverEdge != null) _EdgePreview(edge: _hoverEdge!),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _EdgePreview extends StatelessWidget {
-  const _EdgePreview({required this.edge});
-  final SplitEdge edge;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    Alignment align;
-    double widthFactor = 1, heightFactor = 1;
-    switch (edge) {
-      case SplitEdge.left:
-        align = Alignment.centerLeft;
-        widthFactor = 0.5;
-      case SplitEdge.right:
-        align = Alignment.centerRight;
-        widthFactor = 0.5;
-      case SplitEdge.top:
-        align = Alignment.topCenter;
-        heightFactor = 0.5;
-      case SplitEdge.bottom:
-        align = Alignment.bottomCenter;
-        heightFactor = 0.5;
-    }
-    return IgnorePointer(
-      child: Align(
-        alignment: align,
-        child: FractionallySizedBox(
-          widthFactor: widthFactor,
-          heightFactor: heightFactor,
-          child: Container(
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.22),
-              border: Border.all(color: accent, width: 2),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -515,10 +421,12 @@ class _TerminalPane extends StatefulWidget {
 class _TerminalPaneState extends State<_TerminalPane> {
   final _focusNode = FocusNode();
   final _terminalController = TerminalController();
+  late final TerminalClipboard _clipboard;
 
   @override
   void initState() {
     super.initState();
+    _clipboard = TerminalClipboard(terminal: widget.controller.terminal, controller: _terminalController);
     if (widget.active) _focusAfterFrame();
   }
 
@@ -536,6 +444,8 @@ class _TerminalPaneState extends State<_TerminalPane> {
 
   @override
   void dispose() {
+    _clipboard.dispose();
+    _terminalController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -559,6 +469,11 @@ class _TerminalPaneState extends State<_TerminalPane> {
           // (which travel the key-event path) still worked. That is what made
           // every password look wrong.
           hardwareKeyboardOnly: true,
+          // PuTTY: right-click pastes, selecting copies (TerminalClipboard).
+          onSecondaryTapDown: (_, _) {
+            _clipboard.paste();
+            _focusNode.requestFocus();
+          },
           textStyle: _terminalTextStyle,
           theme: TerminalThemes.withColors(background: app.terminalBackground, foreground: app.terminalForeground),
         ),

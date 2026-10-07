@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
+import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
 
 /// A row in the flattened, virtualized tree — either a folder header or a
@@ -201,19 +203,15 @@ class _ConnectionTreeState extends State<ConnectionTree> {
   Future<void> _moveSelected(AppState app) async {
     final folderIds = _selected.where((id) => app.folders.any((f) => f.id == id)).toList();
     final connIds = _selected.where((id) => app.connections.any((c) => c.id == id)).toList();
-    final choice = await showDialog<String?>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text('Move ${_selected.length} item${_selected.length == 1 ? '' : 's'} to folder'),
-        children: [
-          SimpleDialogOption(onPressed: () => Navigator.pop(ctx, ''), child: const Text('(none)')),
-          for (final f in app.folders)
-            SimpleDialogOption(onPressed: () => Navigator.pop(ctx, f.id), child: Text(f.name)),
-        ],
-      ),
+    final choice = await showFolderPicker(
+      context,
+      folders: app.folders,
+      connections: app.connections,
+      selected: null,
+      title: 'Move ${_selected.length} item${_selected.length == 1 ? '' : 's'} to folder',
     );
     if (choice == null) return;
-    final destination = choice.isEmpty ? null : choice;
+    final destination = choice.folderId;
     for (final id in connIds) {
       await app.moveConnectionToFolder(id, destination);
     }
@@ -306,8 +304,34 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     );
   }
 
+  /// The best state of any open session inside each folder, at any depth, so
+  /// a collapsed folder still shows that something in it is connected.
+  Map<String, SessionStatus> _openByFolder(AppState app) {
+    int rank(SessionStatus s) => switch (s) {
+          SessionStatus.running => 3,
+          SessionStatus.starting => 2,
+          SessionStatus.error => 1,
+          SessionStatus.closed => 0,
+        };
+    final folderOf = {for (final c in app.connections) c.id: c.folderId};
+    final parentOf = {for (final f in app.folders) f.id: f.parentId};
+    final out = <String, SessionStatus>{};
+    for (final t in app.tabs) {
+      final s = t.controller.status;
+      var folder = t.connectionId == null ? null : folderOf[t.connectionId];
+      final seen = <String>{};
+      while (folder != null && seen.add(folder)) {
+        final current = out[folder];
+        if (current == null || rank(s) > rank(current)) out[folder] = s;
+        folder = parentOf[folder];
+      }
+    }
+    return out;
+  }
+
   Widget _buildTree(AppState app) {
     final rows = _visibleRows(app);
+    final openByFolder = _openByFolder(app);
     if (app.folders.isEmpty && app.connections.isEmpty) {
       return const _EmptyTreeHint();
     }
@@ -329,6 +353,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
           return _FolderRow(
             folder: row.folder!,
             depth: row.depth,
+            openStatus: openByFolder[row.folder!.id],
             expanded: expanded,
             selected: _selected.contains(row.folder!.id),
             onTap: () => _handleRowTap(row, rows, toggle),
@@ -459,6 +484,7 @@ class _FolderRow extends StatefulWidget {
     required this.selected,
     required this.onTap,
     required this.onToggle,
+    this.openStatus,
   });
   final ConnectionFolder folder;
   final int depth;
@@ -466,6 +492,9 @@ class _FolderRow extends StatefulWidget {
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onToggle;
+
+  /// Set when a connection somewhere inside this folder has a tab open.
+  final SessionStatus? openStatus;
 
   @override
   State<_FolderRow> createState() => _FolderRowState();
@@ -485,6 +514,7 @@ class _FolderRowState extends State<_FolderRow> {
       // opening a folder while rows are selected does not clear the selection.
       expanded: widget.expanded,
       onToggle: widget.onToggle,
+      openStatus: widget.openStatus,
       icon: widget.expanded ? Icons.folder_open : Icons.folder,
       title: widget.folder.name,
       trailingCount: childCount == 0 ? null : childCount,
@@ -550,8 +580,8 @@ class _FolderRowState extends State<_FolderRow> {
 
 /// The connection's name with a trailing copy of its host taken off.
 ///
-/// People name connections after the box *and* the address ("MONITOR -
-/// 192.0.2.19" is typical in real exports), and the row already shows the
+/// People name connections after the box *and* the address ("CORE-SW -
+/// 192.0.2.15" is typical in real exports), and the row already shows the
 /// host in its own column. Left alone, the address appears twice and squeezes
 /// the name until it is ellipsised down to nothing useful. Only a trailing
 /// occurrence is removed, so a name that genuinely is an address ("10.0.0.1")
@@ -575,6 +605,24 @@ class _ConnectionRow extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// The state of this connection's open tab, if it has one -- the best of
+  /// them when it is open more than once, so one live session shows as live.
+  SessionStatus? _openStatus(AppState app) {
+    SessionStatus? best;
+    int rank(SessionStatus s) => switch (s) {
+          SessionStatus.running => 3,
+          SessionStatus.starting => 2,
+          SessionStatus.error => 1,
+          SessionStatus.closed => 0,
+        };
+    for (final t in app.tabs) {
+      if (t.connectionId != conn.id) continue;
+      final s = t.controller.status;
+      if (best == null || rank(s) > rank(best)) best = s;
+    }
+    return best;
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
@@ -582,6 +630,7 @@ class _ConnectionRow extends StatelessWidget {
       depth: depth,
       selected: selected,
       onTap: onTap,
+      openStatus: _openStatus(app),
       icon: conn.protocol == ConnectionProtocol.rdp
           ? Icons.desktop_windows_outlined
           : Icons.dns_outlined,
@@ -622,20 +671,15 @@ class _ConnectionRow extends StatelessWidget {
             ),
           );
         } else if (key == 'move') {
-          final app2 = context.read<AppState>();
-          final choice = await showDialog<String?>(
-            context: context,
-            builder: (ctx) => SimpleDialog(
-              title: const Text('Move to folder'),
-              children: [
-                SimpleDialogOption(onPressed: () => Navigator.pop(ctx, ''), child: const Text('(none)')),
-                for (final f in app2.folders)
-                  SimpleDialogOption(onPressed: () => Navigator.pop(ctx, f.id), child: Text(f.name)),
-              ],
-            ),
+          final choice = await showFolderPicker(
+            context,
+            folders: app.folders,
+            connections: app.connections,
+            selected: conn.folderId,
+            title: 'Move to folder',
           );
           if (choice != null) {
-            app.moveConnectionToFolder(conn.id, choice.isEmpty ? null : choice);
+            app.moveConnectionToFolder(conn.id, choice.folderId);
           }
         } else if (key == 'delete') {
           app.deleteConnection(conn.id);
@@ -671,6 +715,7 @@ class _TreeRow extends StatefulWidget {
     this.trailingCount,
     this.expanded,
     this.onToggle,
+    this.openStatus,
     this.bold = false,
   });
 
@@ -690,6 +735,9 @@ class _TreeRow extends StatefulWidget {
   /// reserved either way so names stay aligned down a level.
   final bool? expanded;
   final VoidCallback? onToggle;
+
+  /// Set when this connection has a tab open; drawn as a dot on its icon.
+  final SessionStatus? openStatus;
 
   final bool bold;
   final Map<String, String> menuItems;
@@ -781,7 +829,17 @@ class _TreeRowState extends State<_TreeRow> {
                         ),
                       ),
               ),
-              Icon(widget.icon, size: 15, color: widget.bold ? text : dim),
+              _OpenBadge(
+                status: widget.openStatus,
+                cutout: isDark ? AppColors.darkPanel : AppColors.lightPanel,
+                child: Icon(
+                  widget.icon,
+                  size: 15,
+                  // An open connection's icon is drawn at full strength, so
+                  // the row reads as live even before the dot is noticed.
+                  color: widget.bold || widget.openStatus != null ? text : dim,
+                ),
+              ),
               const SizedBox(width: 7),
               Expanded(
                 child: InkWell(
@@ -867,6 +925,55 @@ class _TreeRowState extends State<_TreeRow> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A dot on the corner of a connection's icon while it has a tab open: green
+/// once connected, amber while connecting, red if the session dropped. The
+/// ring in the panel's colour keeps it legible where it overlaps the icon.
+class _OpenBadge extends StatelessWidget {
+  const _OpenBadge({required this.status, required this.cutout, required this.child});
+  final SessionStatus? status;
+  final Color cutout;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = status;
+    if (s == null) return child;
+    final color = switch (s) {
+      SessionStatus.running => const Color(0xFF2EB85C),
+      SessionStatus.starting => const Color(0xFFE0A526),
+      SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
+    };
+    final label = switch (s) {
+      SessionStatus.running => 'Connected',
+      SessionStatus.starting => 'Connecting',
+      SessionStatus.error => 'Disconnected',
+      SessionStatus.closed => 'Session ended',
+    };
+    return Tooltip(
+      message: label,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          child,
+          Positioned(
+            right: -3,
+            bottom: -2,
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(color: cutout, width: 1.5),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
