@@ -167,6 +167,11 @@ class PtySessionController implements SessionController {
     final launcher = File('${_scratchDir!.path}\\connect.cmd');
     await launcher.writeAsString(
       '@echo off\r\n'
+      // UTF-8 console. plink decodes the server's banner and prompts with the
+      // console's code page, which defaults to the OEM one (857 on Turkish
+      // Windows): "yalnızca" arrived as "yaln─▒zca". Reproduced with the real
+      // plink in a pseudoconsole; this line fixes it.
+      'chcp 65001 >nul\r\n'
       '"$plink"$sessionArg -ssh -t -P $port$userArg$pwArg "$host"\r\n',
     );
 
