@@ -288,7 +288,25 @@ class RdpSessionController implements SessionController {
 
   // ---- tab state ----
 
-  void setActive(bool active) {
+  /// The views currently showing this session. Visibility follows "is any
+  /// view showing it", not a single on/off flag: when a split is applied the
+  /// pane moves in the widget tree, and Flutter builds the new view *before*
+  /// disposing the old one. With a flag, the new view's "show" was a no-op
+  /// (already shown) and the old view's "hide" then ran last, leaving a
+  /// connected session as a black pane.
+  final Set<Object> _views = {};
+
+  /// [view] is now showing this session ([showing] true) or has stopped.
+  void attachView(Object view, {required bool showing}) {
+    if (showing) {
+      _views.add(view);
+    } else {
+      _views.remove(view);
+    }
+    _setActive(_views.isNotEmpty);
+  }
+
+  void _setActive(bool active) {
     if (_active == active) return;
     _active = active;
     final id = _hostId;

@@ -82,7 +82,7 @@ class _TabBarRow extends StatelessWidget {
                   title: tab.controller.tabTitle ?? tab.controller.host,
                   active: active,
                   isRdp: tab.controller is RdpSessionController || tab.controller is MacRdpSessionController,
-                  statusStream: tab.controller.statusStream,
+                  status: tab.controller.status,
                   onTap: () => app.setActiveTab(i),
                   onClose: () => app.closeTab(i),
                 );
@@ -130,7 +130,7 @@ class _TabChip extends StatelessWidget {
     required this.title,
     required this.active,
     required this.isRdp,
-    required this.statusStream,
+    required this.status,
     required this.onTap,
     required this.onClose,
   });
@@ -138,7 +138,7 @@ class _TabChip extends StatelessWidget {
   final String title;
   final bool active;
   final bool isRdp;
-  final Stream<SessionStatus> statusStream;
+  final SessionStatus status;
   final VoidCallback onTap;
   final VoidCallback onClose;
 
@@ -157,19 +157,22 @@ class _TabChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.max,
         children: [
-          StreamBuilder<SessionStatus>(
-            stream: statusStream,
-            builder: (ctx, snap) {
-              final s = snap.data;
-              Color color = Colors.grey;
-              if (s == SessionStatus.running) color = Colors.greenAccent;
-              if (s == SessionStatus.error || s == SessionStatus.closed) color = Colors.redAccent;
-              return Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              );
-            },
+          // The session's current status, read directly. It used to come from
+          // a StreamBuilder with no initial value, which only learns of the
+          // *next* change: a chip rebuilt after its session had connected
+          // (applying a split does that) sat grey until something else
+          // happened. The tab bar rebuilds on every status change anyway.
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: switch (status) {
+                SessionStatus.running => const Color(0xFF2EB85C),
+                SessionStatus.starting => const Color(0xFFE0A526),
+                SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
+              },
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 6),
           Icon(isRdp ? Icons.desktop_windows_outlined : Icons.terminal, size: 12),

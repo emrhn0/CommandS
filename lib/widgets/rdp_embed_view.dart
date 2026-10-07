@@ -45,7 +45,7 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    widget.controller.setActive(widget.active);
+    widget.controller.attachView(this, showing: widget.active);
     if (widget.active) _startPolling();
   }
 
@@ -53,7 +53,7 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
   void didUpdateWidget(RdpEmbedView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.active != oldWidget.active) {
-      widget.controller.setActive(widget.active);
+      widget.controller.attachView(this, showing: widget.active);
       if (widget.active) {
         _startPolling();
       } else {
@@ -100,7 +100,7 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
-    widget.controller.setActive(false);
+    widget.controller.attachView(this, showing: false);
     super.dispose();
   }
 
