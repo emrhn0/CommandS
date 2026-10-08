@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
@@ -9,6 +9,7 @@ import '../services/pane_layout.dart';
 import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
 import '../services/session_controller.dart';
+import '../services/terminal_appearance.dart';
 import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
@@ -477,20 +478,13 @@ class _TerminalPaneState extends State<_TerminalPane> {
             _clipboard.paste();
             _focusNode.requestFocus();
           },
-          textStyle: _terminalTextStyle,
+          textStyle: terminalStyle(family: app.terminalFontFamily, size: app.terminalFontSize),
           theme: TerminalThemes.withColors(background: app.terminalBackground, foreground: app.terminalForeground),
         ),
       ),
     );
   }
 }
-
-/// xterm.dart asks for the family "monospace", which CoreText does not know:
-/// on macOS that resolves to a proportional system face and every column in
-/// the grid drifts. Name the fonts that are actually installed.
-final TerminalStyle _terminalTextStyle = Platform.isMacOS
-    ? const TerminalStyle(fontFamily: 'Menlo', fontFamilyFallback: ['SF Mono', 'Monaco', 'Courier New'])
-    : const TerminalStyle(fontFamily: 'Consolas', fontFamilyFallback: ['Cascadia Mono', 'Courier New', 'monospace']);
 
 class TerminalThemes {
   static const dark = TerminalTheme(

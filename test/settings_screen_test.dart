@@ -54,7 +54,7 @@ void main() {
         expect(find.text('Appearance'), findsOneWidget);
         expect(find.text('Light'), findsOneWidget);
         expect(find.text('Dark'), findsOneWidget);
-        expect(find.text('Terminal colors'), findsOneWidget);
+        expect(find.text('SSH terminal'), findsOneWidget);
         expect(find.text('Import connections'), findsOneWidget);
         expect(find.text('Export connections'), findsOneWidget);
         expect(find.text('Check for updates'), findsOneWidget);

@@ -3,19 +3,28 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import '../services/pane_layout.dart';
 import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
 
-/// A row in the flattened, virtualized tree — either a folder header or a
-/// connection leaf, at a given nesting depth.
+/// A row in the flattened, virtualized tree — a folder header, a connection
+/// leaf, or a saved split layout, at a given nesting depth.
 class _Row {
-  _Row.folder(this.folder, this.depth) : connection = null;
-  _Row.connection(this.connection, this.depth) : folder = null;
+  _Row.folder(this.folder, this.depth)
+      : connection = null,
+        layout = null;
+  _Row.connection(this.connection, this.depth)
+      : folder = null,
+        layout = null;
+  _Row.layout(this.layout, this.depth)
+      : folder = null,
+        connection = null;
 
   final ConnectionFolder? folder;
   final SavedConnection? connection;
+  final SavedLayout? layout;
   final int depth;
 }
 
@@ -71,12 +80,20 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     List<SavedConnection> connectionsUnder(String? folderId) =>
         app.connections.where((c) => c.folderId == folderId).toList()
           ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    // Saved layouts sit above a folder's connections: there are few of them
+    // and each opens several of the connections below.
+    List<SavedLayout> layoutsUnder(String? folderId) =>
+        app.layouts.where((l) => l.folderId == folderId).toList()
+          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     void walk(String? parentId, int depth) {
       for (final folder in foldersUnder(parentId)) {
         rows.add(_Row.folder(folder, depth));
         if (_expanded.contains(folder.id)) {
           walk(folder.id, depth + 1);
+          for (final layout in layoutsUnder(folder.id)) {
+            rows.add(_Row.layout(layout, depth + 1));
+          }
           for (final conn in connectionsUnder(folder.id)) {
             rows.add(_Row.connection(conn, depth + 1));
           }
@@ -85,6 +102,9 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     }
 
     walk(null, 0);
+    for (final layout in layoutsUnder(null)) {
+      rows.add(_Row.layout(layout, 0));
+    }
     for (final conn in connectionsUnder(null)) {
       rows.add(_Row.connection(conn, 0));
     }
@@ -360,6 +380,9 @@ class _ConnectionTreeState extends State<ConnectionTree> {
             onToggle: toggle,
           );
         }
+        if (row.layout != null) {
+          return _LayoutRow(layout: row.layout!, depth: row.depth);
+        }
         return _ConnectionRow(
           conn: row.connection!,
           depth: row.depth,
@@ -376,7 +399,9 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     }).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-    if (matches.isEmpty) {
+    final layoutMatches = app.layouts.where((l) => l.name.toLowerCase().contains(_query)).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    if (matches.isEmpty && layoutMatches.isEmpty) {
       return Center(
         child: Text('No matches', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 12)),
       );
@@ -384,14 +409,18 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     final rows = [for (final c in matches) _Row.connection(c, 0)];
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 8),
-      itemCount: matches.length,
+      itemCount: layoutMatches.length + matches.length,
       itemExtent: kTreeRowHeight,
-      itemBuilder: (context, i) => _ConnectionRow(
-        conn: matches[i],
-        depth: 0,
-        selected: _selected.contains(matches[i].id),
-        onTap: () => _handleRowTap(rows[i], rows, () => _connect(matches[i])),
-      ),
+      itemBuilder: (context, i) {
+        if (i < layoutMatches.length) return _LayoutRow(layout: layoutMatches[i], depth: 0);
+        final j = i - layoutMatches.length;
+        return _ConnectionRow(
+          conn: matches[j],
+          depth: 0,
+          selected: _selected.contains(matches[j].id),
+          onTap: () => _handleRowTap(rows[j], rows, () => _connect(matches[j])),
+        );
+      },
     );
   }
 }
@@ -505,7 +534,8 @@ class _FolderRowState extends State<_FolderRow> {
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
     final childCount = app.folders.where((f) => f.parentId == widget.folder.id).length +
-        app.connections.where((c) => c.folderId == widget.folder.id).length;
+        app.connections.where((c) => c.folderId == widget.folder.id).length +
+        app.layouts.where((l) => l.folderId == widget.folder.id).length;
     return _TreeRow(
       depth: widget.depth,
       selected: widget.selected,
@@ -683,6 +713,77 @@ class _ConnectionRow extends StatelessWidget {
           }
         } else if (key == 'delete') {
           app.deleteConnection(conn.id);
+        }
+      },
+    );
+  }
+}
+
+/// A saved split layout. Clicking it opens its connections in their saved
+/// arrangement.
+class _LayoutRow extends StatelessWidget {
+  const _LayoutRow({required this.layout, required this.depth});
+  final SavedLayout layout;
+  final int depth;
+
+  void _open(BuildContext context) {
+    final app = context.read<AppState>();
+    final opened = app.openLayout(layout);
+    if (opened == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('None of the connections in "${layout.name}" exist any more.'),
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final preset = SplitPreset.values.where((p) => p.name == layout.preset).firstOrNull;
+    final panes = layout.connectionIds.where((id) => id != null).length;
+    return _TreeRow(
+      depth: depth,
+      selected: false,
+      onTap: () => _open(context),
+      icon: Icons.space_dashboard_outlined,
+      title: layout.name,
+      subtitle: '${preset?.label ?? 'Layout'} · $panes',
+      menuItems: const {
+        'open': 'Open',
+        'rename': 'Rename',
+        'move': 'Move to folder',
+        'delete': 'Delete layout',
+      },
+      onMenu: (key) async {
+        if (key == 'open') {
+          _open(context);
+        } else if (key == 'rename') {
+          final c = TextEditingController(text: layout.name);
+          final name = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Rename layout'),
+              content: TextField(controller: c, autofocus: true, onSubmitted: (v) => Navigator.pop(ctx, v)),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('OK')),
+              ],
+            ),
+          );
+          if (name != null && name.trim().isNotEmpty) await app.renameLayout(layout.id, name.trim());
+        } else if (key == 'move') {
+          if (!context.mounted) return;
+          final choice = await showFolderPicker(
+            context,
+            folders: app.folders,
+            connections: app.connections,
+            selected: layout.folderId,
+            title: 'Move layout to folder',
+          );
+          if (choice != null) await app.moveLayoutToFolder(layout.id, choice.folderId);
+        } else if (key == 'delete') {
+          // Only the saved arrangement goes; its connections stay.
+          await app.deleteLayout(layout.id);
         }
       },
     );

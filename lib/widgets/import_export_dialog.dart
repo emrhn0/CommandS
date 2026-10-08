@@ -134,7 +134,7 @@ Future<void> showImportDialog(BuildContext context) async {
     } else {
       final parsed = storage.parseJson(raw);
       if (!context.mounted) return;
-      await _confirmAndImportParsed(context, app, parsed.folders, parsed.connections);
+      await _confirmAndImportParsed(context, app, parsed.folders, parsed.connections, layouts: parsed.layouts);
     }
   } catch (e) {
     if (context.mounted) {
@@ -147,8 +147,9 @@ Future<void> _confirmAndImportParsed(
   BuildContext context,
   AppState app,
   List<ConnectionFolder> folders,
-  List<SavedConnection> connections,
-) async {
+  List<SavedConnection> connections, {
+  List<SavedLayout> layouts = const [],
+}) async {
   final picked = await showSelectionTreeDialog(
     context,
     title: 'Import connections',
@@ -164,7 +165,7 @@ Future<void> _confirmAndImportParsed(
     }
     return c;
   }).toList();
-  await app.importParsed(folders, chosenConnections);
+  await app.importParsed(folders, chosenConnections, parsedLayouts: layouts);
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Imported ${chosenConnections.length} connection(s)')));
   }

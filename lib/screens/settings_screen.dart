@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../app_version.dart';
 import '../providers/app_state.dart';
+import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/custom_title_bar.dart';
@@ -67,8 +66,8 @@ class SettingsScreen extends StatelessWidget {
                           _Label('Theme'),
                           _ThemePicker(),
                           SizedBox(height: 28),
-                          _Label('Terminal colors'),
-                          _TerminalColors(),
+                          _Label('SSH terminal'),
+                          _TerminalAppearance(),
                         ],
                       ),
                       SizedBox(height: 22),
@@ -312,20 +311,50 @@ const _fgPresets = [
   Color(0xFF000000), // black (for light backgrounds)
 ];
 
-class _TerminalColors extends StatelessWidget {
-  const _TerminalColors();
+class _TerminalAppearance extends StatefulWidget {
+  const _TerminalAppearance();
+
+  @override
+  State<_TerminalAppearance> createState() => _TerminalAppearanceState();
+}
+
+class _TerminalAppearanceState extends State<_TerminalAppearance> {
+  static const _other = '\u0000other';
+  List<String> _fonts = [defaultTerminalFont];
+  bool _typingFont = false;
+  final _fontName = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    installedTerminalFonts().then((fonts) {
+      if (mounted) setState(() => _fonts = fonts);
+    });
+  }
+
+  @override
+  void dispose() {
+    _fontName.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final bg = app.terminalBackground;
     final fg = app.terminalForeground;
-    final mono = Platform.isMacOS ? 'Menlo' : 'Consolas';
+    final family = app.terminalFontFamily ?? defaultTerminalFont;
+    final size = app.terminalFontSize;
+    final dim = Theme.of(context).textTheme.bodySmall?.color;
+    // A font typed in by name that is not in the detected list still shows
+    // as the current choice.
+    final options = [..._fonts, if (!_fonts.contains(family)) family];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // A real terminal's worth of text, so contrast can be judged on
-        // something closer to what the session will actually look like.
+        // A real terminal's worth of text in the chosen font, size and
+        // colours, so the choice is judged on what a session will look like.
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
@@ -337,11 +366,110 @@ class _TerminalColors extends StatelessWidget {
             'admin@core-sw1:~\$ show ip interface brief\n'
             'Interface        IP-Address      Status   Protocol\n'
             'Vlan10           192.0.2.1       up       up\n'
-            'Gi1/0/1          unassigned      up       up',
-            style: TextStyle(color: fg, fontFamily: mono, fontSize: 13, height: 1.5),
+            'Gi1/0/1          unassigned      up       up\n'
+            'Türkçe: çağrı şişe ığdır öğün İstanbul',
+            style: TextStyle(
+              color: fg,
+              fontFamily: family,
+              fontFamilyFallback: const ['Consolas', 'Menlo', 'Courier New'],
+              fontSize: size,
+              height: 1.5,
+            ),
           ),
         ),
         const SizedBox(height: 18),
+        Wrap(
+          spacing: 24,
+          runSpacing: 14,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: [
+            SizedBox(
+              width: 280,
+              child: DropdownButtonFormField<String>(
+                initialValue: _typingFont ? _other : family,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Font', isDense: true),
+                items: [
+                  for (final f in options)
+                    DropdownMenuItem(
+                      value: f,
+                      child: Text(
+                        f == defaultTerminalFont ? '$f (default)' : f,
+                        style: TextStyle(fontFamily: f, fontFamilyFallback: const ['Consolas', 'Menlo']),
+                      ),
+                    ),
+                  const DropdownMenuItem(value: _other, child: Text('Other font by name…')),
+                ],
+                onChanged: (v) {
+                  if (v == _other) {
+                    setState(() {
+                      _typingFont = true;
+                      _fontName.text = '';
+                    });
+                  } else if (v != null) {
+                    setState(() => _typingFont = false);
+                    app.setTerminalFont(family: v == defaultTerminalFont ? null : v, resetFamily: v == defaultTerminalFont);
+                  }
+                },
+              ),
+            ),
+            SizedBox(
+              width: 280,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Size: ${size.round()} pt', style: TextStyle(fontSize: 12, color: dim)),
+                  Slider(
+                    value: size.clamp(9, 24),
+                    min: 9,
+                    max: 24,
+                    divisions: 15,
+                    label: '${size.round()} pt',
+                    onChanged: (v) => app.setTerminalFont(size: v),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (_typingFont) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              SizedBox(
+                width: 280,
+                child: TextField(
+                  controller: _fontName,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Font name, as installed (e.g. JetBrains Mono)',
+                    isDense: true,
+                  ),
+                  onSubmitted: (v) {
+                    if (v.trim().isEmpty) return;
+                    app.setTerminalFont(family: v);
+                    setState(() => _typingFont = false);
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                onPressed: () {
+                  if (_fontName.text.trim().isEmpty) return;
+                  app.setTerminalFont(family: _fontName.text);
+                  setState(() => _typingFont = false);
+                },
+                child: const Text('Use'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'A font that is not installed falls back to the default, so a typo shows straight away in the preview.',
+            style: TextStyle(fontSize: 11, color: dim),
+          ),
+        ],
+        const SizedBox(height: 22),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -369,6 +497,80 @@ class _TerminalColors extends StatelessWidget {
   }
 }
 
+/// A colour typed as a code -- `#1E1E1E`, `#FFF`, `rgb(30, 30, 30)` or
+/// `30,30,30` -- for colours the swatches do not have. Applied as soon as it
+/// parses; shows what it expects while it does not.
+class _ColorCodeField extends StatefulWidget {
+  const _ColorCodeField({required this.color, required this.onChanged});
+  final Color color;
+  final ValueChanged<Color> onChanged;
+
+  @override
+  State<_ColorCodeField> createState() => _ColorCodeFieldState();
+}
+
+class _ColorCodeFieldState extends State<_ColorCodeField> {
+  late final _text = TextEditingController(text: colorToHex(widget.color));
+  final _focus = FocusNode();
+  bool _invalid = false;
+
+  @override
+  void didUpdateWidget(_ColorCodeField old) {
+    super.didUpdateWidget(old);
+    // A swatch was clicked: show its code, unless the user is mid-typing.
+    if (old.color != widget.color && !_focus.hasFocus) {
+      _text.text = colorToHex(widget.color);
+      _invalid = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _apply(String v) {
+    final c = parseColorCode(v);
+    setState(() => _invalid = c == null && v.trim().isNotEmpty);
+    if (c != null) widget.onChanged(c);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: TextField(
+        controller: _text,
+        focusNode: _focus,
+        onChanged: _apply,
+        onSubmitted: _apply,
+        style: const TextStyle(fontSize: 13),
+        decoration: InputDecoration(
+          isDense: true,
+          labelText: 'Color code',
+          hintText: '#1E1E1E or rgb(30, 30, 30)',
+          errorText: _invalid ? 'Use #RRGGBB, #RGB or rgb(r, g, b)' : null,
+          prefixIcon: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                color: widget.color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black26),
+              ),
+            ),
+          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        ),
+      ),
+    );
+  }
+}
+
 class _SwatchGroup extends StatelessWidget {
   const _SwatchGroup({
     required this.title,
@@ -382,9 +584,29 @@ class _SwatchGroup extends StatelessWidget {
   final Color selected;
   final ValueChanged<Color> onPick;
 
+  Widget _swatch(Color c, Color accent) {
+    final on = selected.toARGB32() == c.toARGB32();
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => onPick(c),
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: c,
+            shape: BoxShape.circle,
+            border: Border.all(color: on ? accent : Colors.black26, width: on ? 3 : 1),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
+    final custom = !colors.any((c) => c.toARGB32() == selected.toARGB32());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -394,27 +616,14 @@ class _SwatchGroup extends StatelessWidget {
           spacing: 10,
           runSpacing: 10,
           children: [
-            for (final c in colors)
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () => onPick(c),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: c,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selected.toARGB32() == c.toARGB32() ? accent : Colors.black26,
-                        width: selected.toARGB32() == c.toARGB32() ? 3 : 1,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            for (final c in colors) _swatch(c, accent),
+            // A colour entered by code shows as its own selected swatch, so
+            // it is clear which colour is in use.
+            if (custom) _swatch(selected, accent),
           ],
         ),
+        const SizedBox(height: 14),
+        _ColorCodeField(color: selected, onChanged: onPick),
       ],
     );
   }

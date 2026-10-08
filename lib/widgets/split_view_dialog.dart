@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/models.dart';
 import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
 import '../services/pane_layout.dart';
 import '../services/rdp_session.dart';
+import 'folder_picker.dart';
 
 /// Opens the Split view dialog: pick a layout, then drag open tabs into its
 /// panes.
@@ -89,6 +91,30 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
     Navigator.of(context).pop();
   }
 
+  String? _savedTo;
+
+  /// Saves this arrangement, with its connections, into a folder -- opening
+  /// it from the tree later brings the same sessions back in this layout.
+  Future<void> _save() async {
+    final app = context.read<AppState>();
+    final tabsById = {for (final t in app.tabs) t.id: t};
+    final placed = [for (final id in _slots) if (id != null) tabsById[id]].whereType<OpenTab>().toList();
+    final quick = placed.where((t) => t.connectionId == null).length;
+    final result = await showDialog<({String name, String? folderId})>(
+      context: context,
+      builder: (_) => _SaveLayoutDialog(
+        suggestedName: placed.map(_title).take(3).join(' + '),
+        quickCount: quick,
+        folders: app.folders,
+        connections: app.connections,
+      ),
+    );
+    if (result == null || !mounted) return;
+    await app.saveLayout(name: result.name, folderId: result.folderId, preset: _preset, tabIds: _slots);
+    if (!mounted) return;
+    setState(() => _savedTo = folderPath(app.folders, result.folderId) ?? 'the top level');
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -166,10 +192,18 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Empty panes are left out. Click a tab to put it in the first empty pane.',
+                      _savedTo != null
+                          ? 'Saved to $_savedTo. Open it from there any time to bring these sessions back like this.'
+                          : 'Empty panes are left out. Click a tab to put it in the first empty pane.',
                       style: TextStyle(fontSize: 11, color: dim),
                     ),
                   ),
+                  OutlinedButton.icon(
+                    onPressed: _slots.any((id) => id != null && (tabsById[id]?.connectionId != null)) ? _save : null,
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                    label: const Text('Save as layout…'),
+                  ),
+                  const SizedBox(width: 8),
                   TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
                   const SizedBox(width: 8),
                   ElevatedButton(onPressed: anyPlaced ? _apply : null, child: const Text('Apply')),
@@ -452,6 +486,84 @@ class _TabChipFeedback extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Asks for a saved layout's name and folder.
+class _SaveLayoutDialog extends StatefulWidget {
+  const _SaveLayoutDialog({
+    required this.suggestedName,
+    required this.quickCount,
+    required this.folders,
+    required this.connections,
+  });
+
+  final String suggestedName;
+  final int quickCount;
+  final List<ConnectionFolder> folders;
+  final List<SavedConnection> connections;
+
+  @override
+  State<_SaveLayoutDialog> createState() => _SaveLayoutDialogState();
+}
+
+class _SaveLayoutDialogState extends State<_SaveLayoutDialog> {
+  late final _name = TextEditingController(text: widget.suggestedName);
+  String? _folderId;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _name.text.trim();
+    if (name.isEmpty) return;
+    Navigator.of(context).pop((name: name, folderId: _folderId));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dim = Theme.of(context).textTheme.bodySmall?.color;
+    return AlertDialog(
+      title: const Text('Save layout'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _name,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Name'),
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 12),
+            FolderField(
+              folders: widget.folders,
+              connections: widget.connections,
+              value: _folderId,
+              onChanged: (v) => setState(() => _folderId = v),
+            ),
+            if (widget.quickCount > 0) ...[
+              const SizedBox(height: 12),
+              Text(
+                '${widget.quickCount} pane${widget.quickCount == 1 ? ' holds a quick connection' : 's hold quick connections'}, '
+                'which ${widget.quickCount == 1 ? 'is' : 'are'} not saved and cannot be reopened, so '
+                '${widget.quickCount == 1 ? 'it is' : 'they are'} saved empty.',
+                style: TextStyle(fontSize: 12, color: dim),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        ElevatedButton(onPressed: _submit, child: const Text('Save')),
+      ],
     );
   }
 }

@@ -4,9 +4,10 @@ import 'package:xml/xml.dart';
 import '../models/models.dart';
 
 class ParsedImport {
-  ParsedImport({required this.folders, required this.connections});
+  ParsedImport({required this.folders, required this.connections, this.layouts = const []});
   final List<ConnectionFolder> folders;
   final List<SavedConnection> connections;
+  final List<SavedLayout> layouts;
 }
 
 /// Everything (folders, connections, remembered passwords) lives in one JSON
@@ -15,6 +16,20 @@ class ParsedImport {
 class StorageService {
   static const _kFolders = 'commands.folders';
   static const _kConnections = 'commands.connections';
+  static const _kLayouts = 'commands.layouts';
+
+  Future<List<SavedLayout>> loadLayouts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kLayouts);
+    if (raw == null) return [];
+    final list = jsonDecode(raw) as List;
+    return list.map((e) => SavedLayout.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> saveLayouts(List<SavedLayout> layouts) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kLayouts, jsonEncode(layouts.map((l) => l.toJson()).toList()));
+  }
 
   Future<List<ConnectionFolder>> loadFolders() async {
     final prefs = await SharedPreferences.getInstance();
@@ -48,12 +63,14 @@ class StorageService {
   String exportJson({
     required List<ConnectionFolder> folders,
     required List<SavedConnection> connections,
+    List<SavedLayout> layouts = const [],
   }) {
     final doc = {
       'app': 'CommandS',
       'version': 1,
       'folders': folders.map((f) => f.toJson()).toList(),
       'connections': connections.map((c) => c.toJson()).toList(),
+      if (layouts.isNotEmpty) 'layouts': layouts.map((l) => l.toJson()).toList(),
     };
     return const JsonEncoder.withIndent('  ').convert(doc);
   }
@@ -67,7 +84,9 @@ class StorageService {
         (doc['folders'] as List? ?? []).map((e) => ConnectionFolder.fromJson(e as Map<String, dynamic>)).toList();
     final connections =
         (doc['connections'] as List? ?? []).map((e) => SavedConnection.fromJson(e as Map<String, dynamic>)).toList();
-    return ParsedImport(folders: folders, connections: connections);
+    final layouts =
+        (doc['layouts'] as List? ?? []).map((e) => SavedLayout.fromJson(e as Map<String, dynamic>)).toList();
+    return ParsedImport(folders: folders, connections: connections, layouts: layouts);
   }
 
   // ---- XML export/import (same schema, XML-shaped) ----

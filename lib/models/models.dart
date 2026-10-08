@@ -89,3 +89,43 @@ class SavedConnection {
 
   String get label => '$name - $host';
 }
+
+/// A split-view arrangement saved into a folder together with the
+/// connections in its panes, so opening it brings the same sessions back in
+/// the same layout.
+class SavedLayout {
+  String id;
+  String name;
+  String? folderId;
+
+  /// A `SplitPreset` name (see services/pane_layout.dart).
+  String preset;
+
+  /// One saved connection id per pane, in reading order; null for a pane
+  /// that was empty or held a quick connection, which cannot be reopened.
+  List<String?> connectionIds;
+
+  SavedLayout({
+    String? id,
+    required this.name,
+    this.folderId,
+    required this.preset,
+    required this.connectionIds,
+  }) : id = id ?? _uuid.v4();
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'folderId': folderId,
+        'preset': preset,
+        'connectionIds': connectionIds,
+      };
+
+  factory SavedLayout.fromJson(Map<String, dynamic> json) => SavedLayout(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? 'Layout',
+        folderId: json['folderId'] as String?,
+        preset: json['preset'] as String? ?? 'sideBySide',
+        connectionIds: [for (final e in (json['connectionIds'] as List? ?? const [])) e as String?],
+      );
+}
