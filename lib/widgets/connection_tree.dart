@@ -1,26 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../models/models.dart';
 import '../providers/app_state.dart';
 import '../services/pane_layout.dart';
 import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
+import 'context_menu.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
 
 /// A row in the flattened, virtualized tree — a folder header, a connection
 /// leaf, or a saved split layout, at a given nesting depth.
 class _Row {
-  _Row.folder(this.folder, this.depth)
-      : connection = null,
-        layout = null;
-  _Row.connection(this.connection, this.depth)
-      : folder = null,
-        layout = null;
-  _Row.layout(this.layout, this.depth)
-      : folder = null,
-        connection = null;
+  _Row.folder(this.folder, this.depth) : connection = null, layout = null;
+  _Row.connection(this.connection, this.depth) : folder = null, layout = null;
+  _Row.layout(this.layout, this.depth) : folder = null, connection = null;
 
   final ConnectionFolder? folder;
   final SavedConnection? connection;
@@ -55,7 +51,12 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     super.dispose();
   }
 
-  Future<void> _promptName(BuildContext context, String title, String initial, ValueChanged<String> onSubmit) async {
+  Future<void> _promptName(
+    BuildContext context,
+    String title,
+    String initial,
+    ValueChanged<String> onSubmit,
+  ) async {
     final controller = TextEditingController(text: initial);
     final result = await showDialog<String>(
       context: context,
@@ -200,9 +201,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
       builder: (ctx) => AlertDialog(
         title: Text('Delete ${parts.join(' and ')}?'),
         content: Text(
-          folderIds.isEmpty
-              ? 'This cannot be undone.'
-              : 'This cannot be undone. Deleted folders\' contents are NOT deleted — they move to root, unfiled.',
+          folderIds.isEmpty ? 'This cannot be undone.' : 'This cannot be undone. Deleted folders\' contents are NOT deleted — they move to root, unfiled.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -309,17 +308,16 @@ class _ConnectionTreeState extends State<ConnectionTree> {
             ],
           ),
         ),
-        if (_selected.isNotEmpty) _SelectionBar(
-          count: _selected.length,
-          total: app.connections.length + app.folders.length,
-          onDelete: () => _deleteSelected(app),
-          onMove: () => _moveSelected(app),
-          onSelectAll: () => _selectAll(app),
-          onCancel: _clearSelection,
-        ),
-        Expanded(
-          child: _query.isEmpty ? _buildTree(app) : _buildFiltered(app),
-        ),
+        if (_selected.isNotEmpty)
+          _SelectionBar(
+            count: _selected.length,
+            total: app.connections.length + app.folders.length,
+            onDelete: () => _deleteSelected(app),
+            onMove: () => _moveSelected(app),
+            onSelectAll: () => _selectAll(app),
+            onCancel: _clearSelection,
+          ),
+        Expanded(child: _query.isEmpty ? _buildTree(app) : _buildFiltered(app)),
       ],
     );
   }
@@ -328,11 +326,11 @@ class _ConnectionTreeState extends State<ConnectionTree> {
   /// a collapsed folder still shows that something in it is connected.
   Map<String, SessionStatus> _openByFolder(AppState app) {
     int rank(SessionStatus s) => switch (s) {
-          SessionStatus.running => 3,
-          SessionStatus.starting => 2,
-          SessionStatus.error => 1,
-          SessionStatus.closed => 0,
-        };
+      SessionStatus.running => 3,
+      SessionStatus.starting => 2,
+      SessionStatus.error => 1,
+      SessionStatus.closed => 0,
+    };
     final folderOf = {for (final c in app.connections) c.id: c.folderId};
     final parentOf = {for (final f in app.folders) f.id: f.parentId};
     final out = <String, SessionStatus>{};
@@ -364,12 +362,12 @@ class _ConnectionTreeState extends State<ConnectionTree> {
         if (row.folder != null) {
           final expanded = _expanded.contains(row.folder!.id);
           void toggle() => setState(() {
-                if (expanded) {
-                  _expanded.remove(row.folder!.id);
-                } else {
-                  _expanded.add(row.folder!.id);
-                }
-              });
+            if (expanded) {
+              _expanded.remove(row.folder!.id);
+            } else {
+              _expanded.add(row.folder!.id);
+            }
+          });
           return _FolderRow(
             folder: row.folder!,
             depth: row.depth,
@@ -396,14 +394,16 @@ class _ConnectionTreeState extends State<ConnectionTree> {
   Widget _buildFiltered(AppState app) {
     final matches = app.connections.where((c) {
       return c.name.toLowerCase().contains(_query) || c.host.toLowerCase().contains(_query);
-    }).toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     final layoutMatches = app.layouts.where((l) => l.name.toLowerCase().contains(_query)).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     if (matches.isEmpty && layoutMatches.isEmpty) {
       return Center(
-        child: Text('No matches', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 12)),
+        child: Text(
+          'No matches',
+          style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 12),
+        ),
       );
     }
     final rows = [for (final c in matches) _Row.connection(c, 0)];
@@ -533,7 +533,8 @@ class _FolderRowState extends State<_FolderRow> {
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
-    final childCount = app.folders.where((f) => f.parentId == widget.folder.id).length +
+    final childCount =
+        app.folders.where((f) => f.parentId == widget.folder.id).length +
         app.connections.where((c) => c.folderId == widget.folder.id).length +
         app.layouts.where((l) => l.folderId == widget.folder.id).length;
     return _TreeRow(
@@ -545,15 +546,17 @@ class _FolderRowState extends State<_FolderRow> {
       expanded: widget.expanded,
       onToggle: widget.onToggle,
       openStatus: widget.openStatus,
-      icon: widget.expanded ? Icons.folder_open : Icons.folder,
+      // One filled folder icon, open or not, as in Remote Desktop Manager: the
+      // chevron already says which.
+      icon: Icons.folder,
       title: widget.folder.name,
       trailingCount: childCount == 0 ? null : childCount,
       bold: true,
-      menuItems: const {
-        'new': 'New connection here',
-        'rename': 'Rename',
-        'delete': 'Delete folder',
-      },
+      menuItems: const [
+        MenuAction('new', 'New connection here', Icons.add),
+        MenuAction('rename', 'Rename', Icons.edit_outlined),
+        MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
+      ],
       onMenu: (key) {
         if (key == 'new') {
           showNewConnectionDialog(context, folderId: widget.folder.id);
@@ -586,7 +589,8 @@ class _FolderRowState extends State<_FolderRow> {
   }
 
   Future<void> _confirmDeleteFolder(BuildContext context, AppState app) async {
-    final childCount = app.connections.where((c) => c.folderId == widget.folder.id).length +
+    final childCount =
+        app.connections.where((c) => c.folderId == widget.folder.id).length +
         app.folders.where((f) => f.parentId == widget.folder.id).length;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -596,7 +600,7 @@ class _FolderRowState extends State<_FolderRow> {
           childCount == 0
               ? 'This folder is empty.'
               : 'It contains $childCount item${childCount == 1 ? '' : 's'}. '
-                  'They will NOT be deleted — they move to the root, unfiled.',
+                    'They will NOT be deleted — they move to the root, unfiled.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -629,7 +633,12 @@ String _displayName(SavedConnection conn) {
 }
 
 class _ConnectionRow extends StatelessWidget {
-  const _ConnectionRow({required this.conn, required this.depth, required this.selected, required this.onTap});
+  const _ConnectionRow({
+    required this.conn,
+    required this.depth,
+    required this.selected,
+    required this.onTap,
+  });
   final SavedConnection conn;
   final int depth;
   final bool selected;
@@ -640,11 +649,11 @@ class _ConnectionRow extends StatelessWidget {
   SessionStatus? _openStatus(AppState app) {
     SessionStatus? best;
     int rank(SessionStatus s) => switch (s) {
-          SessionStatus.running => 3,
-          SessionStatus.starting => 2,
-          SessionStatus.error => 1,
-          SessionStatus.closed => 0,
-        };
+      SessionStatus.running => 3,
+      SessionStatus.starting => 2,
+      SessionStatus.error => 1,
+      SessionStatus.closed => 0,
+    };
     for (final t in app.tabs) {
       if (t.connectionId != conn.id) continue;
       final s = t.controller.status;
@@ -661,23 +670,24 @@ class _ConnectionRow extends StatelessWidget {
       selected: selected,
       onTap: onTap,
       openStatus: _openStatus(app),
-      icon: conn.protocol == ConnectionProtocol.rdp
-          ? Icons.desktop_windows_outlined
-          : Icons.dns_outlined,
+      icon: conn.protocol == ConnectionProtocol.rdp ? Icons.desktop_windows_outlined : Icons.terminal,
       // Name and host were one run of identical text ("name - host"), which
       // made every row look the same at a glance. The name carries the
       // meaning, so it gets the weight and the host trails behind it, dimmer.
       title: _displayName(conn),
       subtitle: conn.host,
-      menuItems: const {
-        'edit': 'Edit…',
-        'clone': 'Clone',
-        'rename': 'Rename',
-        'move': 'Move to folder',
-        'delete': 'Delete',
-      },
+      menuItems: const [
+        MenuAction('connect', 'Connect', Icons.play_arrow_outlined),
+        MenuAction('edit', 'Edit…', Icons.tune, separatorBefore: true),
+        MenuAction('rename', 'Rename', Icons.edit_outlined),
+        MenuAction('clone', 'Clone', Icons.copy_outlined),
+        MenuAction('move', 'Move to folder…', Icons.drive_file_move_outlined),
+        MenuAction('delete', 'Delete', Icons.delete_outline, destructive: true, separatorBefore: true),
+      ],
       onMenu: (key) async {
-        if (key == 'edit') {
+        if (key == 'connect') {
+          await app.openConnection(conn);
+        } else if (key == 'edit') {
           await showEditConnectionDialog(context, conn);
         } else if (key == 'clone') {
           await app.cloneConnection(conn.id);
@@ -730,9 +740,9 @@ class _LayoutRow extends StatelessWidget {
     final app = context.read<AppState>();
     final opened = app.openLayout(layout);
     if (opened == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('None of the connections in "${layout.name}" exist any more.'),
-      ));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('None of the connections in "${layout.name}" exist any more.')));
     }
   }
 
@@ -748,12 +758,12 @@ class _LayoutRow extends StatelessWidget {
       icon: Icons.space_dashboard_outlined,
       title: layout.name,
       subtitle: '${preset?.label ?? 'Layout'} · $panes',
-      menuItems: const {
-        'open': 'Open',
-        'rename': 'Rename',
-        'move': 'Move to folder',
-        'delete': 'Delete layout',
-      },
+      menuItems: const [
+        MenuAction('open', 'Open layout', Icons.play_arrow_outlined),
+        MenuAction('rename', 'Rename', Icons.edit_outlined, separatorBefore: true),
+        MenuAction('move', 'Move to folder…', Icons.drive_file_move_outlined),
+        MenuAction('delete', 'Delete layout', Icons.delete_outline, destructive: true, separatorBefore: true),
+      ],
       onMenu: (key) async {
         if (key == 'open') {
           _open(context);
@@ -841,7 +851,7 @@ class _TreeRow extends StatefulWidget {
   final SessionStatus? openStatus;
 
   final bool bold;
-  final Map<String, String> menuItems;
+  final List<MenuAction> menuItems;
   final ValueChanged<String> onMenu;
 
   @override
@@ -858,18 +868,23 @@ const double kTreeIndent = 16;
 class _TreeRowState extends State<_TreeRow> {
   bool _hover = false;
 
-  Future<void> _showContextMenu(Offset globalPosition) async {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final selected = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        globalPosition & Size.zero,
-        Offset.zero & overlay.size,
-      ),
-      items: [
-        for (final e in widget.menuItems.entries)
-          PopupMenuItem(value: e.key, child: Text(e.value)),
-      ],
+  final _moreKey = GlobalKey();
+
+  /// Right-click and the "..." button open the same menu: at the pointer, or
+  /// anchored under the button.
+  Future<void> _showContextMenu({Offset? at}) async {
+    Rect? anchor;
+    if (at == null) {
+      final box = _moreKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) return;
+      anchor = box.localToGlobal(Offset.zero) & box.size;
+    }
+    final selected = await showContextMenu(
+      context,
+      actions: widget.menuItems,
+      position: at,
+      anchor: anchor,
+      header: widget.title,
     );
     if (selected != null) widget.onMenu(selected);
   }
@@ -880,14 +895,16 @@ class _TreeRowState extends State<_TreeRow> {
     final isDark = theme.brightness == Brightness.dark;
     final text = isDark ? AppColors.darkText : AppColors.lightText;
     final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
-    final guide = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final accent = theme.colorScheme.primary;
+    final overlay = isDark ? Colors.white : Colors.black;
 
+    // Windows 11's navigation pane: a rounded, neutral highlight inset from
+    // the panel's edges -- lighter on hover, stronger when selected -- rather
+    // than a full-width tinted band.
     final Color background;
     if (widget.selected) {
-      background = accent.withValues(alpha: isDark ? 0.16 : 0.12);
+      background = overlay.withValues(alpha: isDark ? 0.11 : 0.075);
     } else if (_hover) {
-      background = accent.withValues(alpha: isDark ? 0.07 : 0.05);
+      background = overlay.withValues(alpha: isDark ? 0.06 : 0.04);
     } else {
       background = Colors.transparent;
     }
@@ -896,134 +913,127 @@ class _TreeRowState extends State<_TreeRow> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
-        onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition),
-        child: Container(
+        onSecondaryTapDown: (d) => _showContextMenu(at: d.globalPosition),
+        child: SizedBox(
           height: kTreeRowHeight,
-          color: background,
-          child: Row(
-            children: [
-              // A selected row gets a solid edge, not only a wash, so it stays
-              // obvious next to the hover tint on the row above it.
-              Container(
-                width: 2,
-                color: widget.selected ? accent : Colors.transparent,
-              ),
-              // One guide line per ancestor level: the part that makes nesting
-              // legible at a glance instead of having to count indents.
-              for (var level = 0; level < widget.depth; level++)
-                SizedBox(
-                  width: kTreeIndent,
-                  child: Center(
-                    child: Container(width: 1, height: kTreeRowHeight, color: guide),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(4)),
+            child: Row(
+              children: [
+                // The selection pill, as in Remote Desktop Manager and Windows
+                // 11's own navigation panes.
+                Container(
+                  width: 3,
+                  height: 14,
+                  margin: const EdgeInsets.only(right: 3),
+                  decoration: BoxDecoration(
+                    color: widget.selected ? text : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              SizedBox(
-                width: 18,
-                child: widget.expanded == null
-                    ? null
-                    : InkWell(
-                        onTap: widget.onToggle,
-                        child: AnimatedRotation(
-                          turns: widget.expanded! ? 0.25 : 0,
-                          duration: const Duration(milliseconds: 120),
-                          child: Icon(Icons.chevron_right, size: 16, color: dim),
+                // Indentation alone shows nesting, as in Explorer; guide lines
+                // made the panel busy without saying anything the indent and
+                // the chevrons do not.
+                SizedBox(width: widget.depth * kTreeIndent),
+                SizedBox(
+                  width: 18,
+                  child: widget.expanded == null
+                      ? null
+                      : InkWell(
+                          borderRadius: BorderRadius.circular(3),
+                          onTap: widget.onToggle,
+                          child: AnimatedRotation(
+                            turns: widget.expanded! ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 120),
+                            child: Icon(Icons.chevron_right, size: 16, color: dim),
+                          ),
+                        ),
+                ),
+                _OpenBadge(
+                  status: widget.openStatus,
+                  cutout: isDark ? AppColors.darkPanel : AppColors.lightPanel,
+                  child: Icon(widget.icon, size: 16, color: text),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: widget.onTap,
+                    child: SizedBox(
+                      height: kTreeRowHeight,
+                      child: Row(
+                        children: [
+                          // Expanded, with the host left at its natural width:
+                          // a Row lays out its inflexible children first, so
+                          // the name gets every pixel the host does not need.
+                          Expanded(
+                            child: Text(
+                              widget.title,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.1,
+                                color: text,
+                                fontWeight: widget.bold ? FontWeight.w500 : FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                          if (widget.subtitle != null && widget.subtitle!.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            ConstrainedBox(
+                              // A long hostname must not squeeze the name out.
+                              constraints: const BoxConstraints(maxWidth: 120),
+                              child: Text(
+                                widget.subtitle!,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, height: 1.1, color: dim),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                // Swapped for the "..." button on hover, so the row never has to
+                // find room for both.
+                if (widget.trailingCount != null && !_hover)
+                  Container(
+                    margin: const EdgeInsets.only(left: 6, right: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: overlay.withValues(alpha: isDark ? 0.08 : 0.05),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${widget.trailingCount}',
+                      style: TextStyle(fontSize: 10.5, color: dim, height: 1.2),
+                    ),
+                  ),
+                // Kept mounted (not conditionally built) even when hidden:
+                // opening the menu moves the cursor onto its overlay, the
+                // MouseRegion sees that as "exited", and a button removed from
+                // the tree right then lost the anchor the menu was opened from.
+                SizedBox(
+                  key: _moreKey,
+                  width: 24,
+                  child: Opacity(
+                    opacity: _hover ? 1 : 0,
+                    child: IgnorePointer(
+                      ignoring: !_hover,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(4),
+                        onTap: () => _showContextMenu(),
+                        child: SizedBox(
+                          height: kTreeRowHeight,
+                          child: Icon(Icons.more_horiz, size: 15, color: dim),
                         ),
                       ),
-              ),
-              _OpenBadge(
-                status: widget.openStatus,
-                cutout: isDark ? AppColors.darkPanel : AppColors.lightPanel,
-                child: Icon(
-                  widget.icon,
-                  size: 15,
-                  // An open connection's icon is drawn at full strength, so
-                  // the row reads as live even before the dot is noticed.
-                  color: widget.bold || widget.openStatus != null ? text : dim,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: InkWell(
-                  onTap: widget.onTap,
-                  child: SizedBox(
-                    height: kTreeRowHeight,
-                    child: Row(
-                      children: [
-                        // Expanded, with the host left at its natural width:
-                        // a Row lays out its inflexible children first, so the
-                        // name gets every pixel the host does not need. Making
-                        // both flexible split the space proportionally
-                        // instead, which ellipsised names like "WIN_ACME_
-                        // BACKUP" down to nothing while a short IP sat beside
-                        // them with room to spare.
-                        Expanded(
-                          child: Text(
-                            widget.title,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.1,
-                              color: text,
-                              fontWeight:
-                                  widget.bold ? FontWeight.w600 : FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                        if (widget.subtitle != null && widget.subtitle!.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          ConstrainedBox(
-                            // A long hostname must not be allowed to squeeze
-                            // the name out entirely.
-                            constraints: const BoxConstraints(maxWidth: 124),
-                            child: Text(
-                              widget.subtitle!,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, height: 1.1, color: dim),
-                            ),
-                          ),
-                        ],
-                      ],
                     ),
                   ),
                 ),
-              ),
-              // Swapped for the "..." button on hover, so the row never has to
-              // find room for both.
-              if (widget.trailingCount != null && !_hover)
-                Padding(
-                  padding: const EdgeInsets.only(left: 6, right: 8),
-                  child: Text(
-                    '${widget.trailingCount}',
-                    style: TextStyle(fontSize: 10, color: dim, height: 1.1),
-                  ),
-                ),
-              // Kept mounted (not conditionally built) even when hidden:
-              // hovering opens the menu, then the cursor moves onto the menu
-              // overlay, MouseRegion sees that as "exited", and if this widget
-              // were removed from the tree right then the open PopupMenuButton
-              // got torn down mid-selection -- "Edit" (or anything else)
-              // silently never fired. Opacity keeps it alive so a selection
-              // always lands.
-              SizedBox(
-                width: 24,
-                child: Opacity(
-                  opacity: _hover ? 1 : 0,
-                  child: IgnorePointer(
-                    ignoring: !_hover,
-                    child: PopupMenuButton<String>(
-                      icon: Icon(Icons.more_horiz, size: 14, color: dim),
-                      padding: EdgeInsets.zero,
-                      tooltip: '',
-                      itemBuilder: (ctx) => [
-                        for (final e in widget.menuItems.entries)
-                          PopupMenuItem(value: e.key, child: Text(e.value)),
-                      ],
-                      onSelected: widget.onMenu,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

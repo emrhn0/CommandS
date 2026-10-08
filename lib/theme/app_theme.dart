@@ -82,9 +82,17 @@ class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         ),
       ),
+      // Desktop-style menus everywhere: compact text, a hairline border and a
+      // real shadow, rather than Material's flat touch-sized sheet.
       popupMenuTheme: PopupMenuThemeData(
         color: AppColors.darkPanelAlt,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+        elevation: 8,
+        surfaceTintColor: Colors.transparent,
+        textStyle: const TextStyle(fontSize: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: const BorderSide(color: AppColors.darkBorder),
+        ),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.darkPanel,
@@ -147,9 +155,17 @@ class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         ),
       ),
+      // Desktop-style menus everywhere: compact text, a hairline border and a
+      // real shadow, rather than Material's flat touch-sized sheet.
       popupMenuTheme: PopupMenuThemeData(
         color: AppColors.lightPanel,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+        elevation: 8,
+        surfaceTintColor: Colors.transparent,
+        textStyle: const TextStyle(fontSize: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: const BorderSide(color: AppColors.lightBorder),
+        ),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.lightPanel,
