@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../app_version.dart';
 import '../services/update_service.dart';
+import 'app_dialog.dart';
 
 /// Checks for a new release in the background on every launch and, if there
 /// is one, asks whether to install it -- unless the user chose to skip that
@@ -53,10 +54,7 @@ class _UpdateGateState extends State<UpdateGate> {
 /// app's files; the update relaunches it. Only returns if something went
 /// wrong, with the reason. Shared by the launch prompt and the Settings page,
 /// which offer the same update in two places.
-Future<String?> installUpdate(
-  UpdateInfo info, {
-  void Function(double? progress)? onProgress,
-}) async {
+Future<String?> installUpdate(UpdateInfo info, {void Function(double? progress)? onProgress}) async {
   final error = await UpdateService.downloadAndInstall(info, onProgress: onProgress);
   if (error != null) return error;
   exit(0);
@@ -113,66 +111,61 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     final info = widget.info;
     final dim = Theme.of(context).textTheme.bodySmall?.color;
     final notes = info.plainNotes;
-    return AlertDialog(
-      title: Text('CommandS ${info.version} is available'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You are running $appVersion.'
-              '${info.sizeLabel.isEmpty ? '' : ' Download is ${info.sizeLabel}.'}',
-              style: TextStyle(color: dim, fontSize: 12),
+    return AppDialog(
+      title: 'CommandS ${info.version} is available',
+      icon: Icons.system_update_alt,
+      width: 500,
+      closable: !_busy,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'You are running $appVersion.'
+            '${info.sizeLabel.isEmpty ? '' : ' Download is ${info.sizeLabel}.'}',
+            style: TextStyle(color: dim, fontSize: 12),
+          ),
+          if (notes.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: SingleChildScrollView(
+                child: Text(notes, style: const TextStyle(fontSize: 12, height: 1.45)),
+              ),
             ),
-            if (notes.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 220),
-                child: SingleChildScrollView(
-                  child: Text(notes, style: const TextStyle(fontSize: 12, height: 1.45)),
-                ),
-              ),
-            ],
-            if (!info.canSelfInstall) ...[
-              const SizedBox(height: 14),
-              Text(
-                Platform.isMacOS
-                    ? 'Downloading opens the release page in your browser. Unzip '
-                        'the app and drag it to Applications, replacing the old one.'
-                    : 'Downloading opens the release page in your browser.',
-                style: TextStyle(color: dim, fontSize: 12, height: 1.4),
-              ),
-            ],
-            if (_busy) ...[
-              const SizedBox(height: 18),
-              LinearProgressIndicator(value: _progress),
-              const SizedBox(height: 8),
-              Text(
-                _progress == null
-                    ? 'Downloading…'
-                    : 'Downloading… ${(_progress! * 100).toStringAsFixed(0)}%',
-                style: TextStyle(color: dim, fontSize: 11),
-              ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 14),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'You can still download it yourself from the release page.',
-                style: TextStyle(color: dim, fontSize: 11),
-              ),
-            ],
           ],
-        ),
+          if (!info.canSelfInstall) ...[
+            const SizedBox(height: 14),
+            Text(
+              Platform.isMacOS
+                  ? 'Downloading opens the release page in your browser. Unzip '
+                        'the app and drag it to Applications, replacing the old one.'
+                  : 'Downloading opens the release page in your browser.',
+              style: TextStyle(color: dim, fontSize: 12, height: 1.4),
+            ),
+          ],
+          if (_busy) ...[
+            const SizedBox(height: 18),
+            LinearProgressIndicator(value: _progress),
+            const SizedBox(height: 8),
+            Text(
+              _progress == null ? 'Downloading…' : 'Downloading… ${(_progress! * 100).toStringAsFixed(0)}%',
+              style: TextStyle(color: dim, fontSize: 11),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 14),
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+            const SizedBox(height: 6),
+            Text(
+              'You can still download it yourself from the release page.',
+              style: TextStyle(color: dim, fontSize: 11),
+            ),
+          ],
+        ],
       ),
       actions: _busy
-          ? const [SizedBox.shrink()]
+          ? const []
           : [
               TextButton(
                 onPressed: () async {
@@ -181,20 +174,11 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 },
                 child: const Text('Skip this version'),
               ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Remind me later'),
-              ),
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Remind me later')),
               if (info.canSelfInstall && _error == null)
-                ElevatedButton(
-                  onPressed: _install,
-                  child: const Text('Update now'),
-                )
+                ElevatedButton(onPressed: _install, child: const Text('Update now'))
               else
-                ElevatedButton(
-                  onPressed: _openPage,
-                  child: const Text('Open download page'),
-                ),
+                ElevatedButton(onPressed: _openPage, child: const Text('Open download page')),
             ],
     );
   }
@@ -233,11 +217,7 @@ class UpdateButton extends StatelessWidget {
                     const SizedBox(width: 5),
                     Text(
                       'Update to ${info.version}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onPrimary,
-                      ),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onPrimary),
                     ),
                   ],
                 ),

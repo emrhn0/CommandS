@@ -7,6 +7,7 @@ import '../providers/app_state.dart';
 import '../services/pane_layout.dart';
 import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
+import 'app_dialog.dart';
 import 'context_menu.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
@@ -57,19 +58,14 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     String initial,
     ValueChanged<String> onSubmit,
   ) async {
-    final controller = TextEditingController(text: initial);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('OK')),
-        ],
-      ),
+    final result = await showTextInputDialog(
+      context,
+      title: title,
+      initial: initial,
+      okLabel: initial.isEmpty ? 'Create' : 'Rename',
+      icon: initial.isEmpty ? Icons.create_new_folder_outlined : Icons.edit_outlined,
     );
-    if (result != null && result.isNotEmpty) onSubmit(result);
+    if (result != null) onSubmit(result);
   }
 
   List<_Row> _visibleRows(AppState app) {
@@ -196,20 +192,16 @@ class _ConnectionTreeState extends State<ConnectionTree> {
       if (connIds.isNotEmpty) '${connIds.length} connection${connIds.length == 1 ? '' : 's'}',
       if (folderIds.isNotEmpty) '${folderIds.length} folder${folderIds.length == 1 ? '' : 's'}',
     ];
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete ${parts.join(' and ')}?'),
-        content: Text(
-          folderIds.isEmpty ? 'This cannot be undone.' : 'This cannot be undone. Deleted folders\' contents are NOT deleted — they move to root, unfiled.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete ${parts.join(' and ')}?',
+      message: folderIds.isEmpty
+          ? 'This cannot be undone.'
+          : "This cannot be undone. Deleted folders' contents are NOT deleted — they move to root, unfiled.",
+      confirmLabel: 'Delete',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     for (final id in connIds) {
       await app.deleteConnection(id);
     }
@@ -557,30 +549,16 @@ class _FolderRowState extends State<_FolderRow> {
         MenuAction('rename', 'Rename', Icons.edit_outlined),
         MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
-      onMenu: (key) {
+      onMenu: (key) async {
         if (key == 'new') {
           showNewConnectionDialog(context, folderId: widget.folder.id);
         } else if (key == 'rename') {
-          showDialog(
-            context: context,
-            builder: (ctx) {
-              final c = TextEditingController(text: widget.folder.name);
-              return AlertDialog(
-                title: const Text('Rename folder'),
-                content: TextField(controller: c, autofocus: true),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                  FilledButton(
-                    onPressed: () {
-                      app.renameFolder(widget.folder.id, c.text.trim());
-                      Navigator.pop(ctx);
-                    },
-                    child: const Text('OK'),
-                  ),
-                ],
-              );
-            },
+          final name = await showTextInputDialog(
+            context,
+            title: 'Rename folder',
+            initial: widget.folder.name,
           );
+          if (name != null) app.renameFolder(widget.folder.id, name);
         } else if (key == 'delete') {
           _confirmDeleteFolder(context, app);
         }
@@ -592,23 +570,17 @@ class _FolderRowState extends State<_FolderRow> {
     final childCount =
         app.connections.where((c) => c.folderId == widget.folder.id).length +
         app.folders.where((f) => f.parentId == widget.folder.id).length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete "${widget.folder.name}"?'),
-        content: Text(
-          childCount == 0
-              ? 'This folder is empty.'
-              : 'It contains $childCount item${childCount == 1 ? '' : 's'}. '
-                    'They will NOT be deleted — they move to the root, unfiled.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete folder')),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete "${widget.folder.name}"?',
+      message: childCount == 0
+          ? 'This folder is empty.'
+          : 'It contains $childCount item${childCount == 1 ? '' : 's'}. '
+                'They will NOT be deleted — they move to the root, unfiled.',
+      confirmLabel: 'Delete folder',
+      destructive: true,
     );
-    if (confirmed == true) app.deleteFolder(widget.folder.id);
+    if (confirmed) app.deleteFolder(widget.folder.id);
   }
 }
 
@@ -692,24 +664,8 @@ class _ConnectionRow extends StatelessWidget {
         } else if (key == 'clone') {
           await app.cloneConnection(conn.id);
         } else if (key == 'rename') {
-          final c = TextEditingController(text: conn.name);
-          await showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Rename connection'),
-              content: TextField(controller: c, autofocus: true),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                FilledButton(
-                  onPressed: () {
-                    app.renameConnection(conn.id, c.text.trim());
-                    Navigator.pop(ctx);
-                  },
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
+          final name = await showTextInputDialog(context, title: 'Rename connection', initial: conn.name);
+          if (name != null) app.renameConnection(conn.id, name);
         } else if (key == 'move') {
           final choice = await showFolderPicker(
             context,
@@ -768,19 +724,8 @@ class _LayoutRow extends StatelessWidget {
         if (key == 'open') {
           _open(context);
         } else if (key == 'rename') {
-          final c = TextEditingController(text: layout.name);
-          final name = await showDialog<String>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Rename layout'),
-              content: TextField(controller: c, autofocus: true, onSubmitted: (v) => Navigator.pop(ctx, v)),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('OK')),
-              ],
-            ),
-          );
-          if (name != null && name.trim().isNotEmpty) await app.renameLayout(layout.id, name.trim());
+          final name = await showTextInputDialog(context, title: 'Rename layout', initial: layout.name);
+          if (name != null) await app.renameLayout(layout.id, name);
         } else if (key == 'move') {
           if (!context.mounted) return;
           final choice = await showFolderPicker(

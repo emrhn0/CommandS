@@ -4,6 +4,7 @@ import 'package:commands/services/pane_layout.dart';
 import 'package:commands/services/rdp_session.dart';
 import 'package:commands/services/session_controller.dart';
 import 'package:commands/services/storage_service.dart';
+import 'package:commands/widgets/app_dialog.dart';
 import 'package:commands/widgets/connection_tree.dart';
 import 'package:commands/widgets/split_view_dialog.dart';
 import 'package:flutter/material.dart';
@@ -175,7 +176,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save as layout…'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Both switches');
+    await tester.enterText(find.descendant(of: find.widgetWithText(LabeledField, 'Name'), matching: find.byType(TextField)), 'Both switches');
     await tester.tap(find.widgetWithText(ElevatedButton, 'Save'));
     await tester.pumpAndSettle();
 

@@ -146,6 +146,16 @@ class AppTheme {
           textStyle: buttonText,
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: onAccent,
+          shape: shape,
+          padding: buttonPadding,
+          minimumSize: buttonSize,
+          textStyle: buttonText,
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: accent,

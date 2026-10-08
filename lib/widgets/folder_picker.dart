@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../theme/app_theme.dart';
+import 'app_dialog.dart';
 
 /// The answer from [showFolderPicker]: [folderId] is the chosen folder, or
 /// null for "no folder" (top level). The picker returns null itself when it
@@ -39,12 +40,8 @@ Future<FolderChoice?> showFolderPicker(
 }) {
   return showDialog<FolderChoice>(
     context: context,
-    builder: (_) => _FolderPickerDialog(
-      folders: folders,
-      connections: connections,
-      selected: selected,
-      title: title,
-    ),
+    builder: (_) =>
+        _FolderPickerDialog(folders: folders, connections: connections, selected: selected, title: title),
   );
 }
 
@@ -84,13 +81,14 @@ class FolderField extends StatelessWidget {
         if (choice != null) onChanged(choice.folderId);
       },
       child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          suffixIcon: const Icon(Icons.unfold_more, size: 18),
-        ),
+        decoration: InputDecoration(labelText: label, suffixIcon: const Icon(Icons.unfold_more, size: 18)),
         child: Row(
           children: [
-            Icon(path == null ? Icons.folder_off_outlined : Icons.folder, size: 16, color: path == null ? dim : null),
+            Icon(
+              path == null ? Icons.folder_off_outlined : Icons.folder,
+              size: 16,
+              color: path == null ? dim : null,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -193,9 +191,11 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
           rows.add(_Row(f, 0, false));
         }
       }
-      rows.sort((a, b) => (folderPath(widget.folders, a.folder.id) ?? '')
-          .toLowerCase()
-          .compareTo((folderPath(widget.folders, b.folder.id) ?? '').toLowerCase()));
+      rows.sort(
+        (a, b) => (folderPath(widget.folders, a.folder.id) ?? '').toLowerCase().compareTo(
+          (folderPath(widget.folders, b.folder.id) ?? '').toLowerCase(),
+        ),
+      );
       return rows;
     }
     void walk(String? parent, int depth) {
@@ -216,83 +216,76 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final rows = _rows();
-    return Dialog(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440, maxHeight: 620),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              TextField(
-                autofocus: true,
-                onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-                decoration: const InputDecoration(
-                  hintText: 'Search folders',
-                  prefixIcon: Icon(Icons.search, size: 18),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Flexible(
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.dividerColor),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: ListView(
-                    controller: _scroll,
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    children: [
-                      if (_query.isEmpty)
-                        _PickerRow(
-                          depth: 0,
-                          icon: Icons.folder_off_outlined,
-                          title: 'No folder (top level)',
-                          selected: widget.selected == null,
-                          expanded: null,
-                          onTap: () => _pick(null),
-                        ),
-                      for (final r in rows)
-                        _PickerRow(
-                          depth: r.depth,
-                          icon: _expanded.contains(r.folder.id) ? Icons.folder_open : Icons.folder,
-                          title: r.folder.name,
-                          subtitle: _query.isEmpty ? null : folderPath(widget.folders, r.folder.parentId),
-                          count: _counts[r.folder.id],
-                          selected: widget.selected == r.folder.id,
-                          expanded: r.hasChildren ? _expanded.contains(r.folder.id) : null,
-                          onToggle: () => setState(() {
-                            if (!_expanded.remove(r.folder.id)) _expanded.add(r.folder.id);
-                          }),
-                          onTap: () => _pick(r.folder.id),
-                        ),
-                      if (_query.isNotEmpty && rows.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            'No folder matches.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: theme.textTheme.bodySmall?.color),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-              ),
-            ],
+    return AppDialog(
+      title: widget.title,
+      icon: Icons.drive_file_move_outlined,
+      width: 440,
+      maxHeight: 620,
+      scrollable: false,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            autofocus: true,
+            onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+            decoration: const InputDecoration(
+              hintText: 'Search folders',
+              prefixIcon: Icon(Icons.search, size: 18),
+              isDense: true,
+            ),
           ),
-        ),
+          const SizedBox(height: 10),
+          Flexible(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.dividerColor),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: ListView(
+                controller: _scroll,
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                children: [
+                  if (_query.isEmpty)
+                    _PickerRow(
+                      depth: 0,
+                      icon: Icons.folder_off_outlined,
+                      title: 'No folder (top level)',
+                      selected: widget.selected == null,
+                      expanded: null,
+                      onTap: () => _pick(null),
+                    ),
+                  for (final r in rows)
+                    _PickerRow(
+                      depth: r.depth,
+                      icon: _expanded.contains(r.folder.id) ? Icons.folder_open : Icons.folder,
+                      title: r.folder.name,
+                      subtitle: _query.isEmpty ? null : folderPath(widget.folders, r.folder.parentId),
+                      count: _counts[r.folder.id],
+                      selected: widget.selected == r.folder.id,
+                      expanded: r.hasChildren ? _expanded.contains(r.folder.id) : null,
+                      onToggle: () => setState(() {
+                        if (!_expanded.remove(r.folder.id)) _expanded.add(r.folder.id);
+                      }),
+                      onTap: () => _pick(r.folder.id),
+                    ),
+                  if (_query.isNotEmpty && rows.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'No folder matches.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: theme.textTheme.bodySmall?.color),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
+      actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel'))],
     );
   }
 }
@@ -340,8 +333,8 @@ class _PickerRowState extends State<_PickerRow> {
     final bg = widget.selected
         ? accent.withValues(alpha: isDark ? 0.16 : 0.12)
         : _hover
-            ? accent.withValues(alpha: isDark ? 0.07 : 0.05)
-            : Colors.transparent;
+        ? accent.withValues(alpha: isDark ? 0.07 : 0.05)
+        : Colors.transparent;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),

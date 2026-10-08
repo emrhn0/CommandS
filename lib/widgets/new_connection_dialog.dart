@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import 'app_dialog.dart';
 import 'folder_picker.dart';
 
 /// RDM-style session popup — connections are never edited in an inline
@@ -130,7 +131,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     }
   }
 
-  Widget _passwordField() => _Field(
+  Widget _passwordField() => LabeledField(
     label: 'Password',
     child: TextField(
       controller: _password,
@@ -152,174 +153,122 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final theme = Theme.of(context);
     final rdp = _protocol == ConnectionProtocol.rdp;
-    return Dialog(
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Title bar: what is being edited, and a way out.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 10, 14),
-              child: Row(
-                children: [
-                  Icon(rdp ? Icons.desktop_windows_outlined : Icons.terminal, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _isEdit ? 'Edit Connection' : 'New Connection',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16),
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
+    return AppDialog(
+      title: _isEdit ? 'Edit Connection' : 'New Connection',
+      icon: rdp ? Icons.desktop_windows_outlined : Icons.terminal,
+      width: 460,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SegmentedButton<ConnectionProtocol>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: ConnectionProtocol.ssh,
+                label: Text('SSH'),
+                icon: Icon(Icons.terminal, size: 16),
               ),
+              ButtonSegment(
+                value: ConnectionProtocol.rdp,
+                label: Text('RDP'),
+                icon: Icon(Icons.desktop_windows_outlined, size: 16),
+              ),
+            ],
+            selected: {_protocol},
+            onSelectionChanged: (s) => _setProtocol(s.first),
+          ),
+          const _Section('Connection'),
+          LabeledField(
+            label: 'Name',
+            child: TextField(
+              controller: _name,
+              decoration: const InputDecoration(hintText: 'Defaults to the host'),
             ),
-            const Divider(),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SegmentedButton<ConnectionProtocol>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(
-                          value: ConnectionProtocol.ssh,
-                          label: Text('SSH'),
-                          icon: Icon(Icons.terminal, size: 16),
-                        ),
-                        ButtonSegment(
-                          value: ConnectionProtocol.rdp,
-                          label: Text('RDP'),
-                          icon: Icon(Icons.desktop_windows_outlined, size: 16),
-                        ),
-                      ],
-                      selected: {_protocol},
-                      onSelectionChanged: (s) => _setProtocol(s.first),
-                    ),
-                    const _Section('Connection'),
-                    _Field(
-                      label: 'Name',
-                      child: TextField(
-                        controller: _name,
-                        decoration: const InputDecoration(hintText: 'Defaults to the host'),
-                      ),
-                    ),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: _Field(
-                            label: 'Host',
-                            child: TextField(controller: _host, autofocus: true),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _Field(
-                            label: 'Port',
-                            child: TextField(controller: _port, keyboardType: TextInputType.number),
-                          ),
-                        ),
-                      ],
-                    ),
-                    _Field(
-                      label: 'Folder',
-                      child: FolderField(
-                        label: null,
-                        folders: app.folders,
-                        connections: app.connections,
-                        value: _folderId,
-                        onChanged: (v) => setState(() => _folderId = v),
-                      ),
-                    ),
-                    const _Section('Credentials'),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _Field(
-                            label: 'Username',
-                            child: TextField(controller: _username),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: rdp
-                              ? _Field(
-                                  label: 'Domain',
-                                  child: TextField(
-                                    controller: _domain,
-                                    decoration: const InputDecoration(hintText: 'Optional'),
-                                  ),
-                                )
-                              : _passwordField(),
-                        ),
-                      ],
-                    ),
-                    if (rdp) _passwordField(),
-                    if (rdp) ...[
-                      const _Section('Remote desktop'),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _Toggle(
-                              label: 'Share clipboard',
-                              value: _rdpClipboard,
-                              onChanged: (v) => setState(() => _rdpClipboard = v),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _Toggle(
-                              label: 'Show wallpaper',
-                              value: _rdpWallpaper,
-                              onChanged: (v) => setState(() => _rdpWallpaper = v),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: LabeledField(
+                  label: 'Host',
+                  child: TextField(controller: _host, autofocus: true),
                 ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: LabeledField(
+                  label: 'Port',
+                  child: TextField(controller: _port, keyboardType: TextInputType.number),
+                ),
+              ),
+            ],
+          ),
+          LabeledField(
+            label: 'Folder',
+            child: FolderField(
+              label: null,
+              folders: app.folders,
+              connections: app.connections,
+              value: _folderId,
+              onChanged: (v) => setState(() => _folderId = v),
             ),
-            // Windows' dialog footer: the actions on a tinted band.
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-              decoration: BoxDecoration(
-                color: theme.scaffoldBackgroundColor,
-                border: Border(top: BorderSide(color: theme.dividerColor)),
+          ),
+          const _Section('Credentials'),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: LabeledField(
+                  label: 'Username',
+                  child: TextField(controller: _username),
+                ),
               ),
-              // Wraps rather than overflowing with large system fonts.
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                  OutlinedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save')),
-                  ElevatedButton(
-                    onPressed: () => _save(alsoConnect: true),
-                    child: const Text('Save and Connect'),
+              const SizedBox(width: 10),
+              Expanded(
+                child: rdp
+                    ? LabeledField(
+                        label: 'Domain',
+                        child: TextField(
+                          controller: _domain,
+                          decoration: const InputDecoration(hintText: 'Optional'),
+                        ),
+                      )
+                    : _passwordField(),
+              ),
+            ],
+          ),
+          if (rdp) _passwordField(),
+          if (rdp) ...[
+            const _Section('Remote desktop'),
+            Row(
+              children: [
+                Expanded(
+                  child: _Toggle(
+                    label: 'Share clipboard',
+                    value: _rdpClipboard,
+                    onChanged: (v) => setState(() => _rdpClipboard = v),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _Toggle(
+                    label: 'Show wallpaper',
+                    value: _rdpWallpaper,
+                    onChanged: (v) => setState(() => _rdpWallpaper = v),
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
+        ],
       ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        OutlinedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save')),
+        ElevatedButton(onPressed: () => _save(alsoConnect: true), child: const Text('Save and Connect')),
+      ],
     );
   }
 }
@@ -348,31 +297,6 @@ class _Section extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           const Expanded(child: Divider()),
-        ],
-      ),
-    );
-  }
-}
-
-/// A label above its field, as desktop forms do, rather than Material's
-/// label floating inside the box.
-class _Field extends StatelessWidget {
-  const _Field({required this.label, required this.child});
-  final String label;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 1, bottom: 4),
-            child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-          ),
-          child,
         ],
       ),
     );

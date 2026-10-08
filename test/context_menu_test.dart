@@ -57,4 +57,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.connections, isEmpty);
   });
+
+  testWidgets('Rename and Delete folder use the app dialogs', (tester) async {
+    await pumpTree(tester);
+    await tester.tap(find.text('switch-01'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rename connection'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, 'switch-renamed');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(app.connections.single.name, 'switch-renamed');
+
+    final folder = ConnectionFolder(name: 'CUSTOMER-A');
+    app.folders.add(folder);
+    app.notifyListeners();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('CUSTOMER-A'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete folder'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete "CUSTOMER-A"?'), findsOneWidget);
+    // Closing with the title bar's X keeps the folder.
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(app.folders, hasLength(1));
+
+    await tester.tap(find.text('CUSTOMER-A'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete folder'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Delete folder'));
+    await tester.pumpAndSettle();
+    expect(app.folders, isEmpty);
+  });
 }

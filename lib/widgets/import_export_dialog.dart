@@ -4,16 +4,19 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../models/models.dart';
 import '../providers/app_state.dart';
 import '../services/rdm_import.dart';
 import '../services/storage_service.dart';
 import 'selection_tree_dialog.dart';
+import 'app_dialog.dart';
 
 Future<void> showExportDialog(BuildContext context) async {
   final app = context.read<AppState>();
   if (app.connections.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No connections to export yet.')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('No connections to export yet.')));
     return;
   }
 
@@ -29,13 +32,28 @@ Future<void> showExportDialog(BuildContext context) async {
   if (!context.mounted) return;
   final format = await showDialog<String>(
     context: context,
-    builder: (ctx) => SimpleDialog(
-      title: const Text('Export format'),
-      children: [
-        SimpleDialogOption(onPressed: () => Navigator.pop(ctx, 'json'), child: const Text('JSON')),
-        SimpleDialogOption(onPressed: () => Navigator.pop(ctx, 'xml'), child: const Text('XML')),
-        SimpleDialogOption(onPressed: () => Navigator.pop(ctx, 'csv'), child: const Text('CSV (Excel/Sheets)')),
-      ],
+    builder: (ctx) => AppDialog(
+      title: 'Export format',
+      icon: Icons.file_upload_outlined,
+      width: 380,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (key, label, hint, icon) in const [
+            ('json', 'JSON', 'Everything, for importing into CommandS again', Icons.data_object),
+            ('xml', 'XML', 'Folders and connections', Icons.code),
+            ('csv', 'CSV (Excel/Sheets)', 'One row per connection', Icons.table_chart_outlined),
+          ])
+            ListTile(
+              dense: true,
+              leading: Icon(icon, size: 18),
+              title: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              subtitle: Text(hint, style: const TextStyle(fontSize: 11.5)),
+              onTap: () => Navigator.pop(ctx, key),
+            ),
+        ],
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'))],
     ),
   );
   if (format == null) return;
@@ -90,9 +108,10 @@ Future<void> showImportDialog(BuildContext context) async {
       final parsed = storage.parseXml(raw);
       if (parsed.folders.isEmpty && parsed.connections.isEmpty) {
         throw const FormatException(
-            'This XML doesn\'t look like a CommandS export (no <Connection>/<Folder> elements found). '
-            'CommandS\'s own XML import only round-trips its own export — for Remote Desktop Manager, '
-            'export as JSON instead, or as CSV if you need passwords included.');
+          'This XML doesn\'t look like a CommandS export (no <Connection>/<Folder> elements found). '
+          'CommandS\'s own XML import only round-trips its own export — for Remote Desktop Manager, '
+          'export as JSON instead, or as CSV if you need passwords included.',
+        );
       }
       if (!context.mounted) return;
       await _confirmAndImportParsed(context, app, parsed.folders, parsed.connections);
@@ -128,13 +147,18 @@ Future<void> showImportDialog(BuildContext context) async {
           'CSV/spreadsheet with credentials revealed and import that instead',
         );
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(parts.join('. ')), duration: const Duration(seconds: 6)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(parts.join('. ')), duration: const Duration(seconds: 6)));
     } else {
       final parsed = storage.parseJson(raw);
       if (!context.mounted) return;
-      await _confirmAndImportParsed(context, app, parsed.folders, parsed.connections, layouts: parsed.layouts);
+      await _confirmAndImportParsed(
+        context,
+        app,
+        parsed.folders,
+        parsed.connections,
+        layouts: parsed.layouts,
+      );
     }
   } catch (e) {
     if (context.mounted) {
@@ -167,6 +191,7 @@ Future<void> _confirmAndImportParsed(
   }).toList();
   await app.importParsed(folders, chosenConnections, parsedLayouts: layouts);
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Imported ${chosenConnections.length} connection(s)')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Imported ${chosenConnections.length} connection(s)')));
   }
 }

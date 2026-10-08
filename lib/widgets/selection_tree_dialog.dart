@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../models/models.dart';
+import 'app_dialog.dart';
 
 class SelectionResult {
   SelectionResult({required this.connectionIds, required this.passwordIds});
@@ -121,114 +123,111 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
   @override
   Widget build(BuildContext context) {
     final rows = _rows();
-    return Dialog(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(widget.title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 4),
-              Text(
-                '${_checkedConnections.length} of ${widget.connections.length} selected',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: rows.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Center(child: Text('Nothing to show', style: TextStyle(fontSize: 12))),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: rows.length,
-                        itemBuilder: (context, i) {
-                          final row = rows[i];
-                          if (row.folder != null) {
-                            final state = _folderState(row.folder!.id);
-                            return Padding(
-                              padding: EdgeInsets.only(left: row.depth * 16),
-                              child: CheckboxListTile(
-                                value: state,
-                                tristate: true,
-                                dense: true,
-                                controlAffinity: ListTileControlAffinity.leading,
-                                title: Row(
-                                  children: [
-                                    Icon(Icons.folder, size: 15, color: Theme.of(context).colorScheme.primary),
-                                    const SizedBox(width: 6),
-                                    Text(row.folder!.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                                  ],
-                                ),
-                                onChanged: (v) => _toggleFolder(row.folder!.id, v ?? true),
-                              ),
-                            );
-                          }
-                          final conn = row.connection!;
-                          final checked = _checkedConnections.contains(conn.id);
-                          final hasPassword = conn.password.isNotEmpty;
-                          return Padding(
-                            padding: EdgeInsets.only(left: row.depth * 16),
-                            child: CheckboxListTile(
-                              value: checked,
-                              dense: true,
-                              controlAffinity: ListTileControlAffinity.leading,
-                              title: Text(conn.label, style: const TextStyle(fontSize: 12)),
-                              secondary: widget.showPasswordToggle && hasPassword
-                                  ? IconButton(
-                                      tooltip: _checkedPasswords.contains(conn.id)
-                                          ? 'Password will be included'
-                                          : 'Password will be excluded',
-                                      icon: Icon(
-                                        _checkedPasswords.contains(conn.id) ? Icons.lock : Icons.lock_open,
-                                        size: 16,
-                                      ),
-                                      onPressed: () => setState(() {
-                                        if (_checkedPasswords.contains(conn.id)) {
-                                          _checkedPasswords.remove(conn.id);
-                                        } else {
-                                          _checkedPasswords.add(conn.id);
-                                        }
-                                      }),
-                                    )
-                                  : null,
-                              onChanged: (v) => setState(() {
-                                if (v ?? false) {
-                                  _checkedConnections.add(conn.id);
-                                } else {
-                                  _checkedConnections.remove(conn.id);
-                                }
-                              }),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: _checkedConnections.isEmpty
-                        ? null
-                        : () => Navigator.pop(
-                              context,
-                              SelectionResult(connectionIds: _checkedConnections, passwordIds: _checkedPasswords),
-                            ),
-                    child: Text('Confirm (${_checkedConnections.length})'),
-                  ),
-                ],
-              ),
-            ],
+    return AppDialog(
+      title: widget.title,
+      icon: Icons.checklist,
+      width: 460,
+      maxHeight: 600,
+      scrollable: false,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '${_checkedConnections.length} of ${widget.connections.length} selected',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
           ),
-        ),
+          const SizedBox(height: 8),
+          Flexible(
+            child: rows.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text('Nothing to show', style: TextStyle(fontSize: 12))),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: rows.length,
+                    itemBuilder: (context, i) {
+                      final row = rows[i];
+                      if (row.folder != null) {
+                        final state = _folderState(row.folder!.id);
+                        return Padding(
+                          padding: EdgeInsets.only(left: row.depth * 16),
+                          child: CheckboxListTile(
+                            value: state,
+                            tristate: true,
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            title: Row(
+                              children: [
+                                const Icon(Icons.folder, size: 15),
+                                const SizedBox(width: 6),
+                                Text(
+                                  row.folder!.name,
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                            onChanged: (v) => _toggleFolder(row.folder!.id, v ?? true),
+                          ),
+                        );
+                      }
+                      final conn = row.connection!;
+                      final checked = _checkedConnections.contains(conn.id);
+                      final hasPassword = conn.password.isNotEmpty;
+                      return Padding(
+                        padding: EdgeInsets.only(left: row.depth * 16),
+                        child: CheckboxListTile(
+                          value: checked,
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: Text(conn.label, style: const TextStyle(fontSize: 12)),
+                          secondary: widget.showPasswordToggle && hasPassword
+                              ? IconButton(
+                                  tooltip: _checkedPasswords.contains(conn.id)
+                                      ? 'Password will be included'
+                                      : 'Password will be excluded',
+                                  icon: Icon(
+                                    _checkedPasswords.contains(conn.id) ? Icons.lock : Icons.lock_open,
+                                    size: 16,
+                                  ),
+                                  onPressed: () => setState(() {
+                                    if (_checkedPasswords.contains(conn.id)) {
+                                      _checkedPasswords.remove(conn.id);
+                                    } else {
+                                      _checkedPasswords.add(conn.id);
+                                    }
+                                  }),
+                                )
+                              : null,
+                          onChanged: (v) => setState(() {
+                            if (v ?? false) {
+                              _checkedConnections.add(conn.id);
+                            } else {
+                              _checkedConnections.remove(conn.id);
+                            }
+                          }),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ElevatedButton(
+          onPressed: _checkedConnections.isEmpty
+              ? null
+              : () => Navigator.pop(
+                  context,
+                  SelectionResult(connectionIds: _checkedConnections, passwordIds: _checkedPasswords),
+                ),
+          child: Text('Confirm (${_checkedConnections.length})'),
+        ),
+      ],
     );
   }
 }

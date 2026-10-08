@@ -7,6 +7,7 @@ import '../services/mac_rdp_session.dart';
 import '../services/pane_layout.dart';
 import '../services/rdp_session.dart';
 import 'folder_picker.dart';
+import 'app_dialog.dart';
 
 /// Opens the Split view dialog: pick a layout, then drag open tabs into its
 /// panes.
@@ -98,7 +99,10 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
   Future<void> _save() async {
     final app = context.read<AppState>();
     final tabsById = {for (final t in app.tabs) t.id: t};
-    final placed = [for (final id in _slots) if (id != null) tabsById[id]].whereType<OpenTab>().toList();
+    final placed = [
+      for (final id in _slots)
+        if (id != null) tabsById[id],
+    ].whereType<OpenTab>().toList();
     final quick = placed.where((t) => t.connectionId == null).length;
     final result = await showDialog<({String name, String? folderId})>(
       context: context,
@@ -138,7 +142,10 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
             children: [
               const Text('Split view', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 18),
-              Text('1. Choose a layout', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim)),
+              Text(
+                '1. Choose a layout',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim),
+              ),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 10,
@@ -173,7 +180,10 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                 ),
               ),
               const SizedBox(height: 16),
-              Text('Open tabs', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim)),
+              Text(
+                'Open tabs',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -199,7 +209,9 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                     ),
                   ),
                   OutlinedButton.icon(
-                    onPressed: _slots.any((id) => id != null && (tabsById[id]?.connectionId != null)) ? _save : null,
+                    onPressed: _slots.any((id) => id != null && (tabsById[id]?.connectionId != null))
+                        ? _save
+                        : null,
                     icon: const Icon(Icons.bookmark_add_outlined, size: 16),
                     label: const Text('Save as layout…'),
                   ),
@@ -229,25 +241,28 @@ class _PresetGeometry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget row(List<Widget> children) => Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: _withGaps(children, SizedBox(width: gap)),
-        );
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _withGaps(children, SizedBox(width: gap)),
+    );
     Widget col(List<Widget> children) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: _withGaps(children, SizedBox(height: gap)),
-        );
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _withGaps(children, SizedBox(height: gap)),
+    );
     Widget s(int i) => Expanded(child: slot(i));
 
     return switch (preset) {
       SplitPreset.single => row([s(0)]),
       SplitPreset.sideBySide => row([s(0), s(1)]),
       SplitPreset.stacked => col([s(0), s(1)]),
-      SplitPreset.oneLeftTwoRight => row([s(0), Expanded(child: col([s(1), s(2)]))]),
+      SplitPreset.oneLeftTwoRight => row([
+        s(0),
+        Expanded(child: col([s(1), s(2)])),
+      ]),
       SplitPreset.threeColumns => row([s(0), s(1), s(2)]),
       SplitPreset.grid => col([
-          Expanded(child: row([s(0), s(1)])),
-          Expanded(child: row([s(2), s(3)])),
-        ]),
+        Expanded(child: row([s(0), s(1)])),
+        Expanded(child: row([s(2), s(3)])),
+      ]),
     };
   }
 
@@ -317,12 +332,7 @@ bool _isRdp(OpenTab t) => t.controller is RdpSessionController || t.controller i
 String _title(OpenTab t) => t.controller.tabTitle ?? t.controller.host;
 
 class _SlotTarget extends StatelessWidget {
-  const _SlotTarget({
-    required this.index,
-    required this.tab,
-    required this.onAccept,
-    required this.onClear,
-  });
+  const _SlotTarget({required this.index, required this.tab, required this.onAccept, required this.onClear});
 
   final int index;
   final OpenTab? tab;
@@ -388,10 +398,7 @@ class _SlotTarget extends StatelessWidget {
             color: hovering
                 ? accent.withValues(alpha: 0.16)
                 : (t == null ? Colors.transparent : accent.withValues(alpha: 0.06)),
-            border: Border.all(
-              color: hovering ? accent : theme.dividerColor,
-              width: hovering ? 2 : 1,
-            ),
+            border: Border.all(color: hovering ? accent : theme.dividerColor, width: hovering ? 2 : 1),
             borderRadius: BorderRadius.circular(6),
           ),
           child: content,
@@ -445,7 +452,11 @@ class _DraggableTab extends StatelessWidget {
               ),
               child: Text(
                 '${placedIn + 1}',
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: theme.colorScheme.onPrimary),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onPrimary,
+                ),
               ),
             ),
           ],
@@ -527,38 +538,38 @@ class _SaveLayoutDialogState extends State<_SaveLayoutDialog> {
   @override
   Widget build(BuildContext context) {
     final dim = Theme.of(context).textTheme.bodySmall?.color;
-    return AlertDialog(
-      title: const Text('Save layout'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _name,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Name'),
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 12),
-            FolderField(
+    return AppDialog(
+      title: 'Save layout',
+      icon: Icons.space_dashboard_outlined,
+      width: 440,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LabeledField(
+            label: 'Name',
+            child: TextField(controller: _name, autofocus: true, onSubmitted: (_) => _submit()),
+          ),
+          LabeledField(
+            label: 'Folder',
+            child: FolderField(
+              label: null,
               folders: widget.folders,
               connections: widget.connections,
               value: _folderId,
               onChanged: (v) => setState(() => _folderId = v),
             ),
-            if (widget.quickCount > 0) ...[
-              const SizedBox(height: 12),
-              Text(
-                '${widget.quickCount} pane${widget.quickCount == 1 ? ' holds a quick connection' : 's hold quick connections'}, '
-                'which ${widget.quickCount == 1 ? 'is' : 'are'} not saved and cannot be reopened, so '
-                '${widget.quickCount == 1 ? 'it is' : 'they are'} saved empty.',
-                style: TextStyle(fontSize: 12, color: dim),
-              ),
-            ],
+          ),
+          if (widget.quickCount > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              '${widget.quickCount} pane${widget.quickCount == 1 ? ' holds a quick connection' : 's hold quick connections'}, '
+              'which ${widget.quickCount == 1 ? 'is' : 'are'} not saved and cannot be reopened, so '
+              '${widget.quickCount == 1 ? 'it is' : 'they are'} saved empty.',
+              style: TextStyle(fontSize: 12, color: dim),
+            ),
           ],
-        ),
+        ],
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
