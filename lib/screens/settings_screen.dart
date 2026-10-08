@@ -388,6 +388,7 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
               child: DropdownButtonFormField<String>(
                 initialValue: _typingFont ? _other : family,
                 isExpanded: true,
+                borderRadius: BorderRadius.circular(6),
                 decoration: const InputDecoration(labelText: 'Font', isDense: true),
                 items: [
                   for (final f in options)

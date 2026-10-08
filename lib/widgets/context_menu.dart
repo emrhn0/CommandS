@@ -8,6 +8,7 @@ class MenuAction {
     this.icon, {
     this.destructive = false,
     this.separatorBefore = false,
+    this.checked = false,
   });
 
   final String key;
@@ -19,6 +20,9 @@ class MenuAction {
 
   /// Starts a new group with a thin rule above it.
   final bool separatorBefore;
+
+  /// Marks the current choice in a menu that picks one value.
+  final bool checked;
 }
 
 /// Row height for menu items. Material's default is 48, a touch target --
@@ -36,6 +40,7 @@ Future<String?> showContextMenu(
   Offset? position,
   Rect? anchor,
   String? header,
+  double minWidth = 200,
 }) {
   assert(position != null || anchor != null);
   final theme = Theme.of(context);
@@ -66,12 +71,23 @@ Future<String?> showContextMenu(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Icon(a.icon, size: 16, color: a.destructive ? danger : theme.iconTheme.color?.withValues(alpha: 0.8)),
-            const SizedBox(width: 10),
-            Text(
-              a.label,
-              style: TextStyle(fontSize: 13, color: a.destructive ? danger : null),
+            Icon(
+              a.icon,
+              size: 16,
+              color: a.destructive ? danger : theme.iconTheme.color?.withValues(alpha: 0.8),
             ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                a.label,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: a.destructive ? danger : null,
+                  fontWeight: a.checked ? FontWeight.w600 : null,
+                ),
+              ),
+            ),
+            if (a.checked) const Icon(Icons.check, size: 16),
           ],
         ),
       ),
@@ -86,7 +102,7 @@ Future<String?> showContextMenu(
     shadowColor: Colors.black.withValues(alpha: 0.35),
     color: theme.colorScheme.surface,
     surfaceTintColor: Colors.transparent,
-    constraints: const BoxConstraints(minWidth: 200, maxWidth: 280),
+    constraints: BoxConstraints(minWidth: minWidth, maxWidth: 280),
     menuPadding: const EdgeInsets.symmetric(vertical: 4),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(6),

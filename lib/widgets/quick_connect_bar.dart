@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../app_version.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import 'context_menu.dart';
 
 /// RDM-style "Bağlan" strip pinned to the bottom of the connections panel —
 /// type a bare host and hit enter/connect for a one-off session, no dialog
@@ -103,10 +105,7 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
                 ),
               ),
               const SizedBox(width: 6),
-              _ProtocolPicker(
-                value: _protocol,
-                onChanged: (p) => setState(() => _protocol = p),
-              ),
+              _ProtocolPicker(value: _protocol, onChanged: (p) => setState(() => _protocol = p)),
             ],
           ),
         ],
@@ -115,57 +114,70 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
   }
 }
 
-/// Shows the protocol quick connect will use; clicking it offers the other
-/// one. A menu rather than a toggle so that it reads as a choice with a
-/// current value, the same way the protocol picker in the connection dialog
-/// does.
-class _ProtocolPicker extends StatelessWidget {
+/// Shows the protocol quick connect will use; clicking it opens the same
+/// desktop menu as the connection tree, with the current choice ticked.
+class _ProtocolPicker extends StatefulWidget {
   const _ProtocolPicker({required this.value, required this.onChanged});
   final ConnectionProtocol value;
   final ValueChanged<ConnectionProtocol> onChanged;
 
+  @override
+  State<_ProtocolPicker> createState() => _ProtocolPickerState();
+}
+
+class _ProtocolPickerState extends State<_ProtocolPicker> {
   static String _label(ConnectionProtocol p) => p == ConnectionProtocol.rdp ? 'RDP' : 'SSH';
 
   static IconData _icon(ConnectionProtocol p) =>
       p == ConnectionProtocol.rdp ? Icons.desktop_windows_outlined : Icons.terminal;
 
+  Future<void> _open() async {
+    final box = context.findRenderObject() as RenderBox;
+    final picked = await showContextMenu(
+      context,
+      anchor: box.localToGlobal(Offset.zero) & box.size,
+      header: 'Quick connect with',
+      minWidth: 170,
+      actions: [
+        for (final p in ConnectionProtocol.values)
+          MenuAction(p.name, _label(p), _icon(p), checked: p == widget.value),
+      ],
+    );
+    if (picked == null) return;
+    widget.onChanged(ConnectionProtocol.values.byName(picked));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final other = value == ConnectionProtocol.rdp ? ConnectionProtocol.ssh : ConnectionProtocol.rdp;
-    return PopupMenuButton<ConnectionProtocol>(
-      tooltip: 'Quick connect protocol',
-      position: PopupMenuPosition.under,
-      onSelected: onChanged,
-      itemBuilder: (_) => [
-        PopupMenuItem(
-          value: other,
-          height: 32,
-          child: Row(
-            children: [
-              Icon(_icon(other), size: 14),
-              const SizedBox(width: 8),
-              Text(_label(other), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
+    return Tooltip(
+      message: 'Quick connect protocol',
+      child: Material(
+        color: theme.inputDecorationTheme.fillColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: BorderSide(color: theme.dividerColor),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _open,
+          child: Container(
+            height: 28,
+            padding: const EdgeInsets.only(left: 8, right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(_icon(widget.value), size: 13),
+                const SizedBox(width: 5),
+                Text(
+                  _label(widget.value),
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 2),
+                const Icon(Icons.expand_more, size: 16),
+              ],
+            ),
           ),
-        ),
-      ],
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_icon(value), size: 13),
-            const SizedBox(width: 5),
-            Text(_label(value), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 2),
-            const Icon(Icons.arrow_drop_down, size: 16),
-          ],
         ),
       ),
     );

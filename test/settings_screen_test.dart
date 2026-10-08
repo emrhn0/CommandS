@@ -86,8 +86,8 @@ void main() {
     expect(prefs.getString('commands.themeMode'), 'dark');
   });
 
-  testWidgets('quick connect defaults to SSH and offers RDP, then SSH back', (tester) async {
-    tester.view.physicalSize = const Size(260, 120);
+  testWidgets('quick connect defaults to SSH; its menu ticks the current protocol', (tester) async {
+    tester.view.physicalSize = const Size(260, 200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
@@ -102,8 +102,11 @@ void main() {
 
     await tester.tap(find.text('SSH'));
     await tester.pumpAndSettle();
-    // The menu offers only the other protocol.
+    // Both protocols are listed, the current one ticked.
+    expect(find.text('Quick connect with'), findsOneWidget);
     expect(find.text('RDP'), findsOneWidget);
+    expect(find.text('SSH'), findsNWidgets(2));
+    expect(find.byIcon(Icons.check), findsOneWidget);
     await tester.tap(find.text('RDP'));
     await tester.pumpAndSettle();
     expect(find.text('RDP'), findsOneWidget);
@@ -111,8 +114,7 @@ void main() {
 
     await tester.tap(find.text('RDP'));
     await tester.pumpAndSettle();
-    expect(find.text('SSH'), findsOneWidget);
-    await tester.tap(find.text('SSH').last);
+    await tester.tap(find.text('SSH'));
     await tester.pumpAndSettle();
     expect(find.text('SSH'), findsOneWidget);
     expect(find.text('RDP'), findsNothing);

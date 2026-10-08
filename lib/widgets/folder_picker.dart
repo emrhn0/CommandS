@@ -57,6 +57,7 @@ class FolderField extends StatelessWidget {
     required this.connections,
     required this.value,
     required this.onChanged,
+    this.label = 'Folder',
   });
 
   final List<ConnectionFolder> folders;
@@ -64,11 +65,15 @@ class FolderField extends StatelessWidget {
   final String? value;
   final ValueChanged<String?> onChanged;
 
+  /// Drawn inside the field; null when the form puts its labels above.
+  final String? label;
+
   @override
   Widget build(BuildContext context) {
     final path = folderPath(folders, value);
     final dim = Theme.of(context).textTheme.bodySmall?.color;
     return InkWell(
+      borderRadius: BorderRadius.circular(6),
       onTap: () async {
         final choice = await showFolderPicker(
           context,
@@ -79,9 +84,9 @@ class FolderField extends StatelessWidget {
         if (choice != null) onChanged(choice.folderId);
       },
       child: InputDecorator(
-        decoration: const InputDecoration(
-          labelText: 'Folder',
-          suffixIcon: Icon(Icons.unfold_more, size: 18),
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.unfold_more, size: 18),
         ),
         child: Row(
           children: [
