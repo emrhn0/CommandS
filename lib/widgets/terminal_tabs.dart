@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
+
 import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
 import '../services/pane_layout.dart';
@@ -10,6 +11,7 @@ import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
 import '../services/session_controller.dart';
 import '../services/terminal_appearance.dart';
+import 'context_menu.dart';
 import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
@@ -28,9 +30,16 @@ class TerminalTabsArea extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.terminal, size: 40, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)),
+            Icon(
+              Icons.terminal,
+              size: 40,
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+            ),
             const SizedBox(height: 14),
-            Text('No active session', style: TextStyle(color: dim, fontSize: 15, fontWeight: FontWeight.w600)),
+            Text(
+              'No active session',
+              style: TextStyle(color: dim, fontSize: 15, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 6),
             Text(
               'Pick a saved connection on the left, use quick connect,\nor start a new one.',
@@ -78,7 +87,8 @@ class _TabBarRow extends StatelessWidget {
               itemCount: app.tabs.length,
               itemBuilder: (ctx, i) {
                 final tab = app.tabs[i];
-                final active = visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex);
+                final active =
+                    visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex);
                 return _TabChip(
                   title: tab.controller.tabTitle ?? tab.controller.host,
                   active: active,
@@ -86,6 +96,7 @@ class _TabBarRow extends StatelessWidget {
                   status: tab.controller.status,
                   onTap: () => app.setActiveTab(i),
                   onClose: () => app.closeTab(i),
+                  onMenu: (at) => _showTabMenu(context, app, tab, at),
                 );
               },
             ),
@@ -94,6 +105,34 @@ class _TabBarRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Right-click on a tab. A quick connection can be saved from here, with
+/// what it is connected to already filled in; a saved one can be edited.
+Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offset at) async {
+  final unsaved = app.unsavedConnectionOf(tab);
+  final saved = unsaved == null ? app.connections.where((c) => c.id == tab.connectionId).firstOrNull : null;
+  final key = await showContextMenu(
+    context,
+    position: at,
+    header: tab.controller.tabTitle ?? tab.controller.host,
+    actions: [
+      if (unsaved != null) const MenuAction('save', 'Save connection…', Icons.bookmark_add_outlined),
+      if (saved != null) const MenuAction('edit', 'Edit connection…', Icons.tune),
+      MenuAction('close', 'Close tab', Icons.close, separatorBefore: unsaved != null || saved != null),
+    ],
+  );
+  if (key == null || !context.mounted) return;
+  switch (key) {
+    case 'save':
+      final conn = await showSaveQuickConnectionDialog(context, unsaved!);
+      if (conn != null) app.linkTabToConnection(tab.id, conn);
+    case 'edit':
+      await showEditConnectionDialog(context, saved!);
+    case 'close':
+      final index = app.tabs.indexOf(tab);
+      if (index >= 0) app.closeTab(index);
   }
 }
 
@@ -134,6 +173,7 @@ class _TabChip extends StatelessWidget {
     required this.status,
     required this.onTap,
     required this.onClose,
+    required this.onMenu,
   });
 
   final String title;
@@ -142,6 +182,7 @@ class _TabChip extends StatelessWidget {
   final SessionStatus status;
   final VoidCallback onTap;
   final VoidCallback onClose;
+  final ValueChanged<Offset> onMenu;
 
   Widget _chip(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -151,9 +192,7 @@ class _TabChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: active ? scheme.surface : Colors.transparent,
-        border: Border(
-          bottom: BorderSide(color: active ? scheme.primary : Colors.transparent, width: 2),
-        ),
+        border: Border(bottom: BorderSide(color: active ? scheme.primary : Colors.transparent, width: 2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.max,
@@ -183,10 +222,7 @@ class _TabChip extends StatelessWidget {
           ),
           InkWell(
             onTap: onClose,
-            child: const Padding(
-              padding: EdgeInsets.all(2),
-              child: Icon(Icons.close, size: 14),
-            ),
+            child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 14)),
           ),
         ],
       ),
@@ -194,7 +230,11 @@ class _TabChip extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(onTap: onTap, child: _chip(context));
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    onSecondaryTapDown: (d) => onMenu(d.globalPosition),
+    child: _chip(context),
+  );
 }
 
 /// Renders the tiling tree: a single pane, or a resizable split of two
@@ -457,30 +497,102 @@ class _TerminalPaneState extends State<_TerminalPane> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final style = terminalStyle(family: app.terminalFontFamily, size: app.terminalFontSize);
     return GestureDetector(
       onTap: () => _focusNode.requestFocus(),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: TerminalView(
-          widget.controller.terminal,
-          controller: _terminalController,
-          focusNode: _focusNode,
-          autofocus: widget.active,
-          // Desktop: take characters straight from hardware key events. The
-          // default path routes printable characters through Flutter's IME
-          // TextInput connection, which is only opened by TerminalView's own tap
-          // handler -- so typing silently vanished while Enter and Backspace
-          // (which travel the key-event path) still worked. That is what made
-          // every password look wrong.
-          hardwareKeyboardOnly: true,
-          // PuTTY: right-click pastes, selecting copies (TerminalClipboard).
-          onSecondaryTapDown: (_, _) {
-            _clipboard.paste();
-            _focusNode.requestFocus();
-          },
-          textStyle: terminalStyle(family: app.terminalFontFamily, size: app.terminalFontSize),
-          theme: TerminalThemes.withColors(background: app.terminalBackground, foreground: app.terminalForeground),
-        ),
+      child: TerminalViewport(style: style, background: app.terminalBackground, child: _view(app, style)),
+    );
+  }
+
+  Widget _view(AppState app, TerminalStyle style) {
+    return TerminalView(
+      widget.controller.terminal,
+      controller: _terminalController,
+      focusNode: _focusNode,
+      autofocus: widget.active,
+      // Desktop: take characters straight from hardware key events. The
+      // default path routes printable characters through Flutter's IME
+      // TextInput connection, which is only opened by TerminalView's own tap
+      // handler -- so typing silently vanished while Enter and Backspace
+      // (which travel the key-event path) still worked. That is what made
+      // every password look wrong.
+      hardwareKeyboardOnly: true,
+      // PuTTY: right-click pastes, selecting copies (TerminalClipboard).
+      onSecondaryTapDown: (_, _) {
+        _clipboard.paste();
+        _focusNode.requestFocus();
+      },
+      textStyle: style,
+      theme: TerminalThemes.withColors(
+        background: app.terminalBackground,
+        foreground: app.terminalForeground,
+      ),
+    );
+  }
+}
+
+/// Frames a [TerminalView] so it stays inside its pane.
+///
+/// xterm scrolls its last line to the bottom edge and draws the line above
+/// the first full one wherever it lands -- with no clipping, so in a pane
+/// whose height was not a whole number of lines that half line was painted
+/// over whatever sat above (the tab strip, or the pane above in a split).
+/// The view is sized to whole lines, so there is no partial line at all, the
+/// spare pixels go to the bottom margin, and it is clipped regardless.
+class TerminalViewport extends StatelessWidget {
+  const TerminalViewport({super.key, required this.style, required this.background, required this.child});
+
+  final TerminalStyle style;
+  final Color background;
+  final Widget child;
+
+  static const double margin = 6;
+
+  /// The line height xterm itself uses: one laid-out line of the terminal's
+  /// font, measured the way its painter measures it.
+  static double cellHeight(TerminalStyle style, TextScaler scaler) {
+    final painter = TextPainter(
+      text: TextSpan(text: 'mmmmmmmmmm', style: style.toTextStyle()),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final h = painter.height;
+    painter.dispose();
+    return h;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final line = cellHeight(style, MediaQuery.textScalerOf(context));
+    return Container(
+      // The terminal's own colour behind the margin too, so the gap reads as
+      // part of the terminal rather than a frame around it.
+      color: background,
+      padding: const EdgeInsets.fromLTRB(8, margin, 6, 0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The container's top padding is already taken off.
+          final available = constraints.maxHeight;
+          final rows = line > 0 ? (available / line).floor() : 0;
+          return Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              height: rows > 0 ? rows * line : available,
+              child: ClipRect(
+                // xterm offsets its first line by MediaQuery's padding (meant
+                // for phone notches); a pane inside a window has none.
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeTop: true,
+                  removeBottom: true,
+                  removeLeft: true,
+                  removeRight: true,
+                  child: child,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

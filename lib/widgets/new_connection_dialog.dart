@@ -26,10 +26,24 @@ Future<void> showEditConnectionDialog(BuildContext context, SavedConnection conn
   );
 }
 
+/// Saves a session opened from quick connect: the same form with its host,
+/// port and protocol already filled in, so only the name, credentials and
+/// folder are left to type. Returns the saved connection, or null if
+/// cancelled.
+Future<SavedConnection?> showSaveQuickConnectionDialog(BuildContext context, SavedConnection target) {
+  return showDialog<SavedConnection>(
+    context: context,
+    builder: (_) => _ConnectionDialog(prefill: target),
+  );
+}
+
 class _ConnectionDialog extends StatefulWidget {
-  const _ConnectionDialog({this.initialFolderId, this.existing});
+  const _ConnectionDialog({this.initialFolderId, this.existing, this.prefill});
   final String? initialFolderId;
   final SavedConnection? existing;
+
+  /// Host, port and protocol of an open quick connection being saved.
+  final SavedConnection? prefill;
 
   @override
   State<_ConnectionDialog> createState() => _ConnectionDialogState();
@@ -67,8 +81,16 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       _rdpWallpaper = existing.rdpWallpaper;
     } else {
       _folderId = widget.initialFolderId;
+      final prefill = widget.prefill;
+      if (prefill != null) {
+        _host.text = prefill.host;
+        _port.text = '${prefill.port}';
+        _protocol = prefill.protocol;
+      }
     }
   }
+
+  bool get _isSaveOfQuick => widget.prefill != null;
 
   @override
   void dispose() {
@@ -122,7 +144,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     if (conn == null) return;
     await app.upsertConnection(conn);
     if (!mounted) return;
-    Navigator.pop(context);
+    Navigator.pop(context, conn);
     if (alsoConnect) {
       final error = await app.openConnection(conn);
       if (error != null) {
@@ -155,7 +177,11 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     final app = context.watch<AppState>();
     final rdp = _protocol == ConnectionProtocol.rdp;
     return AppDialog(
-      title: _isEdit ? 'Edit Connection' : 'New Connection',
+      title: _isEdit
+          ? 'Edit Connection'
+          : _isSaveOfQuick
+          ? 'Save Connection'
+          : 'New Connection',
       icon: rdp ? Icons.desktop_windows_outlined : Icons.terminal,
       width: 460,
       body: Column(
@@ -193,7 +219,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                 flex: 3,
                 child: LabeledField(
                   label: 'Host',
-                  child: TextField(controller: _host, autofocus: true),
+                  child: TextField(controller: _host, autofocus: !_isSaveOfQuick),
                 ),
               ),
               const SizedBox(width: 10),
@@ -222,7 +248,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
               Expanded(
                 child: LabeledField(
                   label: 'Username',
-                  child: TextField(controller: _username),
+                  child: TextField(controller: _username, autofocus: _isSaveOfQuick),
                 ),
               ),
               const SizedBox(width: 10),
@@ -266,8 +292,13 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        OutlinedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save')),
-        ElevatedButton(onPressed: () => _save(alsoConnect: true), child: const Text('Save and Connect')),
+        // A quick connection being saved is already open in its tab.
+        if (_isSaveOfQuick)
+          ElevatedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save'))
+        else ...[
+          OutlinedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save')),
+          ElevatedButton(onPressed: () => _save(alsoConnect: true), child: const Text('Save and Connect')),
+        ],
       ],
     );
   }
