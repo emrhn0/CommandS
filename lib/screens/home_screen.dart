@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../widgets/connection_tree.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/new_connection_dialog.dart';
@@ -6,6 +7,7 @@ import '../widgets/quick_connect_bar.dart';
 import '../widgets/terminal_tabs.dart';
 import '../widgets/update_dialog.dart';
 import 'settings_screen.dart';
+import '../l10n/strings.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -39,7 +41,7 @@ class HomeScreen extends StatelessWidget {
                             // instead of four unlabelled icons here.
                             _HeaderIcon(
                               icon: Icons.settings_outlined,
-                              tooltip: 'Settings',
+                              tooltip: tr('Settings'),
                               onTap: () => showSettings(context),
                             ),
                           ],
@@ -52,7 +54,7 @@ class HomeScreen extends StatelessWidget {
                           child: ElevatedButton.icon(
                             onPressed: () => showNewConnectionDialog(context),
                             icon: const Icon(Icons.add, size: 15),
-                            label: const Text('New Connection', style: TextStyle(fontSize: 12)),
+                            label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),
                           ),
                         ),
                       ),
@@ -86,10 +88,7 @@ class _HeaderIcon extends StatelessWidget {
       message: tooltip,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(5),
-          child: Icon(icon, size: 15),
-        ),
+        child: Padding(padding: const EdgeInsets.all(5), child: Icon(icon, size: 15)),
       ),
     );
   }

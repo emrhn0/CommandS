@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import 'app_dialog.dart';
+import '../l10n/strings.dart';
 
 /// The answer from [showFolderPicker]: [folderId] is the chosen folder, or
 /// null for "no folder" (top level). The picker returns null itself when it
@@ -81,7 +82,10 @@ class FolderField extends StatelessWidget {
         if (choice != null) onChanged(choice.folderId);
       },
       child: InputDecorator(
-        decoration: InputDecoration(labelText: label, suffixIcon: const Icon(Icons.unfold_more, size: 18)),
+        decoration: InputDecoration(
+          labelText: label == null ? null : tr(label!),
+          suffixIcon: const Icon(Icons.unfold_more, size: 18),
+        ),
         child: Row(
           children: [
             Icon(
@@ -92,7 +96,7 @@ class FolderField extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                path ?? 'No folder (top level)',
+                path ?? tr('No folder (top level)'),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: path == null ? dim : null),
               ),
@@ -217,7 +221,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
     final theme = Theme.of(context);
     final rows = _rows();
     return AppDialog(
-      title: widget.title,
+      title: tr(widget.title),
       icon: Icons.drive_file_move_outlined,
       width: 440,
       maxHeight: 620,
@@ -229,9 +233,9 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
           TextField(
             autofocus: true,
             onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-            decoration: const InputDecoration(
-              hintText: 'Search folders',
-              prefixIcon: Icon(Icons.search, size: 18),
+            decoration: InputDecoration(
+              hintText: tr('Search folders'),
+              prefixIcon: const Icon(Icons.search, size: 18),
               isDense: true,
             ),
           ),
@@ -251,7 +255,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                     _PickerRow(
                       depth: 0,
                       icon: Icons.folder_off_outlined,
-                      title: 'No folder (top level)',
+                      title: tr('No folder (top level)'),
                       selected: widget.selected == null,
                       expanded: null,
                       onTap: () => _pick(null),
@@ -274,7 +278,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        'No folder matches.',
+                        tr('No folder matches.'),
                         textAlign: TextAlign.center,
                         style: TextStyle(color: theme.textTheme.bodySmall?.color),
                       ),
@@ -285,7 +289,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
           ),
         ],
       ),
-      actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel'))],
+      actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Cancel')))],
     );
   }
 }

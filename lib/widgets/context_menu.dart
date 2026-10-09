@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
+
 /// One entry in a [showContextMenu] menu.
 class MenuAction {
   const MenuAction(
@@ -79,7 +81,7 @@ Future<String?> showContextMenu(
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                a.label,
+                tr(a.label),
                 style: TextStyle(
                   fontSize: 13,
                   color: a.destructive ? danger : null,

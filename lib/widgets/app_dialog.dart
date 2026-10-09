@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
+
 /// The app's dialog frame, shared by every popup so they all look like the
 /// connection dialog: a title bar with an icon and a close button, the body,
 /// and the actions on a tinted footer band, Windows-style.
@@ -60,7 +62,7 @@ class AppDialog extends StatelessWidget {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 16),
-                    tooltip: 'Close',
+                    tooltip: tr('Close'),
                     onPressed: closable ? () => Navigator.pop(context) : null,
                   ),
                 ],
@@ -106,7 +108,7 @@ class LabeledField extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 1, bottom: 4),
-            child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            child: Text(tr(label), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
           ),
           child,
         ],
@@ -169,15 +171,15 @@ class _TextInputDialogState extends State<_TextInputDialog> {
   @override
   Widget build(BuildContext context) {
     return AppDialog(
-      title: widget.title,
+      title: tr(widget.title),
       icon: widget.icon,
       body: LabeledField(
         label: widget.label,
         child: TextField(controller: _controller, autofocus: true, onSubmitted: (_) => _submit()),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        ElevatedButton(onPressed: _submit, child: Text(widget.okLabel)),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
+        ElevatedButton(onPressed: _submit, child: Text(tr(widget.okLabel))),
       ],
     );
   }
@@ -202,13 +204,13 @@ Future<bool> showConfirmDialog(
         icon: icon ?? (destructive ? Icons.delete_outline : Icons.help_outline),
         body: Text(message),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Cancel'))),
           ElevatedButton(
             style: destructive
                 ? ElevatedButton.styleFrom(backgroundColor: danger, foregroundColor: Colors.white)
                 : null,
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(confirmLabel),
+            child: Text(tr(confirmLabel)),
           ),
         ],
       );

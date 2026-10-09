@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../providers/app_state.dart';
 import 'app_dialog.dart';
 import 'folder_picker.dart';
+import '../l10n/strings.dart';
 
 /// RDM-style session popup — connections are never edited in an inline
 /// panel, only through this dialog. Opened from the "+ New Connection"
@@ -159,10 +160,10 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       controller: _password,
       obscureText: _obscure,
       decoration: InputDecoration(
-        hintText: 'Ask on connect',
+        hintText: tr('Ask on connect'),
         suffixIcon: IconButton(
           icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 16),
-          tooltip: _obscure ? 'Show password' : 'Hide password',
+          tooltip: _obscure ? tr('Show password') : tr('Hide password'),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints.tightFor(width: 30, height: 30),
           style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
@@ -177,11 +178,13 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     final app = context.watch<AppState>();
     final rdp = _protocol == ConnectionProtocol.rdp;
     return AppDialog(
-      title: _isEdit
-          ? 'Edit Connection'
-          : _isSaveOfQuick
-          ? 'Save Connection'
-          : 'New Connection',
+      title: tr(
+        _isEdit
+            ? 'Edit Connection'
+            : _isSaveOfQuick
+            ? 'Save Connection'
+            : 'New Connection',
+      ),
       icon: rdp ? Icons.desktop_windows_outlined : Icons.terminal,
       width: 460,
       body: Column(
@@ -209,7 +212,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             label: 'Name',
             child: TextField(
               controller: _name,
-              decoration: const InputDecoration(hintText: 'Defaults to the host'),
+              decoration: InputDecoration(hintText: tr('Defaults to the host')),
             ),
           ),
           Row(
@@ -258,7 +261,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                         label: 'Domain',
                         child: TextField(
                           controller: _domain,
-                          decoration: const InputDecoration(hintText: 'Optional'),
+                          decoration: InputDecoration(hintText: tr('Optional')),
                         ),
                       )
                     : _passwordField(),
@@ -291,13 +294,13 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
         // A quick connection being saved is already open in its tab.
         if (_isSaveOfQuick)
-          ElevatedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save'))
+          ElevatedButton(onPressed: () => _save(alsoConnect: false), child: Text(tr('Save')))
         else ...[
-          OutlinedButton(onPressed: () => _save(alsoConnect: false), child: const Text('Save')),
-          ElevatedButton(onPressed: () => _save(alsoConnect: true), child: const Text('Save and Connect')),
+          OutlinedButton(onPressed: () => _save(alsoConnect: false), child: Text(tr('Save'))),
+          ElevatedButton(onPressed: () => _save(alsoConnect: true), child: Text(tr('Save and Connect'))),
         ],
       ],
     );
@@ -318,7 +321,7 @@ class _Section extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            title.toUpperCase(),
+            tr(title).toUpperCase(),
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
@@ -350,7 +353,7 @@ class _Toggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
         child: Row(
           children: [
-            Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+            Expanded(child: Text(tr(label), style: const TextStyle(fontSize: 13))),
             Transform.scale(
               scale: 0.8,
               alignment: Alignment.centerRight,

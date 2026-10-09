@@ -16,6 +16,7 @@ import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
+import '../l10n/strings.dart';
 
 class TerminalTabsArea extends StatelessWidget {
   const TerminalTabsArea({super.key});
@@ -37,12 +38,12 @@ class TerminalTabsArea extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(
-              'No active session',
+              tr('No active session'),
               style: TextStyle(color: dim, fontSize: 15, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
             Text(
-              'Pick a saved connection on the left, use quick connect,\nor start a new one.',
+              tr('Pick a saved connection on the left, use quick connect,\nor start a new one.'),
               textAlign: TextAlign.center,
               style: TextStyle(color: dim, fontSize: 12),
             ),
@@ -50,7 +51,7 @@ class TerminalTabsArea extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => showNewConnectionDialog(context),
               icon: const Icon(Icons.add, size: 16),
-              label: const Text('New Connection'),
+              label: Text(tr('New Connection')),
             ),
           ],
         ),
@@ -147,7 +148,7 @@ class _SplitViewButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Tooltip(
-      message: enabled ? 'Split view' : 'Open a second tab to split the view',
+      message: enabled ? tr('Split view') : tr('Open a second tab to split the view'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: TextButton.icon(
@@ -158,7 +159,7 @@ class _SplitViewButton extends StatelessWidget {
             visualDensity: VisualDensity.compact,
           ),
           icon: const Icon(Icons.vertical_split_outlined, size: 16),
-          label: const Text('Split view', style: TextStyle(fontSize: 12)),
+          label: Text(tr('Split view'), style: const TextStyle(fontSize: 12)),
         ),
       ),
     );
@@ -363,28 +364,33 @@ class _MacRdpPaneState extends State<_MacRdpPane> {
   String _detail(SessionStatus status) {
     final controller = widget.controller;
     if (status == SessionStatus.error) {
-      return controller.lastError ?? 'Unknown error.';
+      return controller.lastError ?? tr('Unknown error.');
     }
     if (status == SessionStatus.closed) {
-      return 'The ${controller.backendName ?? 'RDP'} window for ${controller.host} '
-          'has closed. Open it again to reconnect.';
+      return tr('The {client} window for {host} has closed. Open it again to reconnect.', {
+        'client': controller.backendName ?? 'RDP',
+        'host': controller.host,
+      });
     }
-    final client = controller.backendName ?? 'the RDP client';
+    final args = {'host': controller.host, 'client': controller.backendName ?? tr('the RDP client')};
     if (controller.credentialsHandedOver) {
-      return '${controller.host} is open in $client, in its own window, signed '
-          'in with your saved credentials. macOS has no embeddable RDP '
-          'component and does not let one app place another app’s window '
-          'inside a tab, so the session cannot be drawn in here.';
+      return tr(
+        '{host} is open in {client}, in its own window, signed in with your saved credentials. '
+        'macOS has no embeddable RDP component and does not let one app place another app’s window '
+        'inside a tab, so the session cannot be drawn in here.',
+        args,
+      );
     }
     if (controller.freerdpWouldHelp) {
-      return '${controller.host} is open in $client, in its own window, with '
-          'the host and username filled in — $client keeps its own credential '
-          'store, so the password is the one thing CommandS cannot hand it. '
-          'Copy it below, or run "brew install freerdp" and CommandS will sign '
-          'you in with no prompt at all.';
+      return tr(
+        '{host} is open in {client}, in its own window, with the host and username filled in — '
+        '{client} keeps its own credential store, so the password is the one thing CommandS cannot '
+        'hand it. Copy it below, or run "brew install freerdp" and CommandS will sign you in with '
+        'no prompt at all.',
+        args,
+      );
     }
-    return '${controller.host} is open in $client, in its own window, with the '
-        'host and username filled in.';
+    return tr('{host} is open in {client}, in its own window, with the host and username filled in.', args);
   }
 
   @override
@@ -411,11 +417,11 @@ class _MacRdpPaneState extends State<_MacRdpPane> {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  switch (status) {
+                  tr(switch (status) {
                     SessionStatus.error => 'RDP session could not start',
                     SessionStatus.closed => 'RDP session closed',
                     _ => 'RDP session opened',
-                  },
+                  }),
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
@@ -432,14 +438,14 @@ class _MacRdpPaneState extends State<_MacRdpPane> {
                     OutlinedButton.icon(
                       onPressed: controller.relaunch,
                       icon: const Icon(Icons.open_in_new, size: 16),
-                      label: Text(failed ? 'Try again' : 'Open again'),
+                      label: Text(tr(failed ? 'Try again' : 'Open again')),
                     ),
                     if (controller.freerdpWouldHelp) ...[
                       const SizedBox(width: 10),
                       OutlinedButton.icon(
                         onPressed: _copied ? null : _copyPassword,
                         icon: Icon(_copied ? Icons.check : Icons.copy, size: 16),
-                        label: Text(_copied ? 'Copied' : 'Copy password'),
+                        label: Text(tr(_copied ? 'Copied' : 'Copy password')),
                       ),
                     ],
                   ],

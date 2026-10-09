@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import 'app_dialog.dart';
+import '../l10n/strings.dart';
 
 class SelectionResult {
   SelectionResult({required this.connectionIds, required this.passwordIds});
@@ -124,7 +125,7 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
   Widget build(BuildContext context) {
     final rows = _rows();
     return AppDialog(
-      title: widget.title,
+      title: tr(widget.title),
       icon: Icons.checklist,
       width: 460,
       maxHeight: 600,
@@ -134,15 +135,18 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '${_checkedConnections.length} of ${widget.connections.length} selected',
+            tr('{n} of {total} selected', {
+              'n': _checkedConnections.length,
+              'total': widget.connections.length,
+            }),
             style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
           ),
           const SizedBox(height: 8),
           Flexible(
             child: rows.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Center(child: Text('Nothing to show', style: TextStyle(fontSize: 12))),
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text(tr('Nothing to show'), style: const TextStyle(fontSize: 12))),
                   )
                 : ListView.builder(
                     shrinkWrap: true,
@@ -187,8 +191,8 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
                           secondary: widget.showPasswordToggle && hasPassword
                               ? IconButton(
                                   tooltip: _checkedPasswords.contains(conn.id)
-                                      ? 'Password will be included'
-                                      : 'Password will be excluded',
+                                      ? tr('Password will be included')
+                                      : tr('Password will be excluded'),
                                   icon: Icon(
                                     _checkedPasswords.contains(conn.id) ? Icons.lock : Icons.lock_open,
                                     size: 16,
@@ -217,7 +221,7 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
         ElevatedButton(
           onPressed: _checkedConnections.isEmpty
               ? null
@@ -225,7 +229,7 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
                   context,
                   SelectionResult(connectionIds: _checkedConnections, passwordIds: _checkedPasswords),
                 ),
-          child: Text('Confirm (${_checkedConnections.length})'),
+          child: Text(tr('Confirm ({n})', {'n': _checkedConnections.length})),
         ),
       ],
     );

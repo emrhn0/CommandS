@@ -11,12 +11,12 @@ import '../services/rdm_import.dart';
 import '../services/storage_service.dart';
 import 'selection_tree_dialog.dart';
 import 'app_dialog.dart';
+import '../l10n/strings.dart';
 
 Future<void> showExportDialog(BuildContext context) async {
   final app = context.read<AppState>();
   if (app.connections.isEmpty) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('No connections to export yet.')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('No connections to export yet.'))));
     return;
   }
 
@@ -33,7 +33,7 @@ Future<void> showExportDialog(BuildContext context) async {
   final format = await showDialog<String>(
     context: context,
     builder: (ctx) => AppDialog(
-      title: 'Export format',
+      title: tr('Export format'),
       icon: Icons.file_upload_outlined,
       width: 380,
       body: Column(
@@ -47,13 +47,13 @@ Future<void> showExportDialog(BuildContext context) async {
             ListTile(
               dense: true,
               leading: Icon(icon, size: 18),
-              title: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-              subtitle: Text(hint, style: const TextStyle(fontSize: 11.5)),
+              title: Text(tr(label), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              subtitle: Text(tr(hint), style: const TextStyle(fontSize: 11.5)),
               onTap: () => Navigator.pop(ctx, key),
             ),
         ],
       ),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'))],
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Cancel')))],
     ),
   );
   if (format == null) return;
@@ -68,7 +68,7 @@ Future<void> showExportDialog(BuildContext context) async {
   }
 
   final path = await FilePicker.platform.saveFile(
-    dialogTitle: 'Export CommandS connections',
+    dialogTitle: tr('Export CommandS connections'),
     fileName: 'commands-export.$format',
     type: FileType.custom,
     allowedExtensions: [format],
@@ -77,14 +77,15 @@ Future<void> showExportDialog(BuildContext context) async {
   final file = File(path.endsWith('.$format') ? path : '$path.$format');
   await file.writeAsString(content);
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exported to ${file.path}')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(tr('Exported to {path}', {'path': file.path}))));
   }
 }
 
 Future<void> showImportDialog(BuildContext context) async {
   final app = context.read<AppState>();
   final result = await FilePicker.platform.pickFiles(
-    dialogTitle: 'Import connections (CommandS JSON/XML/CSV or Remote Desktop Manager JSON)',
+    dialogTitle: tr('Import connections (CommandS JSON/XML/CSV or Remote Desktop Manager JSON)'),
     type: FileType.custom,
     allowedExtensions: ['json', 'xml', 'csv'],
   );
@@ -107,10 +108,12 @@ Future<void> showImportDialog(BuildContext context) async {
     if (isXml) {
       final parsed = storage.parseXml(raw);
       if (parsed.folders.isEmpty && parsed.connections.isEmpty) {
-        throw const FormatException(
-          'This XML doesn\'t look like a CommandS export (no <Connection>/<Folder> elements found). '
-          'CommandS\'s own XML import only round-trips its own export — for Remote Desktop Manager, '
-          'export as JSON instead, or as CSV if you need passwords included.',
+        throw FormatException(
+          tr(
+            "This XML doesn't look like a CommandS export (no <Connection>/<Folder> elements found). "
+            "CommandS's own XML import only round-trips its own export — for Remote Desktop Manager, "
+            'export as JSON instead, or as CSV if you need passwords included.',
+          ),
         );
       }
       if (!context.mounted) return;
@@ -138,13 +141,20 @@ Future<void> showImportDialog(BuildContext context) async {
       );
       await app.importRdm(chosen);
       if (!context.mounted) return;
-      final parts = <String>['Imported ${chosen.connections.length} connection(s)'];
-      if (rdm.skippedUnsupported > 0) parts.add('${rdm.skippedUnsupported} skipped (unsupported type)');
+      final parts = <String>[
+        tr('Imported {n} connection(s)', {'n': chosen.connections.length}),
+      ];
+      if (rdm.skippedUnsupported > 0) {
+        parts.add(tr('{n} skipped (unsupported type)', {'n': rdm.skippedUnsupported}));
+      }
       if (rdm.passwordsNotImported > 0) {
         parts.add(
-          '${rdm.passwordsNotImported} password(s) are AES-encrypted by RDM\'s own vault and can\'t be '
-          'decrypted from this file (true for JSON or XML alike) — re-enter them, or export from RDM as '
-          'CSV/spreadsheet with credentials revealed and import that instead',
+          tr(
+            "{n} password(s) are AES-encrypted by RDM's own vault and can't be decrypted from this file "
+            '(true for JSON or XML alike) — re-enter them, or export from RDM as CSV/spreadsheet with '
+            'credentials revealed and import that instead',
+            {'n': rdm.passwordsNotImported},
+          ),
         );
       }
       ScaffoldMessenger.of(context)
@@ -162,7 +172,8 @@ Future<void> showImportDialog(BuildContext context) async {
     }
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(tr('Import failed: {error}', {'error': e}))));
     }
   }
 }
@@ -191,7 +202,8 @@ Future<void> _confirmAndImportParsed(
   }).toList();
   await app.importParsed(folders, chosenConnections, parsedLayouts: layouts);
   if (context.mounted) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Imported ${chosenConnections.length} connection(s)')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(tr('Imported {n} connection(s)', {'n': chosenConnections.length}))),
+    );
   }
 }

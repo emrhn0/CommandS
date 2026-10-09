@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/rdp_session.dart';
 import '../services/session_controller.dart';
+import '../l10n/strings.dart';
 
 /// Height of the session bar above an embedded RDP surface.
 ///
@@ -121,12 +122,9 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
               status: status,
               // Where the server renegotiates resolution on resize there is
               // nothing for a manual reconnect to fix, so it isn't offered.
-              showRefit: status == SessionStatus.running &&
-                  !widget.controller.supportsDynamicResolution,
+              showRefit: status == SessionStatus.running && !widget.controller.supportsDynamicResolution,
               onRefit: _reconnect,
-              onCtrlAltDel: status == SessionStatus.running
-                  ? widget.controller.sendCtrlAltDelete
-                  : null,
+              onCtrlAltDel: status == SessionStatus.running ? widget.controller.sendCtrlAltDelete : null,
               onReconnect: status == SessionStatus.running ? null : _reconnect,
             ),
             Expanded(
@@ -145,17 +143,17 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
                   else if (status == SessionStatus.error)
                     _RdpMessage(
                       icon: Icons.error_outline,
-                      title: 'Remote Desktop disconnected',
-                      detail: widget.controller.lastError ??
-                          'The session could not be started.',
+                      title: tr('Remote Desktop disconnected'),
+                      detail: widget.controller.lastError ?? tr('The session could not be started.'),
                       onRetry: _reconnect,
                     )
                   else if (status == SessionStatus.closed)
                     _RdpMessage(
                       icon: Icons.power_settings_new,
-                      title: 'Session ended',
-                      detail: widget.controller.lastError ??
-                          'The remote session was closed. Reconnect to start a new one.',
+                      title: tr('Session ended'),
+                      detail:
+                          widget.controller.lastError ??
+                          tr('The remote session was closed. Reconnect to start a new one.'),
                       onRetry: _reconnect,
                     ),
                 ],
@@ -208,34 +206,32 @@ class _SessionBar extends StatelessWidget {
             const SizedBox(width: 8),
             Icon(Icons.desktop_windows_outlined, size: 12, color: color),
             const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                host,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11),
+            // The name and state take all the room the buttons leave, so the
+            // buttons sit against the right edge at any pane width. (A
+            // Flexible name beside a Spacer split the free space between
+            // them, which parked the buttons part-way along the bar.)
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(host, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(tr(label), style: TextStyle(fontSize: 10, color: color)),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            Text(label, style: TextStyle(fontSize: 10, color: color)),
-            const Spacer(),
-            if (onCtrlAltDel != null)
-              _BarButton(
-                tooltip: 'Send Ctrl+Alt+Del',
-                icon: Icons.keyboard,
-                onPressed: onCtrlAltDel!,
-              ),
             if (showRefit)
               _BarButton(
-                tooltip: 'Reconnect to fill the current pane size',
+                tooltip: tr('Reconnect to fill the current pane size'),
                 icon: Icons.aspect_ratio,
                 onPressed: onRefit,
               ),
             if (onReconnect != null)
-              _BarButton(
-                tooltip: 'Reconnect',
-                icon: Icons.refresh,
-                onPressed: onReconnect!,
-              ),
+              _BarButton(tooltip: tr('Reconnect'), icon: Icons.refresh, onPressed: onReconnect!),
+            // Last, so it is always the top-right corner of the session.
+            if (onCtrlAltDel != null)
+              _BarButton(tooltip: tr('Send Ctrl+Alt+Del'), icon: Icons.keyboard, onPressed: onCtrlAltDel!),
             const SizedBox(width: 4),
           ],
         ),
@@ -245,11 +241,7 @@ class _SessionBar extends StatelessWidget {
 }
 
 class _BarButton extends StatelessWidget {
-  const _BarButton({
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-  });
+  const _BarButton({required this.tooltip, required this.icon, required this.onPressed});
 
   final String tooltip;
   final IconData icon;
@@ -274,12 +266,7 @@ class _BarButton extends StatelessWidget {
 }
 
 class _RdpMessage extends StatelessWidget {
-  const _RdpMessage({
-    required this.icon,
-    required this.title,
-    required this.detail,
-    required this.onRetry,
-  });
+  const _RdpMessage({required this.icon, required this.title, required this.detail, required this.onRetry});
 
   final IconData icon;
   final String title;
@@ -299,8 +286,7 @@ class _RdpMessage extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
@@ -315,7 +301,7 @@ class _RdpMessage extends StatelessWidget {
                 side: const BorderSide(color: Colors.white24),
               ),
               onPressed: onRetry,
-              child: const Text('Reconnect'),
+              child: Text(tr('Reconnect')),
             ),
           ],
         ),

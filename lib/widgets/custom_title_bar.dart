@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
+import '../l10n/strings.dart';
 
 const double kTitleBarHeight = 32;
 
@@ -84,13 +86,13 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
           if (!isMac) ...[
             _CaptionButton(
               icon: Icons.remove,
-              tooltip: 'Minimize',
+              tooltip: tr('Minimize'),
               onTap: () => windowManager.minimize(),
             ),
             _CaptionButton(
               icon: _isMaximized ? Icons.filter_none : Icons.crop_square,
               iconSize: _isMaximized ? 12 : 13,
-              tooltip: _isMaximized ? 'Restore' : 'Maximize',
+              tooltip: _isMaximized ? tr('Restore') : tr('Maximize'),
               onTap: () async {
                 if (await windowManager.isMaximized()) {
                   windowManager.unmaximize();
@@ -101,7 +103,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
             ),
             _CaptionButton(
               icon: Icons.close,
-              tooltip: 'Close',
+              tooltip: tr('Close'),
               hoverColor: const Color(0xFFE81123),
               hoverIconColor: Colors.white,
               onTap: () => windowManager.close(),

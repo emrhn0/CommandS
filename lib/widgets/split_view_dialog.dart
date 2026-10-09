@@ -8,6 +8,7 @@ import '../services/pane_layout.dart';
 import '../services/rdp_session.dart';
 import 'folder_picker.dart';
 import 'app_dialog.dart';
+import '../l10n/strings.dart';
 
 /// Opens the Split view dialog: pick a layout, then drag open tabs into its
 /// panes.
@@ -116,7 +117,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
     if (result == null || !mounted) return;
     await app.saveLayout(name: result.name, folderId: result.folderId, preset: _preset, tabIds: _slots);
     if (!mounted) return;
-    setState(() => _savedTo = folderPath(app.folders, result.folderId) ?? 'the top level');
+    setState(() => _savedTo = folderPath(app.folders, result.folderId) ?? tr('the top level'));
   }
 
   @override
@@ -140,7 +141,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Split view', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(tr('Split view'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 18),
               Text(
                 '1. Choose a layout',
@@ -181,7 +182,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Open tabs',
+                tr('Open tabs'),
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim),
               ),
               const SizedBox(height: 8),
@@ -203,8 +204,11 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                   Expanded(
                     child: Text(
                       _savedTo != null
-                          ? 'Saved to $_savedTo. Open it from there any time to bring these sessions back like this.'
-                          : 'Empty panes are left out. Click a tab to put it in the first empty pane.',
+                          ? tr(
+                              'Saved to {folder}. Open it from there any time to bring these sessions back like this.',
+                              {'folder': _savedTo},
+                            )
+                          : tr('Empty panes are left out. Click a tab to put it in the first empty pane.'),
                       style: TextStyle(fontSize: 11, color: dim),
                     ),
                   ),
@@ -213,12 +217,12 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                         ? _save
                         : null,
                     icon: const Icon(Icons.bookmark_add_outlined, size: 16),
-                    label: const Text('Save as layout…'),
+                    label: Text(tr('Save as layout…')),
                   ),
                   const SizedBox(width: 8),
-                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+                  TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Cancel'))),
                   const SizedBox(width: 8),
-                  ElevatedButton(onPressed: anyPlaced ? _apply : null, child: const Text('Apply')),
+                  ElevatedButton(onPressed: anyPlaced ? _apply : null, child: Text(tr('Apply'))),
                 ],
               ),
             ],
@@ -287,7 +291,7 @@ class _PresetThumb extends StatelessWidget {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
     return Tooltip(
-      message: preset.label,
+      message: tr(preset.label),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
@@ -315,7 +319,7 @@ class _PresetThumb extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                preset.label,
+                tr(preset.label),
                 style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w400),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -353,7 +357,7 @@ class _SlotTarget extends StatelessWidget {
         final content = t == null
             ? Center(
                 child: Text(
-                  hovering ? 'Drop here' : 'Drop a tab here',
+                  hovering ? tr('Drop here') : tr('Drop a tab here'),
                   style: TextStyle(fontSize: 12, color: dim),
                 ),
               )
@@ -384,7 +388,7 @@ class _SlotTarget extends StatelessWidget {
                     top: 2,
                     right: 2,
                     child: IconButton(
-                      tooltip: 'Empty this pane',
+                      tooltip: tr('Empty this pane'),
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.close, size: 14),
                       onPressed: onClear,
@@ -539,7 +543,7 @@ class _SaveLayoutDialogState extends State<_SaveLayoutDialog> {
   Widget build(BuildContext context) {
     final dim = Theme.of(context).textTheme.bodySmall?.color;
     return AppDialog(
-      title: 'Save layout',
+      title: tr('Save layout'),
       icon: Icons.space_dashboard_outlined,
       width: 440,
       body: Column(
@@ -563,17 +567,19 @@ class _SaveLayoutDialogState extends State<_SaveLayoutDialog> {
           if (widget.quickCount > 0) ...[
             const SizedBox(height: 4),
             Text(
-              '${widget.quickCount} pane${widget.quickCount == 1 ? ' holds a quick connection' : 's hold quick connections'}, '
-              'which ${widget.quickCount == 1 ? 'is' : 'are'} not saved and cannot be reopened, so '
-              '${widget.quickCount == 1 ? 'it is' : 'they are'} saved empty.',
+              trCount(
+                widget.quickCount,
+                '{n} pane holds a quick connection, which is not saved and cannot be reopened, so it is saved empty.',
+                '{n} panes hold quick connections, which are not saved and cannot be reopened, so they are saved empty.',
+              ),
               style: TextStyle(fontSize: 12, color: dim),
             ),
           ],
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        ElevatedButton(onPressed: _submit, child: const Text('Save')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Cancel'))),
+        ElevatedButton(onPressed: _submit, child: Text(tr('Save'))),
       ],
     );
   }

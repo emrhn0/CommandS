@@ -5,6 +5,7 @@ import '../app_version.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
 import 'context_menu.dart';
+import '../l10n/strings.dart';
 
 /// RDM-style "Bağlan" strip pinned to the bottom of the connections panel —
 /// type a bare host and hit enter/connect for a one-off session, no dialog
@@ -64,7 +65,7 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
             child: Row(
               children: [
                 Text(
-                  '${app.connections.length} connection${app.connections.length == 1 ? '' : 's'}',
+                  trCount(app.connections.length, '{n} connection', '{n} connections'),
                   style: TextStyle(fontSize: 10, color: Theme.of(context).textTheme.bodySmall?.color),
                 ),
                 const Spacer(),
@@ -90,13 +91,13 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
                     decoration: InputDecoration(
                       // Short enough to fit beside the protocol picker; the
                       // strip's place and its arrow make "quick connect" clear.
-                      hintText: 'Host or IP',
+                      hintText: tr('Host or IP'),
                       hintStyle: const TextStyle(fontSize: 12),
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.arrow_forward, size: 14),
-                        tooltip: 'Connect',
+                        tooltip: tr('Connect'),
                         visualDensity: VisualDensity.compact,
                         onPressed: _connect,
                       ),
@@ -136,7 +137,7 @@ class _ProtocolPickerState extends State<_ProtocolPicker> {
     final picked = await showContextMenu(
       context,
       anchor: box.localToGlobal(Offset.zero) & box.size,
-      header: 'Quick connect with',
+      header: tr('Quick connect with'),
       minWidth: 170,
       actions: [
         for (final p in ConnectionProtocol.values)
@@ -151,7 +152,7 @@ class _ProtocolPickerState extends State<_ProtocolPicker> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Tooltip(
-      message: 'Quick connect protocol',
+      message: tr('Quick connect protocol'),
       child: Material(
         color: theme.inputDecorationTheme.fillColor,
         shape: RoundedRectangleBorder(

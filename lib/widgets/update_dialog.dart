@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../app_version.dart';
 import '../services/update_service.dart';
 import 'app_dialog.dart';
+import '../l10n/strings.dart';
 
 /// Checks for a new release in the background on every launch and, if there
 /// is one, asks whether to install it -- unless the user chose to skip that
@@ -112,7 +113,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     final dim = Theme.of(context).textTheme.bodySmall?.color;
     final notes = info.plainNotes;
     return AppDialog(
-      title: 'CommandS ${info.version} is available',
+      title: tr('CommandS {version} is available', {'version': info.version}),
       icon: Icons.system_update_alt,
       width: 500,
       closable: !_busy,
@@ -121,8 +122,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'You are running $appVersion.'
-            '${info.sizeLabel.isEmpty ? '' : ' Download is ${info.sizeLabel}.'}',
+            tr('You are running {version}.', {'version': appVersion}) +
+                (info.sizeLabel.isEmpty ? '' : ' ${tr('Download is {size}.', {'size': info.sizeLabel})}'),
             style: TextStyle(color: dim, fontSize: 12),
           ),
           if (notes.isNotEmpty) ...[
@@ -138,9 +139,11 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             const SizedBox(height: 14),
             Text(
               Platform.isMacOS
-                  ? 'Downloading opens the release page in your browser. Unzip '
-                        'the app and drag it to Applications, replacing the old one.'
-                  : 'Downloading opens the release page in your browser.',
+                  ? tr(
+                      'Downloading opens the release page in your browser. Unzip the app and drag it to '
+                      'Applications, replacing the old one.',
+                    )
+                  : tr('Downloading opens the release page in your browser.'),
               style: TextStyle(color: dim, fontSize: 12, height: 1.4),
             ),
           ],
@@ -149,7 +152,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             LinearProgressIndicator(value: _progress),
             const SizedBox(height: 8),
             Text(
-              _progress == null ? 'Downloading…' : 'Downloading… ${(_progress! * 100).toStringAsFixed(0)}%',
+              _progress == null
+                  ? tr('Downloading…')
+                  : tr('Downloading… {percent}%', {'percent': (_progress! * 100).toStringAsFixed(0)}),
               style: TextStyle(color: dim, fontSize: 11),
             ),
           ],
@@ -158,7 +163,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
             const SizedBox(height: 6),
             Text(
-              'You can still download it yourself from the release page.',
+              tr('You can still download it yourself from the release page.'),
               style: TextStyle(color: dim, fontSize: 11),
             ),
           ],
@@ -172,13 +177,13 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                   await UpdateService.skip(info.version);
                   if (context.mounted) Navigator.of(context).pop();
                 },
-                child: const Text('Skip this version'),
+                child: Text(tr('Skip this version')),
               ),
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Remind me later')),
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Remind me later'))),
               if (info.canSelfInstall && _error == null)
-                ElevatedButton(onPressed: _install, child: const Text('Update now'))
+                ElevatedButton(onPressed: _install, child: Text(tr('Update now')))
               else
-                ElevatedButton(onPressed: _openPage, child: const Text('Open download page')),
+                ElevatedButton(onPressed: _openPage, child: Text(tr('Open download page'))),
             ],
     );
   }
@@ -198,7 +203,7 @@ class UpdateButton extends StatelessWidget {
         if (info == null) return const SizedBox.shrink();
         final scheme = Theme.of(context).colorScheme;
         return Tooltip(
-          message: 'CommandS ${info.version} is available',
+          message: tr('CommandS {version} is available', {'version': info.version}),
           child: Material(
             // Filled, unlike everything else in the header: it is the one
             // control there that is not always present, and it should be
@@ -216,7 +221,7 @@ class UpdateButton extends StatelessWidget {
                     Icon(Icons.system_update_alt, size: 13, color: scheme.onPrimary),
                     const SizedBox(width: 5),
                     Text(
-                      'Update to ${info.version}',
+                      tr('Update to {version}', {'version': info.version}),
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onPrimary),
                     ),
                   ],

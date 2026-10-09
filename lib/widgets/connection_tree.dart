@@ -11,6 +11,7 @@ import 'app_dialog.dart';
 import 'context_menu.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
+import '../l10n/strings.dart';
 
 /// A row in the flattened, virtualized tree — a folder header, a connection
 /// leaf, or a saved split layout, at a given nesting depth.
@@ -189,15 +190,17 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     final folderIds = _selected.where((id) => app.folders.any((f) => f.id == id)).toList();
     final connIds = _selected.where((id) => app.connections.any((c) => c.id == id)).toList();
     final parts = <String>[
-      if (connIds.isNotEmpty) '${connIds.length} connection${connIds.length == 1 ? '' : 's'}',
-      if (folderIds.isNotEmpty) '${folderIds.length} folder${folderIds.length == 1 ? '' : 's'}',
+      if (connIds.isNotEmpty) trCount(connIds.length, '{n} connection', '{n} connections'),
+      if (folderIds.isNotEmpty) trCount(folderIds.length, '{n} folder', '{n} folders'),
     ];
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete ${parts.join(' and ')}?',
+      title: tr('Delete {what}?', {'what': parts.join(tr(' and '))}),
       message: folderIds.isEmpty
-          ? 'This cannot be undone.'
-          : "This cannot be undone. Deleted folders' contents are NOT deleted — they move to root, unfiled.",
+          ? tr('This cannot be undone.')
+          : tr(
+              "This cannot be undone. Deleted folders' contents are NOT deleted — they move to root, unfiled.",
+            ),
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -219,7 +222,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
       folders: app.folders,
       connections: app.connections,
       selected: null,
-      title: 'Move ${_selected.length} item${_selected.length == 1 ? '' : 's'} to folder',
+      title: trCount(_selected.length, 'Move {n} item to folder', 'Move {n} items to folder'),
     );
     if (choice == null) return;
     final destination = choice.folderId;
@@ -267,7 +270,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
                     onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
                     style: const TextStyle(fontSize: 12),
                     decoration: InputDecoration(
-                      hintText: 'Filter connections',
+                      hintText: tr('Filter connections'),
                       hintStyle: const TextStyle(fontSize: 12),
                       prefixIcon: const Icon(Icons.search, size: 14),
                       isDense: true,
@@ -287,13 +290,13 @@ class _ConnectionTreeState extends State<ConnectionTree> {
               ),
               IconButton(
                 icon: const Icon(Icons.select_all, size: 16),
-                tooltip: 'Select all',
+                tooltip: tr('Select all'),
                 visualDensity: VisualDensity.compact,
                 onPressed: app.connections.isEmpty ? null : () => _selectAll(app),
               ),
               IconButton(
                 icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-                tooltip: 'New folder',
+                tooltip: tr('New folder'),
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _promptName(context, 'New folder', '', (name) => app.addFolder(name)),
               ),
@@ -393,7 +396,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     if (matches.isEmpty && layoutMatches.isEmpty) {
       return Center(
         child: Text(
-          'No matches',
+          tr('No matches'),
           style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 12),
         ),
       );
@@ -446,25 +449,25 @@ class _SelectionBar extends StatelessWidget {
           if (count < total)
             IconButton(
               icon: const Icon(Icons.select_all, size: 16),
-              tooltip: 'Select all',
+              tooltip: tr('Select all'),
               visualDensity: VisualDensity.compact,
               onPressed: onSelectAll,
             ),
           IconButton(
             icon: const Icon(Icons.drive_file_move_outline, size: 16),
-            tooltip: 'Move to folder',
+            tooltip: tr('Move to folder'),
             visualDensity: VisualDensity.compact,
             onPressed: onMove,
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline, size: 16),
-            tooltip: 'Delete',
+            tooltip: tr('Delete'),
             visualDensity: VisualDensity.compact,
             onPressed: onDelete,
           ),
           IconButton(
             icon: const Icon(Icons.close, size: 16),
-            tooltip: 'Clear selection',
+            tooltip: tr('Clear selection'),
             visualDensity: VisualDensity.compact,
             onPressed: onCancel,
           ),
@@ -572,11 +575,14 @@ class _FolderRowState extends State<_FolderRow> {
         app.folders.where((f) => f.parentId == widget.folder.id).length;
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete "${widget.folder.name}"?',
+      title: tr('Delete "{name}"?', {'name': widget.folder.name}),
       message: childCount == 0
-          ? 'This folder is empty.'
-          : 'It contains $childCount item${childCount == 1 ? '' : 's'}. '
-                'They will NOT be deleted — they move to the root, unfiled.',
+          ? tr('This folder is empty.')
+          : trCount(
+              childCount,
+              'It contains {n} item. It will NOT be deleted — it moves to the root, unfiled.',
+              'It contains {n} items. They will NOT be deleted — they move to the root, unfiled.',
+            ),
       confirmLabel: 'Delete folder',
       destructive: true,
     );
@@ -696,9 +702,11 @@ class _LayoutRow extends StatelessWidget {
     final app = context.read<AppState>();
     final opened = app.openLayout(layout);
     if (opened == 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('None of the connections in "${layout.name}" exist any more.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('None of the connections in "{name}" exist any more.', {'name': layout.name})),
+        ),
+      );
     }
   }
 
@@ -713,7 +721,7 @@ class _LayoutRow extends StatelessWidget {
       onTap: () => _open(context),
       icon: Icons.space_dashboard_outlined,
       title: layout.name,
-      subtitle: '${preset?.label ?? 'Layout'} · $panes',
+      subtitle: '${tr(preset?.label ?? 'Layout')} · $panes',
       menuItems: const [
         MenuAction('open', 'Open layout', Icons.play_arrow_outlined),
         MenuAction('rename', 'Rename', Icons.edit_outlined, separatorBefore: true),
@@ -1011,7 +1019,7 @@ class _OpenBadge extends StatelessWidget {
       SessionStatus.closed => 'Session ended',
     };
     return Tooltip(
-      message: label,
+      message: tr(label),
       child: Stack(
         clipBehavior: Clip.none,
         children: [

@@ -9,12 +9,11 @@ import '../theme/app_theme.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/import_export_dialog.dart';
 import '../widgets/update_dialog.dart';
+import '../l10n/strings.dart';
 
 /// Opens the Settings page.
 Future<void> showSettings(BuildContext context) {
-  return Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-  );
+  return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
 }
 
 /// Everything that used to be scattered across four unlabelled icons in the
@@ -38,16 +37,18 @@ class SettingsScreen extends StatelessWidget {
           Container(
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: divider))),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: divider)),
+            ),
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'Back',
+                  tooltip: tr('Back'),
                   icon: const Icon(Icons.arrow_back, size: 18),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 const SizedBox(width: 4),
-                const Text('Settings', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                Text(tr('Settings'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -68,18 +69,15 @@ class SettingsScreen extends StatelessWidget {
                           SizedBox(height: 28),
                           _Label('SSH terminal'),
                           _TerminalAppearance(),
+                          SizedBox(height: 28),
+                          _Label('Language'),
+                          _LanguagePicker(),
                         ],
                       ),
                       SizedBox(height: 22),
-                      _Section(
-                        title: 'Connections',
-                        children: [_ImportExport()],
-                      ),
+                      _Section(title: 'Connections', children: [_ImportExport()]),
                       SizedBox(height: 22),
-                      _Section(
-                        title: 'Updates',
-                        children: [_UpdatesPanel()],
-                      ),
+                      _Section(title: 'Updates', children: [_UpdatesPanel()]),
                     ],
                   ),
                 ),
@@ -114,7 +112,7 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          Text(tr(title), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 18),
           ...children,
         ],
@@ -132,7 +130,7 @@ class _Label extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
-        text,
+        tr(text),
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
@@ -140,6 +138,36 @@ class _Label extends StatelessWidget {
           color: Theme.of(context).textTheme.bodySmall?.color,
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Language
+// ---------------------------------------------------------------------------
+
+/// The app's own wording only: what remote machines print is never touched.
+class _LanguagePicker extends StatelessWidget {
+  const _LanguagePicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SegmentedButton<AppLanguage>(
+          showSelectedIcon: false,
+          segments: [for (final l in AppLanguage.values) ButtonSegment(value: l, label: Text(l.label))],
+          selected: {app.language},
+          onSelectionChanged: (s) => app.setLanguage(s.first),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          tr('Applies to CommandS itself; sessions are not affected.'),
+          style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+        ),
+      ],
     );
   }
 }
@@ -178,12 +206,7 @@ class _ThemePicker extends StatelessWidget {
 /// A miniature of the app in one theme -- title bar, sidebar, content -- so
 /// the choice is made by looking rather than by reading a word.
 class _ThemeCard extends StatelessWidget {
-  const _ThemeCard({
-    required this.label,
-    required this.light,
-    required this.selected,
-    required this.onTap,
-  });
+  const _ThemeCard({required this.label, required this.light, required this.selected, required this.onTap});
 
   final String label;
   final bool light;
@@ -199,11 +222,11 @@ class _ThemeCard extends StatelessWidget {
     final ink = light ? AppColors.lightText : AppColors.darkText;
 
     Widget bar(double width) => Container(
-          width: width,
-          height: 5,
-          margin: const EdgeInsets.only(bottom: 6),
-          decoration: BoxDecoration(color: line, borderRadius: BorderRadius.circular(2)),
-        );
+      width: width,
+      height: 5,
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(color: line, borderRadius: BorderRadius.circular(2)),
+    );
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -278,7 +301,7 @@ class _ThemeCard extends StatelessWidget {
                   color: selected ? accent : Theme.of(context).textTheme.bodySmall?.color,
                 ),
                 const SizedBox(width: 6),
-                Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                Text(tr(label), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
               ],
             ),
           ],
@@ -389,17 +412,17 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
                 initialValue: _typingFont ? _other : family,
                 isExpanded: true,
                 borderRadius: BorderRadius.circular(6),
-                decoration: const InputDecoration(labelText: 'Font', isDense: true),
+                decoration: InputDecoration(labelText: tr('Font'), isDense: true),
                 items: [
                   for (final f in options)
                     DropdownMenuItem(
                       value: f,
                       child: Text(
-                        f == defaultTerminalFont ? '$f (default)' : f,
+                        f == defaultTerminalFont ? tr('{font} (default)', {'font': f}) : f,
                         style: TextStyle(fontFamily: f, fontFamilyFallback: const ['Consolas', 'Menlo']),
                       ),
                     ),
-                  const DropdownMenuItem(value: _other, child: Text('Other font by name…')),
+                  DropdownMenuItem(value: _other, child: Text(tr('Other font by name…'))),
                 ],
                 onChanged: (v) {
                   if (v == _other) {
@@ -409,7 +432,10 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
                     });
                   } else if (v != null) {
                     setState(() => _typingFont = false);
-                    app.setTerminalFont(family: v == defaultTerminalFont ? null : v, resetFamily: v == defaultTerminalFont);
+                    app.setTerminalFont(
+                      family: v == defaultTerminalFont ? null : v,
+                      resetFamily: v == defaultTerminalFont,
+                    );
                   }
                 },
               ),
@@ -419,7 +445,7 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Size: ${size.round()} pt', style: TextStyle(fontSize: 12, color: dim)),
+                  Text(tr('Size: {n} pt', {'n': size.round()}), style: TextStyle(fontSize: 12, color: dim)),
                   Slider(
                     value: size.clamp(9, 24),
                     min: 9,
@@ -442,8 +468,8 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
                 child: TextField(
                   controller: _fontName,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Font name, as installed (e.g. JetBrains Mono)',
+                  decoration: InputDecoration(
+                    labelText: tr('Font name, as installed (e.g. JetBrains Mono)'),
                     isDense: true,
                   ),
                   onSubmitted: (v) {
@@ -460,13 +486,15 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
                   app.setTerminalFont(family: _fontName.text);
                   setState(() => _typingFont = false);
                 },
-                child: const Text('Use'),
+                child: Text(tr('Use')),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'A font that is not installed falls back to the default, so a typo shows straight away in the preview.',
+            tr(
+              'A font that is not installed falls back to the default, so a typo shows straight away in the preview.',
+            ),
             style: TextStyle(fontSize: 11, color: dim),
           ),
         ],
@@ -550,9 +578,9 @@ class _ColorCodeFieldState extends State<_ColorCodeField> {
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           isDense: true,
-          labelText: 'Color code',
-          hintText: '#1E1E1E or rgb(30, 30, 30)',
-          errorText: _invalid ? 'Use #RRGGBB, #RGB or rgb(r, g, b)' : null,
+          labelText: tr('Color code'),
+          hintText: tr('#1E1E1E or rgb(30, 30, 30)'),
+          errorText: _invalid ? tr('Use #RRGGBB, #RGB or rgb(r, g, b)') : null,
           prefixIcon: Padding(
             padding: const EdgeInsets.all(10),
             child: Container(
@@ -611,7 +639,7 @@ class _SwatchGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+        Text(tr(title), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
         const SizedBox(height: 10),
         Wrap(
           spacing: 10,
@@ -653,8 +681,7 @@ class _ImportExport extends StatelessWidget {
               child: _ActionTile(
                 icon: Icons.file_download_outlined,
                 title: 'Import connections',
-                description:
-                    'From a CommandS export (JSON, XML or CSV), or a Remote Desktop Manager export.',
+                description: 'From a CommandS export (JSON, XML or CSV), or a Remote Desktop Manager export.',
                 action: 'Import…',
                 onPressed: () => showImportDialog(context),
               ),
@@ -707,16 +734,18 @@ class _ActionTile extends StatelessWidget {
             children: [
               Icon(icon, size: 20),
               const SizedBox(width: 10),
-              Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              Flexible(
+                child: Text(tr(title), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            description,
+            tr(description),
             style: TextStyle(fontSize: 12, height: 1.45, color: theme.textTheme.bodySmall?.color),
           ),
           const SizedBox(height: 14),
-          OutlinedButton(onPressed: onPressed, child: Text(action)),
+          OutlinedButton(onPressed: onPressed, child: Text(tr(action))),
         ],
       ),
     );
@@ -770,8 +799,9 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
     setState(() {
       if (result.failed) {
         _phase = _Phase.failed;
-        _error = 'Could not reach GitHub to check for updates. '
-            'Check the internet connection and try again.';
+        _error = tr(
+          'Could not reach GitHub to check for updates. Check the internet connection and try again.',
+        );
       } else if (result.info == null) {
         _phase = _Phase.upToDate;
       } else {
@@ -818,17 +848,19 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('CommandS $appVersion',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  Text(
+                    'CommandS $appVersion',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 3),
-                  Text('Installed version', style: TextStyle(fontSize: 12, color: dim)),
+                  Text(tr('Installed version'), style: TextStyle(fontSize: 12, color: dim)),
                 ],
               ),
             ),
             OutlinedButton.icon(
               onPressed: busy ? null : _check,
               icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Check for updates'),
+              label: Text(tr('Check for updates')),
             ),
           ],
         ),
@@ -853,7 +885,7 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
             children: [
               const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
               const SizedBox(width: 12),
-              Text('Checking for updates…', style: TextStyle(color: dim)),
+              Text(tr('Checking for updates…'), style: TextStyle(color: dim)),
             ],
           ),
         );
@@ -865,7 +897,7 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  "You're up to date — $appVersion is the latest version.",
+                  tr("You're up to date — {version} is the latest version.", {'version': appVersion}),
                   style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
               ),
@@ -886,7 +918,7 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'CommandS ${info.version} is available',
+                      tr('CommandS {version} is available', {'version': info.version}),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -904,20 +936,23 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
                 ),
               ],
               const SizedBox(height: 16),
-              Text('Update to ${info.version} now?', style: TextStyle(fontSize: 12, color: dim)),
+              Text(
+                tr('Update to {version} now?', {'version': info.version}),
+                style: TextStyle(fontSize: 12, color: dim),
+              ),
               const SizedBox(height: 10),
               if (info.canSelfInstall)
                 ElevatedButton.icon(
                   onPressed: _install,
                   icon: const Icon(Icons.system_update_alt, size: 16),
-                  label: const Text('Yes, update'),
+                  label: Text(tr('Yes, update')),
                 )
               else
                 // Only when the release itself is missing this platform's
                 // build; every copy that has a build to use updates in place.
                 OutlinedButton(
                   onPressed: () => UpdateService.openReleasePage(info),
-                  child: const Text('Open download page'),
+                  child: Text(tr('Open download page')),
                 ),
             ],
           ),
@@ -931,15 +966,18 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
             children: [
               Text(
                 p == null
-                    ? 'Downloading ${_info?.version ?? 'the update'}…'
-                    : 'Downloading ${_info?.version ?? 'the update'}… ${(p * 100).toStringAsFixed(0)}%',
+                    ? tr('Downloading {version}…', {'version': _info?.version ?? tr('the update')})
+                    : tr('Downloading {version}… {percent}%', {
+                        'version': _info?.version ?? tr('the update'),
+                        'percent': (p * 100).toStringAsFixed(0),
+                      }),
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 10),
               LinearProgressIndicator(value: p),
               const SizedBox(height: 10),
               Text(
-                'CommandS will close and reopen on the new version by itself.',
+                tr('CommandS will close and reopen on the new version by itself.'),
                 style: TextStyle(fontSize: 12, color: dim),
               ),
             ],
@@ -950,22 +988,19 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_error ?? 'Something went wrong.', style: TextStyle(color: theme.colorScheme.error)),
+              Text(_error ?? tr('Something went wrong.'), style: TextStyle(color: theme.colorScheme.error)),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 10,
                 runSpacing: 8,
                 children: [
-                  OutlinedButton(
-                    onPressed: _installFailed ? _install : _check,
-                    child: const Text('Try again'),
-                  ),
+                  OutlinedButton(onPressed: _installFailed ? _install : _check, child: Text(tr('Try again'))),
                   // The last resort, and only after an update has actually
                   // failed: the normal path never sends anyone to a web page.
                   if (_installFailed && _info != null)
                     TextButton(
                       onPressed: () => UpdateService.openReleasePage(_info!),
-                      child: const Text('Open download page'),
+                      child: Text(tr('Open download page')),
                     ),
                 ],
               ),
