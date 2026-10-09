@@ -87,7 +87,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Starts from what is on screen plus the next tab, side by side.
-      expect(find.text('Split view'), findsOneWidget);
+      expect(find.text('Split View'), findsOneWidget);
 
       // Pick the 3-pane layout, then drag the third tab into the empty pane.
       await tester.tap(find.text('One + two'));

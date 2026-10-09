@@ -100,6 +100,10 @@ const turkish = <String, String>{
   'Pick a saved connection on the left, use quick connect,\nor start a new one.':
       'Soldan kayıtlı bir bağlantı seçin, hızlı bağlantıyı kullanın\nya da yeni bir bağlantı oluşturun.',
   'Split view': 'Bölünmüş görünüm',
+  'Split View': 'Bölünmüş Görünüm',
+  'Edit split view…': 'Bölünmüş görünümü düzenle…',
+  'Separate into tabs': 'Ayrı sekmelere böl',
+  'Close all sessions': 'Tüm oturumları kapat',
   'Open a second tab to split the view': 'Görünümü bölmek için ikinci bir sekme açın',
   'Save connection…': 'Bağlantıyı kaydet…',
   'Edit connection…': 'Bağlantıyı düzenle…',

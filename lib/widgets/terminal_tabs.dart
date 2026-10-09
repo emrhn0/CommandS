@@ -74,38 +74,98 @@ class _TabBarRow extends StatelessWidget {
   const _TabBarRow({required this.app});
   final AppState app;
 
+  /// One chip per plain tab, and one per split group -- in the place of the
+  /// group's first session -- so a split is a tab like any other.
+  List<Widget> _chips(BuildContext context) {
+    final visible = tabIdsInLayout(app.paneLayout);
+    final shownGroups = <String>{};
+    final chips = <Widget>[];
+    for (var i = 0; i < app.tabs.length; i++) {
+      final tab = app.tabs[i];
+      final group = app.groupOf(tab.id);
+      if (group != null) {
+        if (!shownGroups.add(group.id)) continue;
+        final members = app.tabs.where((t) => group.tabIds.contains(t.id)).toList();
+        chips.add(
+          _TabChip(
+            title: group.name ?? tr('Split View'),
+            tooltip: members.map(_tabTitle).join('\n'),
+            active: app.activeGroupId == group.id,
+            icon: Icons.space_dashboard_outlined,
+            status: _groupStatus(members),
+            onTap: () => app.activateGroup(group.id),
+            onClose: () => app.closeGroup(group.id),
+            onMenu: (at) => _showGroupMenu(context, app, group, at),
+          ),
+        );
+        continue;
+      }
+      final isRdp = tab.controller is RdpSessionController || tab.controller is MacRdpSessionController;
+      chips.add(
+        _TabChip(
+          title: _tabTitle(tab),
+          active:
+              app.activeGroupId == null &&
+              (visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex)),
+          icon: isRdp ? Icons.desktop_windows_outlined : Icons.terminal,
+          status: tab.controller.status,
+          onTap: () => app.setActiveTab(i),
+          onClose: () => app.closeTab(i),
+          onMenu: (at) => _showTabMenu(context, app, tab, at),
+        ),
+      );
+    }
+    return chips;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final visible = tabIdsInLayout(app.paneLayout);
-    final split = visible.length > 1;
+    final chips = _chips(context);
     return SizedBox(
       height: 36,
       child: Row(
         children: [
           Expanded(
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: app.tabs.length,
-              itemBuilder: (ctx, i) {
-                final tab = app.tabs[i];
-                final active =
-                    visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex);
-                return _TabChip(
-                  title: tab.controller.tabTitle ?? tab.controller.host,
-                  active: active,
-                  isRdp: tab.controller is RdpSessionController || tab.controller is MacRdpSessionController,
-                  status: tab.controller.status,
-                  onTap: () => app.setActiveTab(i),
-                  onClose: () => app.closeTab(i),
-                  onMenu: (at) => _showTabMenu(context, app, tab, at),
-                );
-              },
-            ),
+            child: ListView(scrollDirection: Axis.horizontal, children: chips),
           ),
-          _SplitViewButton(active: split, enabled: app.tabs.length > 1),
+          _SplitViewButton(active: app.activeGroupId != null, enabled: app.tabs.length > 1),
         ],
       ),
     );
+  }
+}
+
+String _tabTitle(OpenTab tab) => tab.controller.tabTitle ?? tab.controller.host;
+
+/// A split's dot: green only when every session in it is up.
+SessionStatus _groupStatus(List<OpenTab> members) {
+  final all = members.map((t) => t.controller.status).toSet();
+  if (all.contains(SessionStatus.error) || all.contains(SessionStatus.closed)) return SessionStatus.error;
+  if (all.contains(SessionStatus.starting)) return SessionStatus.starting;
+  return SessionStatus.running;
+}
+
+/// Right-click on a split's tab.
+Future<void> _showGroupMenu(BuildContext context, AppState app, TabGroup group, Offset at) async {
+  final key = await showContextMenu(
+    context,
+    position: at,
+    header: group.name ?? tr('Split View'),
+    actions: const [
+      MenuAction('edit', 'Edit split view…', Icons.vertical_split_outlined),
+      MenuAction('ungroup', 'Separate into tabs', Icons.tab_outlined),
+      MenuAction('close', 'Close all sessions', Icons.close, separatorBefore: true),
+    ],
+  );
+  if (key == null || !context.mounted) return;
+  switch (key) {
+    case 'edit':
+      app.activateGroup(group.id);
+      await showSplitViewDialog(context);
+    case 'ungroup':
+      app.ungroup(group.id);
+    case 'close':
+      app.closeGroup(group.id);
   }
 }
 
@@ -148,7 +208,7 @@ class _SplitViewButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Tooltip(
-      message: enabled ? tr('Split view') : tr('Open a second tab to split the view'),
+      message: enabled ? tr('Split View') : tr('Open a second tab to split the view'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: TextButton.icon(
@@ -159,7 +219,7 @@ class _SplitViewButton extends StatelessWidget {
             visualDensity: VisualDensity.compact,
           ),
           icon: const Icon(Icons.vertical_split_outlined, size: 16),
-          label: Text(tr('Split view'), style: const TextStyle(fontSize: 12)),
+          label: Text(tr('Split View'), style: const TextStyle(fontSize: 12)),
         ),
       ),
     );
@@ -170,16 +230,20 @@ class _TabChip extends StatelessWidget {
   const _TabChip({
     required this.title,
     required this.active,
-    required this.isRdp,
+    required this.icon,
     required this.status,
     required this.onTap,
     required this.onClose,
     required this.onMenu,
+    this.tooltip,
   });
 
   final String title;
   final bool active;
-  final bool isRdp;
+  final IconData icon;
+
+  /// For a split: the sessions in it.
+  final String? tooltip;
   final SessionStatus status;
   final VoidCallback onTap;
   final VoidCallback onClose;
@@ -216,7 +280,7 @@ class _TabChip extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Icon(isRdp ? Icons.desktop_windows_outlined : Icons.terminal, size: 12),
+          Icon(icon, size: 12),
           const SizedBox(width: 4),
           Expanded(
             child: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
@@ -231,11 +295,16 @@ class _TabChip extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    onSecondaryTapDown: (d) => onMenu(d.globalPosition),
-    child: _chip(context),
-  );
+  Widget build(BuildContext context) {
+    final chip = GestureDetector(
+      onTap: onTap,
+      onSecondaryTapDown: (d) => onMenu(d.globalPosition),
+      child: _chip(context),
+    );
+    return tooltip == null
+        ? chip
+        : Tooltip(message: tooltip!, waitDuration: const Duration(milliseconds: 600), child: chip);
+  }
 }
 
 /// Renders the tiling tree: a single pane, or a resizable split of two

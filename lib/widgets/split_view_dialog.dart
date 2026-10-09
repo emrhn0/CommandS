@@ -89,7 +89,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
   }
 
   void _apply() {
-    context.read<AppState>().applyLayout(buildLayout(_preset, _slots));
+    context.read<AppState>().applyLayout(buildLayout(_preset, _slots), editActive: true);
     Navigator.of(context).pop();
   }
 
@@ -141,7 +141,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(tr('Split view'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(tr('Split View'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 18),
               Text(
                 '1. Choose a layout',
