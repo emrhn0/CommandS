@@ -8,15 +8,19 @@ WebView: built with Flutter, rendered natively.
 - Full folder tree always visible on the left, collapsed by default,
   virtualized for large lists. Add connections through a popup dialog, not
   an always-open form.
-- SSH sessions run through **PuTTY's `plink`**, inside a real
-  pseudo-terminal (ConPTY on Windows) rendered by our own
-  [xterm.dart](https://pub.dev/packages/xterm) view — not a hand-rolled SSH
-  client. Network gear (Cisco, Aruba, older firmware) negotiates auth
-  methods and algorithms a young pure-Dart client trips over; plink already
-  handles all of it.
+- SSH sessions run through **OpenSSH** (the client Windows ships, or the
+  system `ssh` on macOS), inside a real pseudo-terminal (ConPTY on
+  Windows) rendered by our own [xterm.dart](https://pub.dev/packages/xterm)
+  view — not a hand-rolled SSH client. Network gear (Cisco, Aruba, older
+  firmware) negotiates auth methods and algorithms a young pure-Dart client
+  trips over; OpenSSH handles them, with legacy algorithms enabled only as
+  a fallback. The terminal size follows the pane (split view included), and
+  the keyboard behaves as in PuTTY: arrow-key history, Ctrl+A/Ctrl+V sent to
+  the session, Shift+Insert paste, select-to-copy, right-click paste.
 - Tabbed sessions — each tab is independent and live; switching tabs never
-  drops the connection. Drag a tab to an edge of the terminal area to
-  split the view, Windows-Snap style.
+  drops the connection. Right-click a tab to reconnect it, or to save a
+  quick connection. Split view shows several sessions side by side as one
+  tab.
 - RDP sessions on Windows are drawn **inside a tab**, through Microsoft's own
   Remote Desktop ActiveX control (`mstscax.dll`) hosted in-process — the same
   engine `mstsc.exe` is a shell over, so fidelity, input and performance are
@@ -55,9 +59,10 @@ flutter pub get
 flutter run -d windows   # or -d macos
 ```
 
-Windows builds need `plink.exe` on `PATH` or next to `CommandS.exe`
-(installed with [PuTTY](https://www.putty.org/); the release installer
-bundles it). macOS/Linux use the system `ssh`.
+Windows builds use the OpenSSH client that ships with Windows 10/11
+(Settings > Apps > Optional features > OpenSSH Client, on by default).
+Where it is missing they fall back to PuTTY's `plink.exe`, which the
+release installer bundles. macOS/Linux use the system `ssh`.
 
 The macOS build ships **without App Sandbox**. An SSH client has to open
 outbound connections and read the user's own `~/.ssh` (keys, `known_hosts`,

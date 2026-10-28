@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:xterm/xterm.dart';
 
 /// PuTTY's clipboard behaviour for a terminal view: selecting text copies it,
-/// and right-clicking pastes. No Ctrl+C / Ctrl+V -- in a terminal those keys
-/// belong to the remote side (Ctrl+C is an interrupt).
+/// right-clicking pastes, and so do PuTTY's keys -- Shift+Insert pastes,
+/// Ctrl+Insert copies. No Ctrl+C / Ctrl+V / Ctrl+A -- in a terminal those
+/// keys belong to the remote side (an interrupt, a literal next character,
+/// the start of the line).
 class TerminalClipboard {
   TerminalClipboard({required this.terminal, required this.controller}) {
     controller.addListener(_onSelectionChanged);
@@ -48,6 +51,30 @@ class TerminalClipboard {
     final text = data?.text;
     if (text == null || text.isEmpty) return;
     terminal.paste(text.replaceAll('\r\n', '\r').replaceAll('\n', '\r'));
+  }
+
+  /// For [TerminalView.shortcuts]: none. xterm's defaults make Ctrl+V paste
+  /// and Ctrl+A select all, which took those keys away from the session --
+  /// in bash Ctrl+A is "go to the start of the line", in screen and tmux it
+  /// is the command key. PuTTY sends them on.
+  static const Map<ShortcutActivator, Intent> shortcuts = {};
+
+  /// For [TerminalView.onKeyEvent]: PuTTY's clipboard keys.
+  KeyEventResult handleKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.insert) {
+      return KeyEventResult.ignored;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isShiftPressed && !keyboard.isControlPressed) {
+      paste();
+      return KeyEventResult.handled;
+    }
+    if (keyboard.isControlPressed && !keyboard.isShiftPressed) {
+      _lastCopied = null;
+      copySelection();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void dispose() {

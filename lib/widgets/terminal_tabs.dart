@@ -147,18 +147,31 @@ SessionStatus _groupStatus(List<OpenTab> members) {
 
 /// Right-click on a split's tab.
 Future<void> _showGroupMenu(BuildContext context, AppState app, TabGroup group, Offset at) async {
+  final dropped = app.tabs
+      .where((t) => group.tabIds.contains(t.id))
+      .where((t) => t.controller.status == SessionStatus.error || t.controller.status == SessionStatus.closed)
+      .where(canReconnect)
+      .toList();
   final key = await showContextMenu(
     context,
     position: at,
     header: group.name ?? tr('Split View'),
-    actions: const [
-      MenuAction('edit', 'Edit split view…', Icons.vertical_split_outlined),
+    actions: [
+      if (dropped.isNotEmpty) const MenuAction('reconnect', 'Reconnect dropped sessions', Icons.refresh),
+      MenuAction(
+        'edit',
+        'Edit split view…',
+        Icons.vertical_split_outlined,
+        separatorBefore: dropped.isNotEmpty,
+      ),
       MenuAction('ungroup', 'Separate into tabs', Icons.tab_outlined),
       MenuAction('close', 'Close all sessions', Icons.close, separatorBefore: true),
     ],
   );
   if (key == null || !context.mounted) return;
   switch (key) {
+    case 'reconnect':
+      dropped.forEach(reconnectTab);
     case 'edit':
       app.activateGroup(group.id);
       await showSplitViewDialog(context);
@@ -166,6 +179,25 @@ Future<void> _showGroupMenu(BuildContext context, AppState app, TabGroup group, 
       app.ungroup(group.id);
     case 'close':
       app.closeGroup(group.id);
+  }
+}
+
+/// Every session can be started again from its tab -- a quick connection
+/// included, which otherwise meant typing its address in again.
+bool canReconnect(OpenTab tab) {
+  final c = tab.controller;
+  return c is PtySessionController || c is RdpSessionController || c is MacRdpSessionController;
+}
+
+void reconnectTab(OpenTab tab) {
+  final c = tab.controller;
+  if (c is PtySessionController) {
+    c.reconnect();
+  } else if (c is RdpSessionController) {
+    // The pane reports its size on the next layout, as on first connect.
+    c.reconnect(null, 1);
+  } else if (c is MacRdpSessionController) {
+    c.relaunch();
   }
 }
 
@@ -179,13 +211,24 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
     position: at,
     header: tab.controller.tabTitle ?? tab.controller.host,
     actions: [
-      if (unsaved != null) const MenuAction('save', 'Save connection…', Icons.bookmark_add_outlined),
-      if (saved != null) const MenuAction('edit', 'Edit connection…', Icons.tune),
-      MenuAction('close', 'Close tab', Icons.close, separatorBefore: unsaved != null || saved != null),
+      // First when the session has dropped: that is what the menu is for then.
+      if (canReconnect(tab)) const MenuAction('reconnect', 'Reconnect', Icons.refresh),
+      if (unsaved != null)
+        MenuAction(
+          'save',
+          'Save connection…',
+          Icons.bookmark_add_outlined,
+          separatorBefore: canReconnect(tab),
+        ),
+      if (saved != null)
+        MenuAction('edit', 'Edit connection…', Icons.tune, separatorBefore: canReconnect(tab)),
+      const MenuAction('close', 'Close tab', Icons.close, separatorBefore: true),
     ],
   );
   if (key == null || !context.mounted) return;
   switch (key) {
+    case 'reconnect':
+      reconnectTab(tab);
     case 'save':
       final conn = await showSaveQuickConnectionDialog(context, unsaved!);
       if (conn != null) app.linkTabToConnection(tab.id, conn);
@@ -592,6 +635,10 @@ class _TerminalPaneState extends State<_TerminalPane> {
       // (which travel the key-event path) still worked. That is what made
       // every password look wrong.
       hardwareKeyboardOnly: true,
+      // PuTTY's keys: Ctrl+A/V/C go to the session, Shift+Insert pastes,
+      // Ctrl+Insert copies (TerminalClipboard).
+      shortcuts: TerminalClipboard.shortcuts,
+      onKeyEvent: _clipboard.handleKey,
       // PuTTY: right-click pastes, selecting copies (TerminalClipboard).
       onSecondaryTapDown: (_, _) {
         _clipboard.paste();

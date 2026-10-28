@@ -108,6 +108,7 @@ const turkish = <String, String>{
   'Save connection…': 'Bağlantıyı kaydet…',
   'Edit connection…': 'Bağlantıyı düzenle…',
   'Close tab': 'Sekmeyi kapat',
+  'Reconnect dropped sessions': 'Kopan oturumları yeniden bağla',
 
   // ---- RDP ----
   'Remote Desktop disconnected': 'Uzak Masaüstü bağlantısı kesildi',
