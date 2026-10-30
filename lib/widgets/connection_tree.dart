@@ -556,15 +556,24 @@ class _ConnectionTreeState extends State<ConnectionTree> {
         ),
         // One selected row is just the cursor, as in Explorer; the bulk
         // actions are for picking several.
-        if (_selected.length > 1)
-          _SelectionBar(
-            count: _selected.length,
-            total: app.connections.length + app.folders.length,
-            onDelete: () => _deleteSelected(app),
-            onMove: () => _moveSelected(app),
-            onSelectAll: () => _selectAll(app),
-            onCancel: _clearSelection,
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          transitionBuilder: (child, anim) => SizeTransition(
+            sizeFactor: anim,
+            alignment: Alignment.topCenter,
+            child: FadeTransition(opacity: anim, child: child),
           ),
+          child: _selected.length > 1
+              ? _SelectionBar(
+                  count: _selected.length,
+                  total: app.connections.length + app.folders.length,
+                  onDelete: () => _deleteSelected(app),
+                  onMove: () => _moveSelected(app),
+                  onSelectAll: () => _selectAll(app),
+                  onCancel: _clearSelection,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
         Expanded(child: _query.isEmpty ? _buildTree(app) : _buildFiltered(app)),
       ],
     );
@@ -1010,39 +1019,47 @@ class _SelectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+      key: const ValueKey('selection-bar'),
+      height: 30,
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+      padding: const EdgeInsets.only(left: 4, right: 3),
+      decoration: BoxDecoration(
+        color: scheme.onSurface.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.onSurface.withValues(alpha: 0.10)),
+      ),
       child: Row(
         children: [
-          Expanded(
-            child: Text('$count selected', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          ),
-          if (count < total)
-            IconButton(
-              icon: const Icon(Icons.library_add_check_rounded, size: 16),
-              tooltip: tr('Select all'),
-              visualDensity: VisualDensity.compact,
-              onPressed: onSelectAll,
+          Container(
+            height: 20,
+            constraints: const BoxConstraints(minWidth: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(6)),
+            child: Text(
+              '$count',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onPrimary),
             ),
-          IconButton(
-            icon: const Icon(Icons.drive_file_move_outline, size: 16),
-            tooltip: tr('Move to folder'),
-            visualDensity: VisualDensity.compact,
-            onPressed: onMove,
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 16),
-            tooltip: tr('Delete'),
-            visualDensity: VisualDensity.compact,
-            onPressed: onDelete,
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              tr('selected'),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11.5, color: scheme.onSurface.withValues(alpha: 0.7)),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 16),
-            tooltip: tr('Clear selection'),
-            visualDensity: VisualDensity.compact,
-            onPressed: onCancel,
-          ),
+          if (count < total) ...[
+            _ToolButton(icon: Icons.library_add_check_rounded, tooltip: tr('Select all'), onPressed: onSelectAll, size: 24),
+            const SizedBox(width: 2),
+          ],
+          _ToolButton(icon: Icons.drive_file_move_rounded, tooltip: tr('Move to folder'), onPressed: onMove, size: 24),
+          const SizedBox(width: 2),
+          _ToolButton(icon: Icons.delete_rounded, tooltip: tr('Delete'), onPressed: onDelete, size: 24, danger: true),
+          const SizedBox(width: 2),
+          _ToolButton(icon: Icons.close_rounded, tooltip: tr('Clear selection'), onPressed: onCancel, size: 24),
         ],
       ),
     );
@@ -1716,11 +1733,24 @@ class _OpenBadge extends StatelessWidget {
 /// A square tool button the height of the search field: a soft tile that
 /// lights up under the mouse.
 class _ToolButton extends StatefulWidget {
-  const _ToolButton({required this.icon, required this.tooltip, required this.onPressed});
+  const _ToolButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.size = 30,
+    this.danger = false,
+  });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
+
+  /// 30 = a tile beside the search field; smaller ones sit inside a bar,
+  /// drawn flat until the mouse is over them.
+  final double size;
+
+  /// Lights up red (delete).
+  final bool danger;
 
   @override
   State<_ToolButton> createState() => _ToolButtonState();
@@ -1734,6 +1764,8 @@ class _ToolButtonState extends State<_ToolButton> {
     final scheme = Theme.of(context).colorScheme;
     final enabled = widget.onPressed != null;
     final lit = enabled && _hover;
+    final flat = widget.size < 30;
+    final tint = widget.danger ? scheme.error : scheme.primary;
     return Tooltip(
       message: widget.tooltip,
       child: MouseRegion(
@@ -1744,13 +1776,21 @@ class _ToolButtonState extends State<_ToolButton> {
           onTap: widget.onPressed,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            width: 30,
-            height: 30,
+            width: widget.size,
+            height: widget.size,
             decoration: BoxDecoration(
-              color: lit ? scheme.primary.withValues(alpha: 0.12) : scheme.onSurface.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(8),
+              color: lit
+                  ? tint.withValues(alpha: 0.14)
+                  : flat
+                      ? Colors.transparent
+                      : scheme.onSurface.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(flat ? 6 : 8),
               border: Border.all(
-                color: lit ? scheme.primary.withValues(alpha: 0.45) : scheme.onSurface.withValues(alpha: 0.10),
+                color: lit
+                    ? tint.withValues(alpha: 0.45)
+                    : flat
+                        ? Colors.transparent
+                        : scheme.onSurface.withValues(alpha: 0.10),
               ),
             ),
             child: AnimatedScale(
@@ -1758,8 +1798,10 @@ class _ToolButtonState extends State<_ToolButton> {
               scale: lit ? 1.08 : 1,
               child: Icon(
                 widget.icon,
-                size: 16,
-                color: scheme.onSurface.withValues(alpha: enabled ? (lit ? 1 : 0.8) : 0.3),
+                size: flat ? 15 : 16,
+                color: lit && widget.danger
+                    ? scheme.error
+                    : scheme.onSurface.withValues(alpha: enabled ? (lit ? 1 : 0.8) : 0.3),
               ),
             ),
           ),

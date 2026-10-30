@@ -91,6 +91,7 @@ void main() {
     await tester.tap(find.text('CUSTOMER-A'));
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.textContaining('2 selected'), findsOneWidget);
+    expect(find.byKey(const ValueKey('selection-bar')), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('selection-bar')), matching: find.text('2')), findsOneWidget);
   });
 }

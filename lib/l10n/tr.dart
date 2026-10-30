@@ -38,6 +38,7 @@ const turkish = <String, String>{
   'No matches': 'Eşleşme yok',
   'Move to folder': 'Klasöre taşı',
   'Clear selection': 'Seçimi temizle',
+  'selected': 'seçili',
   'New connection here': 'Buraya yeni bağlantı',
   'Delete folder': 'Klasörü sil',
   'Edit…': 'Düzenle…',

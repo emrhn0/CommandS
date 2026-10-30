@@ -13,6 +13,9 @@
 AppId={{4C6F0A1E-7B2A-4E1B-9F0C-3A6D1C2E7B90}
 AppName=CommandS
 AppVersion={#MyAppVersion}
+; Shown in Settings > Apps as "CommandS v1.1.20" (default is "CommandS version 1.1.20").
+AppVerName=CommandS v{#MyAppVersion}
+UninstallDisplayName=CommandS v{#MyAppVersion}
 AppPublisher=CommandS
 DefaultDirName={localappdata}\Programs\CommandS
 DefaultGroupName=CommandS
