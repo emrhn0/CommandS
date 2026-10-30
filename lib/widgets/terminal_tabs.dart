@@ -16,6 +16,7 @@ import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
+import 'terminal_drag_select.dart';
 import '../l10n/strings.dart';
 
 class TerminalTabsArea extends StatelessWidget {
@@ -588,6 +589,8 @@ class _TerminalPaneState extends State<_TerminalPane> {
   final _focusNode = FocusNode();
   final _terminalController = TerminalController();
   late final TerminalClipboard _clipboard;
+  final _viewKey = GlobalKey<TerminalViewState>();
+  final _scroll = ScrollController();
 
   @override
   void initState() {
@@ -613,6 +616,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
     _clipboard.dispose();
     _terminalController.dispose();
     _focusNode.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -627,8 +631,21 @@ class _TerminalPaneState extends State<_TerminalPane> {
   }
 
   Widget _view(AppState app, TerminalStyle style) {
+    // Selecting with the mouse scrolls the view at its edges, as in PuTTY.
+    return TerminalDragSelect(
+      viewKey: _viewKey,
+      scroll: _scroll,
+      terminal: widget.controller.terminal,
+      controller: _terminalController,
+      child: _terminalView(app, style),
+    );
+  }
+
+  Widget _terminalView(AppState app, TerminalStyle style) {
     return TerminalView(
       widget.controller.terminal,
+      key: _viewKey,
+      scrollController: _scroll,
       controller: _terminalController,
       focusNode: _focusNode,
       autofocus: widget.active,

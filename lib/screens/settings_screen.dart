@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_version.dart';
 import '../providers/app_state.dart';
+import '../services/feedback_service.dart';
 import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
@@ -79,6 +80,8 @@ class SettingsScreen extends StatelessWidget {
                       _Section(title: 'Connections', children: [_ImportExport()]),
                       SizedBox(height: 22),
                       _Section(title: 'Updates', children: [_UpdatesPanel()]),
+                      SizedBox(height: 22),
+                      _Section(title: 'Support & feedback', children: [_FeedbackPanel()]),
                     ],
                   ),
                 ),
@@ -1065,6 +1068,123 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
           ),
         );
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Support & feedback
+// ---------------------------------------------------------------------------
+
+/// A box to write in and a Send button. Anonymous: see [FeedbackService].
+class _FeedbackPanel extends StatefulWidget {
+  const _FeedbackPanel();
+
+  @override
+  State<_FeedbackPanel> createState() => _FeedbackPanelState();
+}
+
+class _FeedbackPanelState extends State<_FeedbackPanel> {
+  final _text = TextEditingController();
+  bool _sending = false;
+
+  /// null: nothing sent yet; true: sent; false: failed.
+  bool? _result;
+
+  @override
+  void initState() {
+    super.initState();
+    _text.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    setState(() {
+      _sending = true;
+      _result = null;
+    });
+    final ok = await FeedbackService.send(_text.text);
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      _result = ok;
+      if (ok) _text.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dim = theme.textTheme.bodySmall?.color;
+    final canSend = !_sending && _text.text.trim().isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          tr(
+            'Found a problem, or have an idea? Write it here. Sending is anonymous: only your message, the app version and the operating system are sent.',
+          ),
+          style: TextStyle(fontSize: 12, height: 1.45, color: dim),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('feedback-text'),
+          controller: _text,
+          minLines: 4,
+          maxLines: 10,
+          maxLength: FeedbackService.maxLength,
+          enabled: !_sending,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(hintText: tr('Your message')),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _result == null
+                    ? const SizedBox.shrink()
+                    : Row(
+                        key: ValueKey(_result),
+                        children: [
+                          Icon(
+                            _result! ? Icons.check_circle_outline : Icons.error_outline,
+                            size: 18,
+                            color: _result! ? null : theme.colorScheme.error,
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              _result!
+                                  ? tr('Sent. Thank you!')
+                                  : tr('Could not send. Check the internet connection and try again.'),
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: _result! ? null : theme.colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              onPressed: canSend ? _send : null,
+              icon: _sending
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send_outlined, size: 16),
+              label: Text(tr('Send')),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 

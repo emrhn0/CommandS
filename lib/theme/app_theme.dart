@@ -139,6 +139,10 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: onAccent,
+          // Unavailable: a quiet grey with readable grey text, not the
+          // accent's black with near-black text.
+          disabledBackgroundColor: overlay.withValues(alpha: dark ? 0.10 : 0.07),
+          disabledForegroundColor: textDim.withValues(alpha: 0.75),
           elevation: 0,
           shape: shape,
           padding: buttonPadding,
@@ -150,6 +154,10 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: onAccent,
+          // Unavailable: a quiet grey with readable grey text, not the
+          // accent's black with near-black text.
+          disabledBackgroundColor: overlay.withValues(alpha: dark ? 0.10 : 0.07),
+          disabledForegroundColor: textDim.withValues(alpha: 0.75),
           shape: shape,
           padding: buttonPadding,
           minimumSize: buttonSize,

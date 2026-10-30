@@ -29,6 +29,8 @@ WebView: built with Flutter, rendered natively.
   widen it.
 - Terminal colours from swatches, a colour code, or a palette (saturation
   square and hue bar) that fills in the code.
+- Settings > Support & feedback: send a suggestion or a problem report
+  anonymously (only the message, the app version and the OS are sent).
 - Tabbed sessions — each tab is independent and live; switching tabs never
   drops the connection. Right-click a tab to reconnect it, or to save a
   quick connection. Split view shows several sessions side by side as one

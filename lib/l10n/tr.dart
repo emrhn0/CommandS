@@ -226,6 +226,13 @@ const turkish = <String, String>{
       'Yalnızca CommandS’in kendi arayüzünü değiştirir; oturumlar etkilenmez.',
   'Connections': 'Bağlantılar',
   'Updates': 'Güncellemeler',
+  'Support & feedback': 'Destek ve Öneri',
+  'Found a problem, or have an idea? Write it here. Sending is anonymous: only your message, the app version and the operating system are sent.': 'Bir sorun mu buldunuz ya da bir fikriniz mi var? Buraya yazın. Gönderim anonimdir: yalnızca mesajınız, uygulama sürümü ve işletim sistemi gönderilir.',
+  'Your message': 'Mesajınız',
+  'Send': 'Gönder',
+  'Sent. Thank you!': 'Gönderildi. Teşekkürler!',
+  'Could not send. Check the internet connection and try again.':
+      'Gönderilemedi. İnternet bağlantısını kontrol edip tekrar deneyin.',
   'Font': 'Yazı tipi',
   '{font} (default)': '{font} (varsayılan)',
   'Other font by name…': 'Adıyla başka bir yazı tipi…',
