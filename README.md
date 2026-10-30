@@ -17,6 +17,13 @@ WebView: built with Flutter, rendered natively.
   a fallback. The terminal size follows the pane (split view included), and
   the keyboard behaves as in PuTTY: arrow-key history, Ctrl+A/Ctrl+V sent to
   the session, Shift+Insert paste, select-to-copy, right-click paste.
+- Serial consoles (a network device's console cable): the quick connect box defaults
+  to **Serial** — type the COM port number (`3` for COM3, `3:115200` for
+  another speed; 9600 8N1 otherwise). The port is opened by the app itself,
+  so keys reach the device as typed. macOS uses the system `screen` on the
+  `/dev` device.
+- The connection tree works like Windows Explorer: a click selects, a double
+  click connects (or opens a folder); Ctrl/Shift select several.
 - Tabbed sessions — each tab is independent and live; switching tabs never
   drops the connection. Right-click a tab to reconnect it, or to save a
   quick connection. Split view shows several sessions side by side as one

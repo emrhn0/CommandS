@@ -145,10 +145,13 @@ void main() {
       child: const MaterialApp(home: Scaffold(body: SizedBox(width: 260, child: ConnectionTree()))),
     ));
     await tester.pumpAndSettle();
+    // Double click opens, as in Explorer.
+    await tester.tap(find.text('CUSTOMER-A'));
     await tester.tap(find.text('CUSTOMER-A'));
     await tester.pumpAndSettle();
     expect(find.text('Both switches'), findsOneWidget);
 
+    await tester.tap(find.text('Both switches'));
     await tester.tap(find.text('Both switches'));
     await tester.pumpAndSettle();
     expect(tabIdsInLayoutOrdered(app.paneLayout), ['tab-${ssh1.id}', 'tab-${ssh2.id}']);

@@ -80,6 +80,10 @@ const turkish = <String, String>{
   'Host or IP': 'Sunucu veya IP',
   'Quick connect with': 'Hızlı bağlantı türü',
   'Quick connect protocol': 'Hızlı bağlantı protokolü',
+  'Serial': 'Seri',
+  'port no.': 'port no.',
+  'Type the port number, e.g. 3 for COM3 (3:115200 sets the speed).':
+      'Port numarasını yazın, ör. COM3 için 3 (hız için 3:115200).',
 
   // ---- Connection dialog ----
   'Edit Connection': 'Bağlantıyı Düzenle',

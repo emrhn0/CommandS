@@ -36,7 +36,7 @@ class UnsafeTargetError implements Exception {
 /// Network gear is why a real client is used rather than a pure-Dart one: a
 /// Cisco switch here only offers keyboard-interactive, old firmware only old
 /// algorithms, and a firewall may ask a yes/no question at login.
-class PtySessionController implements SessionController {
+class PtySessionController implements TerminalSessionController {
   PtySessionController({
     required this.host,
     required this.port,
@@ -64,6 +64,7 @@ class PtySessionController implements SessionController {
   String _username;
   final String _password;
 
+  @override
   late final Terminal terminal;
   Pty? _pty;
   Directory? _scratchDir;
@@ -135,6 +136,7 @@ class PtySessionController implements SessionController {
 
   /// Starts the session again in the same tab and terminal: after the
   /// connection dropped, or to restart it (PuTTY's "Restart Session").
+  @override
   void reconnect() {
     _stopProcess();
     _lineInput = null;

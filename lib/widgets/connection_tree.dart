@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -109,14 +110,13 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     return rows;
   }
 
-  // Folders are selectable rows too (RDM treats them as first-class items
-  // you can multi-select, move, and delete just like connections) so
-  // selection is keyed by row id regardless of whether it's a folder or a
-  // connection; only the "plain click, nothing selected" behavior differs
-  // (open a session vs. toggle expand).
-  String? _rowId(_Row r) => r.folder?.id ?? r.connection?.id;
+  // Folders, connections and layouts are all selectable rows, keyed by id.
+  // Windows Explorer's model: a click selects (and only selects), a double
+  // click opens -- a connection connects, a folder opens or closes, a layout
+  // opens. Ctrl and Shift extend the selection.
+  String? _rowId(_Row r) => r.folder?.id ?? r.connection?.id ?? r.layout?.id;
 
-  void _handleRowTap(_Row row, List<_Row> rows, VoidCallback onPlainClick) {
+  void _handleRowSelect(_Row row, List<_Row> rows) {
     final id = _rowId(row);
     if (id == null) return;
     final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
@@ -151,20 +151,25 @@ class _ConnectionTreeState extends State<ConnectionTree> {
       }
     }
 
-    if (_selected.isNotEmpty) {
-      // A plain click while a selection is active just adjusts the
-      // selection rather than opening/toggling — matches how Explorer/RDM
-      // treat clicks once you're in "picking rows" mode.
-      setState(() {
-        _selected
-          ..clear()
-          ..add(id);
-        _lastClickedId = id;
-      });
-      return;
-    }
+    setState(() {
+      _selected
+        ..clear()
+        ..add(id);
+      _lastClickedId = id;
+    });
+  }
 
-    onPlainClick();
+  /// Right-click selects the row first, as in Explorer -- unless it is part
+  /// of a multi-selection, which the menu should not break up.
+  void _handleRowSecondary(_Row row) {
+    final id = _rowId(row);
+    if (id == null || _selected.contains(id)) return;
+    setState(() {
+      _selected
+        ..clear()
+        ..add(id);
+      _lastClickedId = id;
+    });
   }
 
   Future<void> _connect(SavedConnection conn) async {
@@ -303,7 +308,9 @@ class _ConnectionTreeState extends State<ConnectionTree> {
             ],
           ),
         ),
-        if (_selected.isNotEmpty)
+        // One selected row is just the cursor, as in Explorer; the bulk
+        // actions are for picking several.
+        if (_selected.length > 1)
           _SelectionBar(
             count: _selected.length,
             total: app.connections.length + app.folders.length,
@@ -369,18 +376,28 @@ class _ConnectionTreeState extends State<ConnectionTree> {
             openStatus: openByFolder[row.folder!.id],
             expanded: expanded,
             selected: _selected.contains(row.folder!.id),
-            onTap: () => _handleRowTap(row, rows, toggle),
+            onSelect: () => _handleRowSelect(row, rows),
+            onSecondary: () => _handleRowSecondary(row),
+            onOpen: toggle,
             onToggle: toggle,
           );
         }
         if (row.layout != null) {
-          return _LayoutRow(layout: row.layout!, depth: row.depth);
+          return _LayoutRow(
+            layout: row.layout!,
+            depth: row.depth,
+            selected: _selected.contains(row.layout!.id),
+            onSelect: () => _handleRowSelect(row, rows),
+            onSecondary: () => _handleRowSecondary(row),
+          );
         }
         return _ConnectionRow(
           conn: row.connection!,
           depth: row.depth,
           selected: _selected.contains(row.connection!.id),
-          onTap: () => _handleRowTap(row, rows, () => _connect(row.connection!)),
+          onSelect: () => _handleRowSelect(row, rows),
+          onSecondary: () => _handleRowSecondary(row),
+          onOpen: () => _connect(row.connection!),
         );
       },
     );
@@ -401,19 +418,32 @@ class _ConnectionTreeState extends State<ConnectionTree> {
         ),
       );
     }
-    final rows = [for (final c in matches) _Row.connection(c, 0)];
+    final rows = [
+      for (final l in layoutMatches) _Row.layout(l, 0),
+      for (final c in matches) _Row.connection(c, 0),
+    ];
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 8),
       itemCount: layoutMatches.length + matches.length,
       itemExtent: kTreeRowHeight,
       itemBuilder: (context, i) {
-        if (i < layoutMatches.length) return _LayoutRow(layout: layoutMatches[i], depth: 0);
+        if (i < layoutMatches.length) {
+          return _LayoutRow(
+            layout: layoutMatches[i],
+            depth: 0,
+            selected: _selected.contains(layoutMatches[i].id),
+            onSelect: () => _handleRowSelect(rows[i], rows),
+            onSecondary: () => _handleRowSecondary(rows[i]),
+          );
+        }
         final j = i - layoutMatches.length;
         return _ConnectionRow(
           conn: matches[j],
           depth: 0,
           selected: _selected.contains(matches[j].id),
-          onTap: () => _handleRowTap(rows[j], rows, () => _connect(matches[j])),
+          onSelect: () => _handleRowSelect(rows[i], rows),
+          onSecondary: () => _handleRowSecondary(rows[i]),
+          onOpen: () => _connect(matches[j]),
         );
       },
     );
@@ -506,7 +536,9 @@ class _FolderRow extends StatefulWidget {
     required this.depth,
     required this.expanded,
     required this.selected,
-    required this.onTap,
+    required this.onSelect,
+    required this.onSecondary,
+    required this.onOpen,
     required this.onToggle,
     this.openStatus,
   });
@@ -514,7 +546,9 @@ class _FolderRow extends StatefulWidget {
   final int depth;
   final bool expanded;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback onSelect;
+  final VoidCallback onSecondary;
+  final VoidCallback onOpen;
   final VoidCallback onToggle;
 
   /// Set when a connection somewhere inside this folder has a tab open.
@@ -535,9 +569,11 @@ class _FolderRowState extends State<_FolderRow> {
     return _TreeRow(
       depth: widget.depth,
       selected: widget.selected,
-      onTap: widget.onTap,
-      // The chevron toggles without going through selection handling, so
-      // opening a folder while rows are selected does not clear the selection.
+      onSelect: widget.onSelect,
+      onSecondary: widget.onSecondary,
+      onOpen: widget.onOpen,
+      // The chevron toggles with a single click, as in Explorer, without
+      // going through selection.
       expanded: widget.expanded,
       onToggle: widget.onToggle,
       openStatus: widget.openStatus,
@@ -615,12 +651,16 @@ class _ConnectionRow extends StatelessWidget {
     required this.conn,
     required this.depth,
     required this.selected,
-    required this.onTap,
+    required this.onSelect,
+    required this.onSecondary,
+    required this.onOpen,
   });
   final SavedConnection conn;
   final int depth;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback onSelect;
+  final VoidCallback onSecondary;
+  final VoidCallback onOpen;
 
   /// The state of this connection's open tab, if it has one -- the best of
   /// them when it is open more than once, so one live session shows as live.
@@ -646,7 +686,9 @@ class _ConnectionRow extends StatelessWidget {
     return _TreeRow(
       depth: depth,
       selected: selected,
-      onTap: onTap,
+      onSelect: onSelect,
+      onSecondary: onSecondary,
+      onOpen: onOpen,
       openStatus: _openStatus(app),
       icon: conn.protocol == ConnectionProtocol.rdp ? Icons.desktop_windows_outlined : Icons.terminal,
       // Name and host were one run of identical text ("name - host"), which
@@ -694,9 +736,18 @@ class _ConnectionRow extends StatelessWidget {
 /// A saved split layout. Clicking it opens its connections in their saved
 /// arrangement.
 class _LayoutRow extends StatelessWidget {
-  const _LayoutRow({required this.layout, required this.depth});
+  const _LayoutRow({
+    required this.layout,
+    required this.depth,
+    required this.selected,
+    required this.onSelect,
+    required this.onSecondary,
+  });
   final SavedLayout layout;
   final int depth;
+  final bool selected;
+  final VoidCallback onSelect;
+  final VoidCallback onSecondary;
 
   void _open(BuildContext context) {
     final app = context.read<AppState>();
@@ -717,8 +768,10 @@ class _LayoutRow extends StatelessWidget {
     final panes = layout.connectionIds.where((id) => id != null).length;
     return _TreeRow(
       depth: depth,
-      selected: false,
-      onTap: () => _open(context),
+      selected: selected,
+      onSelect: onSelect,
+      onSecondary: onSecondary,
+      onOpen: () => _open(context),
       icon: Icons.space_dashboard_outlined,
       title: layout.name,
       subtitle: '${tr(preset?.label ?? 'Layout')} · $panes',
@@ -770,7 +823,9 @@ class _TreeRow extends StatefulWidget {
   const _TreeRow({
     required this.depth,
     required this.selected,
-    required this.onTap,
+    required this.onSelect,
+    required this.onSecondary,
+    required this.onOpen,
     required this.icon,
     required this.title,
     required this.menuItems,
@@ -785,7 +840,15 @@ class _TreeRow extends StatefulWidget {
 
   final int depth;
   final bool selected;
-  final VoidCallback onTap;
+
+  /// Mouse button down anywhere on the row: select it (Ctrl/Shift extend).
+  final VoidCallback onSelect;
+
+  /// Right button: select before the menu opens.
+  final VoidCallback onSecondary;
+
+  /// Double click: connect / open or close the folder / open the layout.
+  final VoidCallback onOpen;
   final IconData icon;
   final String title;
 
@@ -822,6 +885,28 @@ class _TreeRowState extends State<_TreeRow> {
   bool _hover = false;
 
   final _moreKey = GlobalKey();
+
+  Duration? _lastDown;
+  Offset? _lastDownAt;
+
+  /// Two presses of the left button close together in time and place make
+  /// a double click: open.
+  void _onNameDown(PointerDownEvent e) {
+    if (e.buttons != kPrimaryMouseButton) return;
+    final last = _lastDown;
+    final at = _lastDownAt;
+    if (last != null &&
+        at != null &&
+        e.timeStamp - last <= kDoubleTapTimeout &&
+        (e.position - at).distance <= kDoubleTapSlop) {
+      _lastDown = null;
+      _lastDownAt = null;
+      widget.onOpen();
+      return;
+    }
+    _lastDown = e.timeStamp;
+    _lastDownAt = e.position;
+  }
 
   /// Right-click and the "..." button open the same menu: at the pointer, or
   /// anchored under the button.
@@ -865,127 +950,151 @@ class _TreeRowState extends State<_TreeRow> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onSecondaryTapDown: (d) => _showContextMenu(at: d.globalPosition),
-        child: SizedBox(
-          height: kTreeRowHeight,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(4)),
-            child: Row(
-              children: [
-                // The selection pill, as in Remote Desktop Manager and Windows
-                // 11's own navigation panes.
-                Container(
-                  width: 3,
-                  height: 14,
-                  margin: const EdgeInsets.only(right: 3),
-                  decoration: BoxDecoration(
-                    color: widget.selected ? text : Colors.transparent,
-                    borderRadius: BorderRadius.circular(2),
+      // Selected the moment the button goes down, as in Explorer. A tap
+      // recognizer would wait out the double-click timeout before reporting
+      // a single click, which made selection feel late.
+      child: Listener(
+        onPointerDown: (e) {
+          if (e.buttons == kPrimaryMouseButton) widget.onSelect();
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapDown: (d) {
+            widget.onSecondary();
+            _showContextMenu(at: d.globalPosition);
+          },
+          child: SizedBox(
+            height: kTreeRowHeight,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(4)),
+              child: Row(
+                children: [
+                  // The selection pill, as in Remote Desktop Manager and Windows
+                  // 11's own navigation panes.
+                  Container(
+                    width: 3,
+                    height: 14,
+                    margin: const EdgeInsets.only(right: 3),
+                    decoration: BoxDecoration(
+                      color: widget.selected ? text : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                // Indentation alone shows nesting, as in Explorer; guide lines
-                // made the panel busy without saying anything the indent and
-                // the chevrons do not.
-                SizedBox(width: widget.depth * kTreeIndent),
-                SizedBox(
-                  width: 18,
-                  child: widget.expanded == null
-                      ? null
-                      : InkWell(
-                          borderRadius: BorderRadius.circular(3),
-                          onTap: widget.onToggle,
-                          child: AnimatedRotation(
-                            turns: widget.expanded! ? 0.25 : 0,
-                            duration: const Duration(milliseconds: 120),
-                            child: Icon(Icons.chevron_right, size: 16, color: dim),
+                  // Indentation alone shows nesting, as in Explorer; guide lines
+                  // made the panel busy without saying anything the indent and
+                  // the chevrons do not.
+                  SizedBox(width: widget.depth * kTreeIndent),
+                  SizedBox(
+                    width: 18,
+                    child: widget.expanded == null
+                        ? null
+                        : InkWell(
+                            borderRadius: BorderRadius.circular(3),
+                            onTap: widget.onToggle,
+                            child: AnimatedRotation(
+                              turns: widget.expanded! ? 0.25 : 0,
+                              duration: const Duration(milliseconds: 120),
+                              child: Icon(Icons.chevron_right, size: 16, color: dim),
+                            ),
                           ),
-                        ),
-                ),
-                _OpenBadge(
-                  status: widget.openStatus,
-                  cutout: isDark ? AppColors.darkPanel : AppColors.lightPanel,
-                  child: Icon(widget.icon, size: 16, color: text),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: InkWell(
-                    onTap: widget.onTap,
-                    child: SizedBox(
-                      height: kTreeRowHeight,
+                  ),
+                  // Icon and name: the part a double click opens. Detected by
+                  // hand from the button presses rather than with a
+                  // double-tap recognizer, which would have held every
+                  // single click in the row -- the chevron and the "..."
+                  // button included -- until the double-click time ran out.
+                  Expanded(
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: _onNameDown,
                       child: Row(
                         children: [
-                          // Expanded, with the host left at its natural width:
-                          // a Row lays out its inflexible children first, so
-                          // the name gets every pixel the host does not need.
+                          _OpenBadge(
+                            status: widget.openStatus,
+                            cutout: isDark ? AppColors.darkPanel : AppColors.lightPanel,
+                            child: Icon(widget.icon, size: 16, color: text),
+                          ),
+                          const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              widget.title,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                height: 1.1,
-                                color: text,
-                                fontWeight: widget.bold ? FontWeight.w500 : FontWeight.w400,
+                            child: SizedBox(
+                              height: kTreeRowHeight,
+                              child: Row(
+                                children: [
+                                  // Expanded, with the host left at its natural width:
+                                  // a Row lays out its inflexible children first, so
+                                  // the name gets every pixel the host does not need.
+                                  Expanded(
+                                    child: Text(
+                                      widget.title,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        height: 1.1,
+                                        color: text,
+                                        fontWeight: widget.bold ? FontWeight.w500 : FontWeight.w400,
+                                      ),
+                                    ),
+                                  ),
+                                  if (widget.subtitle != null && widget.subtitle!.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    ConstrainedBox(
+                                      // A long hostname must not squeeze the name out.
+                                      constraints: const BoxConstraints(maxWidth: 120),
+                                      child: Text(
+                                        widget.subtitle!,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 11.5, height: 1.1, color: dim),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ),
-                          if (widget.subtitle != null && widget.subtitle!.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            ConstrainedBox(
-                              // A long hostname must not squeeze the name out.
-                              constraints: const BoxConstraints(maxWidth: 120),
-                              child: Text(
-                                widget.subtitle!,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11.5, height: 1.1, color: dim),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
                   ),
-                ),
-                // Swapped for the "..." button on hover, so the row never has to
-                // find room for both.
-                if (widget.trailingCount != null && !_hover)
-                  Container(
-                    margin: const EdgeInsets.only(left: 6, right: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: overlay.withValues(alpha: isDark ? 0.08 : 0.05),
-                      borderRadius: BorderRadius.circular(8),
+                  // Swapped for the "..." button on hover, so the row never has to
+                  // find room for both.
+                  if (widget.trailingCount != null && !_hover)
+                    Container(
+                      margin: const EdgeInsets.only(left: 6, right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: overlay.withValues(alpha: isDark ? 0.08 : 0.05),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${widget.trailingCount}',
+                        style: TextStyle(fontSize: 10.5, color: dim, height: 1.2),
+                      ),
                     ),
-                    child: Text(
-                      '${widget.trailingCount}',
-                      style: TextStyle(fontSize: 10.5, color: dim, height: 1.2),
-                    ),
-                  ),
-                // Kept mounted (not conditionally built) even when hidden:
-                // opening the menu moves the cursor onto its overlay, the
-                // MouseRegion sees that as "exited", and a button removed from
-                // the tree right then lost the anchor the menu was opened from.
-                SizedBox(
-                  key: _moreKey,
-                  width: 24,
-                  child: Opacity(
-                    opacity: _hover ? 1 : 0,
-                    child: IgnorePointer(
-                      ignoring: !_hover,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(4),
-                        onTap: () => _showContextMenu(),
-                        child: SizedBox(
-                          height: kTreeRowHeight,
-                          child: Icon(Icons.more_horiz, size: 15, color: dim),
+                  // Kept mounted (not conditionally built) even when hidden:
+                  // opening the menu moves the cursor onto its overlay, the
+                  // MouseRegion sees that as "exited", and a button removed from
+                  // the tree right then lost the anchor the menu was opened from.
+                  SizedBox(
+                    key: _moreKey,
+                    width: 24,
+                    child: Opacity(
+                      opacity: _hover ? 1 : 0,
+                      child: IgnorePointer(
+                        ignoring: !_hover,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () => _showContextMenu(),
+                          child: SizedBox(
+                            height: kTreeRowHeight,
+                            child: Icon(Icons.more_horiz, size: 15, color: dim),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

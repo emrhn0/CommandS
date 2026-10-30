@@ -7,8 +7,8 @@ import 'package:xterm/xterm.dart';
 import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
 import '../services/pane_layout.dart';
-import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
+import '../services/serial_session.dart';
 import '../services/session_controller.dart';
 import '../services/terminal_appearance.dart';
 import 'context_menu.dart';
@@ -107,7 +107,11 @@ class _TabBarRow extends StatelessWidget {
           active:
               app.activeGroupId == null &&
               (visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex)),
-          icon: isRdp ? Icons.desktop_windows_outlined : Icons.terminal,
+          icon: isRdp
+              ? Icons.desktop_windows_outlined
+              : tab.controller is SerialSessionController
+              ? Icons.cable
+              : Icons.terminal,
           status: tab.controller.status,
           onTap: () => app.setActiveTab(i),
           onClose: () => app.closeTab(i),
@@ -186,12 +190,12 @@ Future<void> _showGroupMenu(BuildContext context, AppState app, TabGroup group, 
 /// included, which otherwise meant typing its address in again.
 bool canReconnect(OpenTab tab) {
   final c = tab.controller;
-  return c is PtySessionController || c is RdpSessionController || c is MacRdpSessionController;
+  return c is TerminalSessionController || c is RdpSessionController || c is MacRdpSessionController;
 }
 
 void reconnectTab(OpenTab tab) {
   final c = tab.controller;
-  if (c is PtySessionController) {
+  if (c is TerminalSessionController) {
     c.reconnect();
   } else if (c is RdpSessionController) {
     // The pane reports its size on the next layout, as on first connect.
@@ -442,7 +446,7 @@ class _SessionPane extends StatelessWidget {
     if (controller is MacRdpSessionController) {
       return _MacRdpPane(controller: controller as MacRdpSessionController);
     }
-    return _TerminalPane(controller: controller as PtySessionController, active: active);
+    return _TerminalPane(controller: controller as TerminalSessionController, active: active);
   }
 }
 
@@ -573,7 +577,7 @@ class _MacRdpPaneState extends State<_MacRdpPane> {
 
 class _TerminalPane extends StatefulWidget {
   const _TerminalPane({required this.controller, required this.active});
-  final PtySessionController controller;
+  final TerminalSessionController controller;
   final bool active;
 
   @override

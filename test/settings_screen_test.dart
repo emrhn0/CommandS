@@ -86,8 +86,8 @@ void main() {
     expect(prefs.getString('commands.themeMode'), 'dark');
   });
 
-  testWidgets('quick connect defaults to SSH; its menu ticks the current protocol', (tester) async {
-    tester.view.physicalSize = const Size(260, 200);
+  testWidgets('quick connect defaults to Serial with a fixed COM; SSH and RDP drop it', (tester) async {
+    tester.view.physicalSize = const Size(260, 240);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
@@ -97,26 +97,40 @@ void main() {
     )), dark: true));
     await tester.pumpAndSettle();
 
-    expect(find.text('SSH'), findsOneWidget);
-    expect(find.text('RDP'), findsNothing);
+    expect(find.text('Serial'), findsOneWidget);
+    expect(find.text('COM'), findsOneWidget, reason: 'shown before anything is typed');
+    // Only digits (and a :speed) go into the box; COM is not part of the text.
+    await tester.enterText(find.byType(TextField), 'COM3x');
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '3');
 
-    await tester.tap(find.text('SSH'));
+    // All three are offered, the current one ticked.
+    await tester.tap(find.text('Serial'));
     await tester.pumpAndSettle();
-    // Both protocols are listed, the current one ticked.
     expect(find.text('Quick connect with'), findsOneWidget);
+    expect(find.text('SSH'), findsOneWidget);
     expect(find.text('RDP'), findsOneWidget);
-    expect(find.text('SSH'), findsNWidgets(2));
+    expect(find.text('Serial'), findsNWidgets(2));
     expect(find.byIcon(Icons.check), findsOneWidget);
-    await tester.tap(find.text('RDP'));
-    await tester.pumpAndSettle();
-    expect(find.text('RDP'), findsOneWidget);
-    expect(find.text('SSH'), findsNothing);
-
-    await tester.tap(find.text('RDP'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('SSH'));
     await tester.pumpAndSettle();
     expect(find.text('SSH'), findsOneWidget);
-    expect(find.text('RDP'), findsNothing);
+    expect(find.text('COM'), findsNothing);
+    expect(find.text('Host or IP'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '', reason: 'a port is not a host');
+    await tester.enterText(find.byType(TextField), '192.0.2.1');
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '192.0.2.1');
+
+    await tester.tap(find.text('SSH'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('RDP'));
+    await tester.pumpAndSettle();
+    expect(find.text('RDP'), findsOneWidget);
+    expect(find.text('COM'), findsNothing);
+
+    await tester.tap(find.text('RDP'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Serial'));
+    await tester.pumpAndSettle();
+    expect(find.text('COM'), findsOneWidget);
   });
 }
