@@ -97,6 +97,23 @@ void main() {
     expect(inner.parentId, isNull);
   });
 
+  testWidgets('pressing a row does not pick it up', (tester) async {
+    await pumpTree(tester);
+    await tester.tap(find.byIcon(Icons.chevron_right).at(2)); // open CHARLIE
+    await tester.pumpAndSettle();
+    final g = await tester.startGesture(
+      tester.getCenter(find.text('DEVICE-01')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(find.text('DEVICE-01'), findsOneWidget, reason: 'no drag chip on a press');
+    await g.moveBy(const Offset(3, 2)); // a hand's jitter
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(find.text('DEVICE-01'), findsOneWidget, reason: 'nor on a few pixels of jitter');
+    await g.up();
+    await tester.pump();
+  });
+
   testWidgets('a jittery double click on a connection in a folder opens it and leaves it where it is', (
     tester,
   ) async {
@@ -106,14 +123,18 @@ void main() {
     await tester.tap(find.byIcon(Icons.chevron_right).at(2)); // open CHARLIE
     await tester.pumpAndSettle();
     final p = tester.getCenter(find.text('DEVICE-01'));
-    // First click: the hand moves a couple of pixels while the button is down.
+    // As a real mouse delivers it: frames drawn between every event, and the
+    // hand moving a little while the button is down.
     final g1 = await tester.startGesture(p, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 30));
     await g1.moveTo(p + const Offset(2, 1));
+    await tester.pump(const Duration(milliseconds: 20));
     await g1.up();
-    await tester.pump(const Duration(milliseconds: 80));
+    await tester.pump(const Duration(milliseconds: 70));
     final g2 = await tester.startGesture(p + const Offset(2, 1), kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 30));
     await g2.up();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
     expect(app.connections.single.folderId, c.id, reason: 'still in its folder');
     expect(app.tabs, hasLength(1), reason: 'the double click connected');
     for (final t in app.tabs) {
@@ -129,8 +150,10 @@ void main() {
     final p = tester.getCenter(find.text('DEVICE-01'));
     await drag(tester, p, p + const Offset(30, 4));
     expect(app.connections.single.folderId, c.id);
-    // And on another connection-less spot of its own row, further out.
-    await drag(tester, p, p + const Offset(-20, -3));
+    // Again from another spot of the row (test pointer events carry no
+    // time, so a second press on the same spot would read as a double click).
+    final q = p + const Offset(20, 0);
+    await drag(tester, q, q + const Offset(-20, -3));
     expect(app.connections.single.folderId, c.id);
   });
 }

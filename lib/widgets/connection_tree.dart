@@ -57,6 +57,9 @@ class _ConnectionTreeState extends State<ConnectionTree> {
   int _rowCount = 0;
   bool _overEmpty = false;
 
+  /// The row being dragged, drawn faded where it was.
+  final Set<String> _draggingIds = {};
+
   bool _belowRows(Offset global) {
     final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return false;
@@ -168,6 +171,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
 
   void _dragEnded() {
     _dragging = false;
+    if (_draggingIds.isNotEmpty && mounted) setState(_draggingIds.clear);
     _autoScroll?.cancel();
     _autoScroll = null;
     _autoScrollStep = 0;
@@ -271,6 +275,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
         onDragStarted: () {
           _handleRowSecondary(row); // the dragged row joins (or is) the selection
           _dragging = true;
+          setState(() => _draggingIds.add(id));
         },
         onDragEnd: (_) => _dragEnded(),
         onDraggableCanceled: (_, _) => _dragEnded(),
@@ -280,8 +285,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
               ? trCount(_selected.length, '{n} item', '{n} items')
               : title,
         ),
-        childWhenDragging: Opacity(opacity: 0.45, child: child),
-        child: child,
+        child: Opacity(opacity: _draggingIds.contains(id) ? 0.45 : 1, child: child),
       ),
     );
   }
@@ -535,16 +539,16 @@ class _ConnectionTreeState extends State<ConnectionTree> {
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.select_all, size: 16),
+              const SizedBox(width: 6),
+              _ToolButton(
+                icon: Icons.library_add_check_rounded,
                 tooltip: tr('Select all'),
-                visualDensity: VisualDensity.compact,
                 onPressed: app.connections.isEmpty ? null : () => _selectAll(app),
               ),
-              IconButton(
-                icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+              const SizedBox(width: 4),
+              _ToolButton(
+                icon: Icons.create_new_folder_rounded,
                 tooltip: tr('New folder'),
-                visualDensity: VisualDensity.compact,
                 onPressed: () => _promptName(context, 'New folder', '', (name) => app.addFolder(name)),
               ),
             ],
@@ -774,16 +778,39 @@ class _ThresholdDragRecognizer extends MultiDragGestureRecognizer {
 class _ThresholdPointerState extends MultiDragPointerState {
   _ThresholdPointerState(super.initialPosition, super.kind, super.deviceGestureSettings);
 
+  /// Set when the arena gave us the pointer before it had moved far enough:
+  /// on a plain row we are the arena's only member, and a lone member wins
+  /// the moment the button goes down. Starting the drag right then is what
+  /// turned every click into a drag.
+  GestureMultiDragStartCallback? _starter;
+
+  bool get _farEnough => pendingDelta!.distance > _ThresholdDragRecognizer.threshold;
+
   @override
   void checkForResolutionAfterMove() {
-    if (pendingDelta!.distance > _ThresholdDragRecognizer.threshold) {
+    if (!_farEnough) return;
+    final starter = _starter;
+    if (starter != null) {
+      _starter = null;
+      starter(initialPosition);
+    } else {
       resolve(GestureDisposition.accepted);
     }
   }
 
   @override
   void accepted(GestureMultiDragStartCallback starter) {
-    starter(initialPosition);
+    if (_farEnough) {
+      starter(initialPosition);
+    } else {
+      _starter = starter;
+    }
+  }
+
+  @override
+  void dispose() {
+    _starter = null;
+    super.dispose();
   }
 }
 
@@ -993,7 +1020,7 @@ class _SelectionBar extends StatelessWidget {
           ),
           if (count < total)
             IconButton(
-              icon: const Icon(Icons.select_all, size: 16),
+              icon: const Icon(Icons.library_add_check_rounded, size: 16),
               tooltip: tr('Select all'),
               visualDensity: VisualDensity.compact,
               onPressed: onSelectAll,
@@ -1082,6 +1109,7 @@ class _FolderRowState extends State<_FolderRow> {
         app.connections.where((c) => c.folderId == widget.folder.id).length +
         app.layouts.where((l) => l.folderId == widget.folder.id).length;
     return _TreeRow(
+      rowId: widget.folder.id,
       depth: widget.depth,
       selected: widget.selected,
       onSelect: widget.onSelect,
@@ -1199,6 +1227,7 @@ class _ConnectionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
     return _TreeRow(
+      rowId: conn.id,
       depth: depth,
       selected: selected,
       onSelect: onSelect,
@@ -1282,6 +1311,7 @@ class _LayoutRow extends StatelessWidget {
     final preset = SplitPreset.values.where((p) => p.name == layout.preset).firstOrNull;
     final panes = layout.connectionIds.where((id) => id != null).length;
     return _TreeRow(
+      rowId: layout.id,
       depth: depth,
       selected: selected,
       onSelect: onSelect,
@@ -1336,6 +1366,7 @@ class _LayoutRow extends StatelessWidget {
 /// difference between instant and visibly slow.
 class _TreeRow extends StatefulWidget {
   const _TreeRow({
+    required this.rowId,
     required this.depth,
     required this.selected,
     required this.onSelect,
@@ -1353,6 +1384,8 @@ class _TreeRow extends StatefulWidget {
     this.bold = false,
   });
 
+  /// The folder, connection or layout this row shows.
+  final String rowId;
   final int depth;
   final bool selected;
 
@@ -1401,24 +1434,37 @@ class _TreeRowState extends State<_TreeRow> {
 
   final _moreKey = GlobalKey();
 
-  Duration? _lastDown;
-  Offset? _lastDownAt;
+  /// The last press, kept for the whole tree rather than per row widget: a
+  /// row can be rebuilt between the two clicks of a double click (selection
+  /// changes it), and a per-row memory was lost with it.
+  static String? _lastDownRow;
+  static Duration? _lastDown;
+  static Offset? _lastDownAt;
 
-  /// Two presses of the left button close together in time and place make
-  /// a double click: open.
+  /// How far the pointer may wander between the two clicks: Windows' own
+  /// double-click rectangle is 4x4 px. Flutter's touch default (100 px)
+  /// would have made two quick clicks on two different rows a double click.
+  static const double _doubleClickSlop = 6;
+
+  /// Two presses of the left button on the same row, close together in time
+  /// and place, make a double click: open.
   void _onNameDown(PointerDownEvent e) {
     if (e.buttons != kPrimaryMouseButton) return;
     final last = _lastDown;
     final at = _lastDownAt;
-    if (last != null &&
+    if (_lastDownRow == widget.rowId &&
+        last != null &&
         at != null &&
+        e.timeStamp - last >= Duration.zero &&
         e.timeStamp - last <= kDoubleTapTimeout &&
-        (e.position - at).distance <= kDoubleTapSlop) {
+        (e.position - at).distance <= _doubleClickSlop) {
+      _lastDownRow = null;
       _lastDown = null;
       _lastDownAt = null;
       widget.onOpen();
       return;
     }
+    _lastDownRow = widget.rowId;
     _lastDown = e.timeStamp;
     _lastDownAt = e.position;
   }
@@ -1662,6 +1708,62 @@ class _OpenBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A square tool button the height of the search field: a soft tile that
+/// lights up under the mouse.
+class _ToolButton extends StatefulWidget {
+  const _ToolButton({required this.icon, required this.tooltip, required this.onPressed});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  State<_ToolButton> createState() => _ToolButtonState();
+}
+
+class _ToolButtonState extends State<_ToolButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = widget.onPressed != null;
+    final lit = enabled && _hover;
+    return Tooltip(
+      message: widget.tooltip,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: lit ? scheme.primary.withValues(alpha: 0.12) : scheme.onSurface.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: lit ? scheme.primary.withValues(alpha: 0.45) : scheme.onSurface.withValues(alpha: 0.10),
+              ),
+            ),
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 140),
+              scale: lit ? 1.08 : 1,
+              child: Icon(
+                widget.icon,
+                size: 16,
+                color: scheme.onSurface.withValues(alpha: enabled ? (lit ? 1 : 0.8) : 0.3),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
