@@ -162,7 +162,13 @@ jobs:
 
           PREV_TAG=$(git tag --list 'v*.*.*' --sort=-v:refname | grep -v "^${TAG}\$" | head -n1 || true)
           if [ -n "$PREV_TAG" ]; then
-            CHANGELOG=$(git log --pretty=format:'- %s' "${PREV_TAG}..${TAG}" | grep -v '^- Merge ' || true)
+            # A hand-written list for users (shown in the app's update
+            # dialog) when there is one; otherwise the commit subjects.
+            if [ -f "release-notes/${TAG}.md" ]; then
+              CHANGELOG=$(cat "release-notes/${TAG}.md")
+            else
+              CHANGELOG=$(git log --pretty=format:'- %s' "${PREV_TAG}..${TAG}" | grep -v '^- Merge ' || true)
+            fi
             [ -z "$CHANGELOG" ] && CHANGELOG="- (see commit history)"
             CHANGELOG_HEADER="## What's changed since ${PREV_TAG}"
           else
