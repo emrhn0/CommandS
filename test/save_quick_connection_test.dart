@@ -1,5 +1,6 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
+import 'package:commands/services/pty_session.dart';
 import 'package:commands/widgets/app_dialog.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:flutter/gestures.dart';
@@ -14,6 +15,8 @@ void main() {
   late ConnectionFolder folder;
 
   setUp(() async {
+    // Tab and dialog behaviour only; no network.
+    PtySessionController.checkReachability = false;
     SharedPreferences.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('commands/rdp'),

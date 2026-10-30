@@ -1,5 +1,6 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
+import 'package:commands/services/pty_session.dart';
 import 'package:commands/services/pane_layout.dart';
 import 'package:commands/services/session_controller.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
@@ -27,6 +28,8 @@ void main() {
   late AppState app;
 
   setUp(() async {
+    // Tab and dialog behaviour only; no network.
+    PtySessionController.checkReachability = false;
     SharedPreferences.setMockInitialValues({});
     app = AppState();
     await Future<void>.delayed(Duration.zero);

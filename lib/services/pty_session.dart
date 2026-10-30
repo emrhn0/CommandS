@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 import 'package:xterm/xterm.dart';
 
@@ -152,6 +152,17 @@ class PtySessionController implements TerminalSessionController {
         throw UnsafeTargetError('Refusing to connect: "$host" is not a valid host name or address.');
       }
       final ssh = Platform.isWindows ? findWindowsSsh() : _sshExecutable;
+      if (ssh != null) {
+        // Reach the server first, as PuTTY does before it asks anything: an
+        // address with nothing behind it used to get a "login as:" prompt and
+        // a green tab, as if connected.
+        final problem = checkReachability ? await _reach() : null;
+        if (generation != _generation) return;
+        if (problem != null) {
+          _fail(problem);
+          return;
+        }
+      }
       if (_username.isEmpty && ssh != null) {
         // OpenSSH would log in as the local account; ask, as PuTTY does.
         final typed = await _readLine('login as: ');
@@ -178,6 +189,35 @@ class PtySessionController implements TerminalSessionController {
     }
   }
 
+  static const _reachTimeout = Duration(seconds: 10);
+
+  /// Tests that only exercise tabs and dialogs turn the network check off.
+  @visibleForTesting
+  static bool checkReachability = true;
+
+  /// Opens and closes a TCP connection to the SSH port. Null when it
+  /// answered, otherwise what went wrong, in plain words.
+  Future<String?> _reach() async {
+    terminal.write('Connecting to $host:$port...\r\n');
+    final address = host.startsWith('[') && host.endsWith(']') ? host.substring(1, host.length - 1) : host;
+    try {
+      final socket = await Socket.connect(address, port, timeout: _reachTimeout);
+      socket.destroy();
+      return null;
+    } on SocketException catch (e) {
+      final code = e.osError?.errorCode;
+      final why = switch (code) {
+        10061 || 111 || 61 => 'connection refused (nothing is listening on port $port)',
+        10060 || 110 || 60 => 'connection timed out',
+        10065 || 113 || 65 || 10051 || 101 || 51 => 'no route to host',
+        11001 || 11004 || 8 || -2 => 'host name not found',
+        _ when e.message.toLowerCase().contains('timed out') => 'connection timed out',
+        _ => (e.osError?.message ?? e.message).trim(),
+      };
+      return 'Could not connect to $host:$port: $why.';
+    }
+  }
+
   void _fail(String message) {
     lastError = message;
     terminal.write('\r\n[error] $message\r\n');
@@ -191,7 +231,6 @@ class PtySessionController implements TerminalSessionController {
     final done = Completer<String?>();
     final text = StringBuffer();
     terminal.write(prompt);
-    _setStatus(SessionStatus.running);
     _lineInput = (data) {
       // Arrow keys and the like arrive as escape sequences; a prompt has no
       // use for them.
@@ -301,7 +340,7 @@ class PtySessionController implements TerminalSessionController {
     // PuTTY's "Accept" would); one whose key has changed is still refused.
     args.addAll(['-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=$knownHosts']);
     // Keeps idle sessions through NAT and firewall timeouts.
-    args.addAll(['-o', 'ServerAliveInterval=30']);
+    args.addAll(['-o', 'ServerAliveInterval=30', '-o', 'ConnectTimeout=15']);
     if (_password.isNotEmpty) {
       // The saved password is what this connection is for: skip the
       // key/agent attempts that would each go through the helper first.

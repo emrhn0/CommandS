@@ -23,7 +23,12 @@ WebView: built with Flutter, rendered natively.
   so keys reach the device as typed. macOS uses the system `screen` on the
   `/dev` device.
 - The connection tree works like Windows Explorer: a click selects, a double
-  click connects (or opens a folder); Ctrl/Shift select several.
+  click connects (or opens a folder); Ctrl/Shift select several. Drag
+  connections and folders into any folder, or onto a folder's top or bottom
+  edge to put folders in your own order. Drag the panel's right edge to
+  widen it.
+- Terminal colours from swatches, a colour code, or a palette (saturation
+  square and hue bar) that fills in the code.
 - Tabbed sessions — each tab is independent and live; switching tabs never
   drops the connection. Right-click a tab to reconnect it, or to save a
   quick connection. Split view shows several sessions side by side as one

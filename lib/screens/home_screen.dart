@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/app_state.dart';
 
 import '../widgets/connection_tree.dart';
 import '../widgets/custom_title_bar.dart';
@@ -14,6 +17,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = context.select<AppState, double>((a) => a.sidebarWidth);
     return Scaffold(
       body: Column(
         children: [
@@ -22,7 +26,7 @@ class HomeScreen extends StatelessWidget {
             child: Row(
               children: [
                 SizedBox(
-                  width: 260,
+                  width: width,
                   child: Column(
                     children: [
                       Container(
@@ -63,12 +67,61 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                VerticalDivider(width: 1, color: Theme.of(context).dividerColor),
+                const _SidebarResizer(),
+                // Sessions take whatever the panel leaves: terminals re-wrap
+                // and RDP sessions resize to the new pane.
                 const Expanded(child: TerminalTabsArea()),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The connections panel's right edge: drag to make it wider or narrower
+/// (long names stop being cut off), double-click to go back to the default.
+class _SidebarResizer extends StatefulWidget {
+  const _SidebarResizer();
+
+  @override
+  State<_SidebarResizer> createState() => _SidebarResizerState();
+}
+
+class _SidebarResizerState extends State<_SidebarResizer> {
+  bool _hover = false;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final theme = Theme.of(context);
+    final active = _hover || _dragging;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) => setState(() => _dragging = true),
+        onHorizontalDragUpdate: (d) => app.setSidebarWidth(app.sidebarWidth + d.delta.dx),
+        onHorizontalDragEnd: (_) {
+          setState(() => _dragging = false);
+          app.setSidebarWidth(app.sidebarWidth, save: true);
+        },
+        onDoubleTap: () => app.setSidebarWidth(AppState.defaultSidebarWidth, save: true),
+        // A wider grip than the 1px line it draws, so it is easy to catch.
+        child: SizedBox(
+          width: 7,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: active ? 3 : 1,
+              color: active ? theme.colorScheme.primary.withValues(alpha: 0.5) : theme.dividerColor,
+            ),
+          ),
+        ),
       ),
     );
   }

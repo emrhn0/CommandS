@@ -6,6 +6,7 @@ import '../providers/app_state.dart';
 import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/color_picker_dialog.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/import_export_dialog.dart';
 import '../widgets/update_dialog.dart';
@@ -581,15 +582,26 @@ class _ColorCodeFieldState extends State<_ColorCodeField> {
           labelText: tr('Color code'),
           hintText: tr('#1E1E1E or rgb(30, 30, 30)'),
           errorText: _invalid ? tr('Use #RRGGBB, #RGB or rgb(r, g, b)') : null,
-          prefixIcon: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                color: widget.color,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.black26),
+          // The colour itself: click it for the palette.
+          prefixIcon: Tooltip(
+            message: tr('Pick a color'),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () async {
+                final c = await showColorPicker(context, initial: widget.color, title: 'Pick a color');
+                if (c != null) widget.onChanged(c);
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black26),
+                  ),
+                ),
               ),
             ),
           ),
@@ -612,6 +624,50 @@ class _SwatchGroup extends StatelessWidget {
   final List<Color> colors;
   final Color selected;
   final ValueChanged<Color> onPick;
+
+  /// The last swatch: opens the palette for any colour, not only these.
+  Widget _paletteButton(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: tr('Pick a color'),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () async {
+            final c = await showColorPicker(context, initial: selected, title: 'Pick a color');
+            if (c != null) onPick(c);
+          },
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const SweepGradient(
+                colors: [
+                  Color(0xFFFF0000),
+                  Color(0xFFFFFF00),
+                  Color(0xFF00FF00),
+                  Color(0xFF00FFFF),
+                  Color(0xFF0000FF),
+                  Color(0xFFFF00FF),
+                  Color(0xFFFF0000),
+                ],
+              ),
+              border: Border.all(color: theme.dividerColor),
+            ),
+            child: Center(
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(color: theme.colorScheme.surface, shape: BoxShape.circle),
+                child: Icon(Icons.colorize, size: 12, color: theme.textTheme.bodyMedium?.color),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _swatch(Color c, Color accent) {
     final on = selected.toARGB32() == c.toARGB32();
@@ -649,6 +705,7 @@ class _SwatchGroup extends StatelessWidget {
             // A colour entered by code shows as its own selected swatch, so
             // it is clear which colour is in use.
             if (custom) _swatch(selected, accent),
+            _paletteButton(context),
           ],
         ),
         const SizedBox(height: 14),

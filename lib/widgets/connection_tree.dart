@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -48,9 +50,237 @@ class _ConnectionTreeState extends State<ConnectionTree> {
   final Set<String> _selected = {};
   String? _lastClickedId;
 
+  final _scroll = ScrollController();
+
+  /// Set while something is being dragged; drives edge auto-scroll.
+  bool _dragging = false;
+  Timer? _autoScroll;
+  double _autoScrollStep = 0;
+  final _listKey = GlobalKey();
+
+  /// The collapsed folder a drag is resting on, and the timer that opens it
+  /// -- Explorer opens a folder you hold something over.
+  String? _hoverFolderId;
+  Timer? _hoverExpand;
+
+  /// What a drag starting on [row] carries: the whole selection when the
+  /// row is part of a multi-selection, otherwise just the row.
+  _DragItems _dragItemsFor(_Row row, AppState app) {
+    final id = _rowId(row)!;
+    final ids = _selected.length > 1 && _selected.contains(id) ? _selected.toSet() : {id};
+    return _DragItems(
+      folderIds: ids.where((i) => app.folders.any((f) => f.id == i)).toList(),
+      connectionIds: ids.where((i) => app.connections.any((c) => c.id == i)).toList(),
+      layoutIds: ids.where((i) => app.layouts.any((l) => l.id == i)).toList(),
+    );
+  }
+
+  /// Whether [items] may go into [target] (null: the top level). A folder
+  /// cannot go into itself or anything under it, and a drop that would move
+  /// nothing is not offered.
+  bool _canDrop(_DragItems items, String? target, AppState app) {
+    final parentOf = {for (final f in app.folders) f.id: f.parentId};
+    for (final id in items.folderIds) {
+      var cursor = target;
+      final seen = <String>{};
+      while (cursor != null && seen.add(cursor)) {
+        if (cursor == id) return false;
+        cursor = parentOf[cursor];
+      }
+    }
+    final moves =
+        items.folderIds.any((id) => parentOf[id] != target) ||
+        items.connectionIds.any((id) => app.connections.firstWhere((c) => c.id == id).folderId != target) ||
+        items.layoutIds.any((id) => app.layouts.firstWhere((l) => l.id == id).folderId != target);
+    return moves;
+  }
+
+  Future<void> _drop(_DragItems items, String? target, AppState app) async {
+    _stopHoverExpand();
+    for (final id in items.folderIds) {
+      await app.moveFolderToFolder(id, target);
+    }
+    for (final id in items.connectionIds) {
+      await app.moveConnectionToFolder(id, target);
+    }
+    for (final id in items.layoutIds) {
+      await app.moveLayoutToFolder(id, target);
+    }
+    if (!mounted) return;
+    setState(() {
+      // Show where they went, still selected, as Explorer does.
+      if (target != null) _expanded.add(target);
+      _selected
+        ..clear()
+        ..addAll([...items.folderIds, ...items.connectionIds, ...items.layoutIds]);
+    });
+  }
+
+  void _startHoverExpand(String folderId) {
+    if (_hoverFolderId == folderId) return;
+    _stopHoverExpand();
+    if (_expanded.contains(folderId)) return;
+    _hoverFolderId = folderId;
+    _hoverExpand = Timer(const Duration(milliseconds: 700), () {
+      if (mounted && _hoverFolderId == folderId) setState(() => _expanded.add(folderId));
+    });
+  }
+
+  void _stopHoverExpand() {
+    _hoverExpand?.cancel();
+    _hoverExpand = null;
+    _hoverFolderId = null;
+  }
+
+  /// Near the top or bottom edge of the list while dragging, scroll that way.
+  void _onDragPointerMove(PointerMoveEvent e) {
+    if (!_dragging) return;
+    final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final y = box.globalToLocal(e.position).dy;
+    const edge = 36.0;
+    _autoScrollStep = y < edge
+        ? -(edge - y) / 3 - 2
+        : (y > box.size.height - edge ? (y - box.size.height + edge) / 3 + 2 : 0);
+    if (_autoScrollStep == 0) {
+      _autoScroll?.cancel();
+      _autoScroll = null;
+    } else {
+      _autoScroll ??= Timer.periodic(const Duration(milliseconds: 16), (_) {
+        if (!_scroll.hasClients || _autoScrollStep == 0) return;
+        final p = _scroll.position;
+        _scroll.jumpTo((p.pixels + _autoScrollStep).clamp(p.minScrollExtent, p.maxScrollExtent));
+      });
+    }
+  }
+
+  void _dragEnded() {
+    _dragging = false;
+    _autoScroll?.cancel();
+    _autoScroll = null;
+    _autoScrollStep = 0;
+    _stopHoverExpand();
+  }
+
+  /// Rows that just moved, lit up briefly so the eye finds where they went.
+  final Set<String> _flash = {};
+  Timer? _flashTimer;
+
+  void _flashRows(Iterable<String> ids) {
+    _flashTimer?.cancel();
+    setState(
+      () => _flash
+        ..clear()
+        ..addAll(ids),
+    );
+    _flashTimer = Timer(const Duration(milliseconds: 900), () {
+      if (mounted) setState(_flash.clear);
+    });
+  }
+
+  /// Folders only, and none of them [target] or above it: they may be
+  /// placed next to [target], in its parent.
+  bool _canPlaceBeside(_DragItems items, ConnectionFolder target, AppState app) {
+    if (items.folderIds.isEmpty || items.connectionIds.isNotEmpty || items.layoutIds.isNotEmpty) return false;
+    if (items.folderIds.contains(target.id)) return false;
+    final parentOf = {for (final f in app.folders) f.id: f.parentId};
+    var cursor = target.parentId;
+    final seen = <String>{};
+    while (cursor != null && seen.add(cursor)) {
+      if (items.folderIds.contains(cursor)) return false;
+      cursor = parentOf[cursor];
+    }
+    return true;
+  }
+
+  Future<void> _placeBeside(_DragItems items, ConnectionFolder target, bool after, AppState app) async {
+    _stopHoverExpand();
+    String? before = target.id;
+    if (after) {
+      final siblings = app
+          .sortFolders(app.folders.where((f) => f.parentId == target.parentId).toList())
+          .map((f) => f.id)
+          .where((id) => !items.folderIds.contains(id))
+          .toList();
+      final i = siblings.indexOf(target.id);
+      before = i + 1 < siblings.length ? siblings[i + 1] : null;
+    }
+    await app.placeFolders(items.folderIds, target.parentId, before: before);
+    if (!mounted) return;
+    setState(() {
+      if (target.parentId != null) _expanded.add(target.parentId!);
+      _selected
+        ..clear()
+        ..addAll(items.folderIds);
+    });
+    _flashRows(items.folderIds);
+  }
+
+  /// Makes [child] draggable and a drop target. A folder row takes items
+  /// into itself, or -- for folders dropped on its top or bottom third --
+  /// places them above or below it; a connection or layout row takes items
+  /// into the folder it is in ([dropFolderId]).
+  Widget _dragAndDrop(_Row row, AppState app, Widget child, {required String? dropFolderId}) {
+    final title = row.folder?.name ?? row.layout?.name ?? row.connection?.name ?? '';
+    final icon = row.folder != null
+        ? Icons.folder
+        : row.layout != null
+        ? Icons.space_dashboard_outlined
+        : (row.connection!.protocol == ConnectionProtocol.rdp
+              ? Icons.desktop_windows_outlined
+              : Icons.terminal);
+    final folder = row.folder;
+    final id = _rowId(row)!;
+    return _DropZone(
+      depth: row.depth,
+      flash: _flash.contains(id),
+      canInto: (items) => _canDrop(items, dropFolderId, app),
+      canReorder: (items) => folder != null && _canPlaceBeside(items, folder, app),
+      onInto: () {
+        if (folder != null) _startHoverExpand(folder.id);
+      },
+      onLeave: () {
+        if (folder != null && _hoverFolderId == folder.id) _stopHoverExpand();
+      },
+      onDrop: (items, zone) {
+        if (zone == _Zone.into) {
+          _drop(
+            items,
+            dropFolderId,
+            app,
+          ).then((_) => _flashRows([...items.folderIds, ...items.connectionIds, ...items.layoutIds]));
+        } else if (folder != null) {
+          _placeBeside(items, folder, zone == _Zone.after, app);
+        }
+      },
+      child: Draggable<_DragItems>(
+        data: _dragItemsFor(row, app),
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        onDragStarted: () {
+          _handleRowSecondary(row); // the dragged row joins (or is) the selection
+          _dragging = true;
+        },
+        onDragEnd: (_) => _dragEnded(),
+        onDraggableCanceled: (_, _) => _dragEnded(),
+        feedback: _DragFeedback(
+          icon: icon,
+          label: _selected.length > 1 && _selected.contains(id)
+              ? trCount(_selected.length, '{n} item', '{n} items')
+              : title,
+        ),
+        childWhenDragging: Opacity(opacity: 0.45, child: child),
+        child: child,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _search.dispose();
+    _scroll.dispose();
+    _autoScroll?.cancel();
+    _hoverExpand?.cancel();
+    _flashTimer?.cancel();
     super.dispose();
   }
 
@@ -73,9 +303,9 @@ class _ConnectionTreeState extends State<ConnectionTree> {
   List<_Row> _visibleRows(AppState app) {
     final rows = <_Row>[];
 
+    // In the order the user dragged them into; untouched ones by name.
     List<ConnectionFolder> foldersUnder(String? parentId) =>
-        app.folders.where((f) => f.parentId == parentId).toList()
-          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        app.sortFolders(app.folders.where((f) => f.parentId == parentId).toList());
     List<SavedConnection> connectionsUnder(String? folderId) =>
         app.connections.where((c) => c.folderId == folderId).toList()
           ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -355,51 +585,78 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     if (app.folders.isEmpty && app.connections.isEmpty) {
       return const _EmptyTreeHint();
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 8),
-      itemCount: rows.length,
-      itemExtent: kTreeRowHeight,
-      itemBuilder: (context, i) {
-        final row = rows[i];
-        if (row.folder != null) {
-          final expanded = _expanded.contains(row.folder!.id);
-          void toggle() => setState(() {
-            if (expanded) {
-              _expanded.remove(row.folder!.id);
-            } else {
-              _expanded.add(row.folder!.id);
-            }
-          });
-          return _FolderRow(
-            folder: row.folder!,
-            depth: row.depth,
-            openStatus: openByFolder[row.folder!.id],
-            expanded: expanded,
-            selected: _selected.contains(row.folder!.id),
-            onSelect: () => _handleRowSelect(row, rows),
-            onSecondary: () => _handleRowSecondary(row),
-            onOpen: toggle,
-            onToggle: toggle,
-          );
+    // The list itself is the top level: something dropped on empty space
+    // below the rows goes out of every folder.
+    return Listener(
+      onPointerMove: _onDragPointerMove,
+      child: DragTarget<_DragItems>(
+        key: _listKey,
+        onWillAcceptWithDetails: (d) => _canDrop(d.data, null, app),
+        onAcceptWithDetails: (d) => _drop(d.data, null, app),
+        builder: (context, candidates, _) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: candidates.isEmpty
+                ? Colors.transparent
+                : Theme.of(context).colorScheme.primary.withValues(alpha: 0.04),
+          ),
+          child: ListView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.only(bottom: 48),
+            itemCount: rows.length,
+            itemExtent: kTreeRowHeight,
+            itemBuilder: (context, i) {
+              final row = rows[i];
+              return _dragAndDrop(
+                row,
+                app,
+                _buildRow(row, rows, openByFolder),
+                dropFolderId: row.folder?.id ?? row.connection?.folderId ?? row.layout?.folderId,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRow(_Row row, List<_Row> rows, Map<String, SessionStatus> openByFolder) {
+    if (row.folder != null) {
+      final expanded = _expanded.contains(row.folder!.id);
+      void toggle() => setState(() {
+        if (expanded) {
+          _expanded.remove(row.folder!.id);
+        } else {
+          _expanded.add(row.folder!.id);
         }
-        if (row.layout != null) {
-          return _LayoutRow(
-            layout: row.layout!,
-            depth: row.depth,
-            selected: _selected.contains(row.layout!.id),
-            onSelect: () => _handleRowSelect(row, rows),
-            onSecondary: () => _handleRowSecondary(row),
-          );
-        }
-        return _ConnectionRow(
-          conn: row.connection!,
-          depth: row.depth,
-          selected: _selected.contains(row.connection!.id),
-          onSelect: () => _handleRowSelect(row, rows),
-          onSecondary: () => _handleRowSecondary(row),
-          onOpen: () => _connect(row.connection!),
-        );
-      },
+      });
+      return _FolderRow(
+        folder: row.folder!,
+        depth: row.depth,
+        openStatus: openByFolder[row.folder!.id],
+        expanded: expanded,
+        selected: _selected.contains(row.folder!.id),
+        onSelect: () => _handleRowSelect(row, rows),
+        onSecondary: () => _handleRowSecondary(row),
+        onOpen: toggle,
+        onToggle: toggle,
+      );
+    }
+    if (row.layout != null) {
+      return _LayoutRow(
+        layout: row.layout!,
+        depth: row.depth,
+        selected: _selected.contains(row.layout!.id),
+        onSelect: () => _handleRowSelect(row, rows),
+        onSecondary: () => _handleRowSecondary(row),
+      );
+    }
+    return _ConnectionRow(
+      conn: row.connection!,
+      depth: row.depth,
+      selected: _selected.contains(row.connection!.id),
+      onSelect: () => _handleRowSelect(row, rows),
+      onSecondary: () => _handleRowSecondary(row),
+      onOpen: () => _connect(row.connection!),
     );
   }
 
@@ -446,6 +703,186 @@ class _ConnectionTreeState extends State<ConnectionTree> {
           onOpen: () => _connect(matches[j]),
         );
       },
+    );
+  }
+}
+
+enum _Zone { none, before, into, after }
+
+/// One row as a drop target, drawing where a drop would land: an outline
+/// for "into", a line with a knob above or below for "place here" -- both
+/// fading in and out, so the target is easy to follow while dragging.
+class _DropZone extends StatefulWidget {
+  const _DropZone({
+    required this.depth,
+    required this.flash,
+    required this.canInto,
+    required this.canReorder,
+    required this.onInto,
+    required this.onLeave,
+    required this.onDrop,
+    required this.child,
+  });
+
+  final int depth;
+  final bool flash;
+  final bool Function(_DragItems) canInto;
+  final bool Function(_DragItems) canReorder;
+  final VoidCallback onInto;
+  final VoidCallback onLeave;
+  final void Function(_DragItems, _Zone) onDrop;
+  final Widget child;
+
+  @override
+  State<_DropZone> createState() => _DropZoneState();
+}
+
+class _DropZoneState extends State<_DropZone> {
+  _Zone _zone = _Zone.none;
+
+  _Zone _zoneFor(DragTargetDetails<_DragItems> d) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return _Zone.none;
+    final y = box.globalToLocal(d.offset).dy;
+    final h = box.size.height;
+    final reorder = widget.canReorder(d.data);
+    final into = widget.canInto(d.data);
+    if (reorder && y < h * 0.3) return _Zone.before;
+    if (reorder && y > h * 0.7) return _Zone.after;
+    if (into) return _Zone.into;
+    if (reorder) return y < h / 2 ? _Zone.before : _Zone.after;
+    return _Zone.none;
+  }
+
+  void _set(_Zone z) {
+    if (z == _zone) return;
+    setState(() => _zone = z);
+    if (z == _Zone.into) {
+      widget.onInto();
+    } else {
+      widget.onLeave();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final lineLeft = 8.0 + widget.depth * kTreeIndent + 18;
+    Widget line(bool top) => Positioned(
+      left: lineLeft - 4,
+      right: 6,
+      top: top ? -1 : null,
+      bottom: top ? null : -1,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 120),
+          opacity: _zone == (top ? _Zone.before : _Zone.after) ? 1 : 0,
+          child: Row(
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: accent, width: 1.6),
+                  color: Theme.of(context).colorScheme.surface,
+                ),
+              ),
+              Expanded(child: Container(height: 2, color: accent)),
+            ],
+          ),
+        ),
+      ),
+    );
+    return DragTarget<_DragItems>(
+      onWillAcceptWithDetails: (d) => widget.canInto(d.data) || widget.canReorder(d.data),
+      onMove: (d) => _set(_zoneFor(d)),
+      onLeave: (_) => _set(_Zone.none),
+      onAcceptWithDetails: (d) {
+        final z = _zoneFor(d);
+        _set(_Zone.none);
+        if (z != _Zone.none) widget.onDrop(d.data, z);
+      },
+      builder: (context, candidates, rejected) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // A moved row glows for a moment where it landed, then fades.
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: widget.flash ? accent.withValues(alpha: 0.14) : accent.withValues(alpha: 0),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          widget.child,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 120),
+                opacity: _zone == _Zone.into ? 1 : 0,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.06),
+                    border: Border.all(color: accent, width: 1.4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          line(true),
+          line(false),
+        ],
+      ),
+    );
+  }
+}
+
+/// What a drag in the tree carries.
+class _DragItems {
+  const _DragItems({required this.folderIds, required this.connectionIds, required this.layoutIds});
+  final List<String> folderIds;
+  final List<String> connectionIds;
+  final List<String> layoutIds;
+}
+
+/// The chip that follows the pointer while dragging.
+class _DragFeedback extends StatelessWidget {
+  const _DragFeedback({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Transform.translate(
+      offset: const Offset(12, 10),
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(6),
+        color: theme.colorScheme.surface,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 240),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(label, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

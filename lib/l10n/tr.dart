@@ -55,6 +55,8 @@ const turkish = <String, String>{
   '{n} connections': '{n} bağlantı',
   '{n} folder': '{n} klasör',
   '{n} folders': '{n} klasör',
+  '{n} item': '{n} öğe',
+  '{n} items': '{n} öğe',
   ' and ': ' ve ',
   'Delete {what}?': '{what} silinsin mi?',
   'Delete "{name}"?': '"{name}" silinsin mi?',
@@ -235,6 +237,7 @@ const turkish = <String, String>{
   'Background': 'Arka plan',
   'Text': 'Yazı',
   'Color code': 'Renk kodu',
+  'Pick a color': 'Renk seç',
   '#1E1E1E or rgb(30, 30, 30)': '#1E1E1E veya rgb(30, 30, 30)',
   'Use #RRGGBB, #RGB or rgb(r, g, b)': '#RRGGBB, #RGB veya rgb(r, g, b) kullanın',
 
