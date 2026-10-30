@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 import 'package:xterm/xterm.dart';
 
+import '../models/models.dart';
+import 'device_detect.dart';
 import 'session_controller.dart';
 
 export 'session_controller.dart' show SessionStatus;
@@ -84,6 +86,54 @@ class PtySessionController implements TerminalSessionController {
 
   String? lastError;
 
+  /// Told once per connection what kind of device answered, when that can
+  /// be read from what it printed (see [detectDevice]).
+  void Function(DeviceKind kind)? onDeviceDetected;
+
+  /// The server's identification line (`SSH-2.0-...`), read during the
+  /// reachability check. Empty when there was none.
+  String serverVersion = '';
+
+  /// The start of the session's output, kept for [detectDevice] until it
+  /// has an answer or enough has gone by.
+  final _sniff = StringBuffer();
+  bool _sniffing = false;
+  Timer? _settleTimer;
+  static const _sniffLimit = 32 * 1024;
+  static const _settleAfter = Duration(seconds: 15);
+
+  void _sniffStart() {
+    _sniff.clear();
+    _sniffing = true;
+    _settleTimer?.cancel();
+    _settleTimer = null;
+    _detect(settled: false);
+  }
+
+  void _sniffAdd(String text) {
+    if (!_sniffing) return;
+    _sniff.write(text);
+    _settleTimer ??= Timer(_settleAfter, () => _detect(settled: true));
+    _detect(settled: false);
+    if (_sniffing && _sniff.length > _sniffLimit) _sniffStop();
+  }
+
+  void _detect({required bool settled}) {
+    if (!_sniffing) return;
+    final kind = detectDevice(serverVersion: serverVersion, output: _sniff.toString(), settled: settled);
+    if (kind != null) {
+      _sniffStop();
+      onDeviceDetected?.call(kind);
+    }
+  }
+
+  void _sniffStop() {
+    _sniffing = false;
+    _sniff.clear();
+    _settleTimer?.cancel();
+    _settleTimer = null;
+  }
+
   void _setStatus(SessionStatus s) {
     status = s;
     if (!_statusController.isClosed) _statusController.add(s);
@@ -147,6 +197,8 @@ class PtySessionController implements TerminalSessionController {
 
   Future<void> _start() async {
     final generation = ++_generation;
+    serverVersion = '';
+    _sniffStop();
     try {
       if (!_safeHost.hasMatch(host)) {
         throw UnsafeTargetError('Refusing to connect: "$host" is not a valid host name or address.');
@@ -163,6 +215,7 @@ class PtySessionController implements TerminalSessionController {
           return;
         }
       }
+      _sniffStart();
       if (_username.isEmpty && ssh != null) {
         // OpenSSH would log in as the local account; ask, as PuTTY does.
         final typed = await _readLine('login as: ');
@@ -202,6 +255,7 @@ class PtySessionController implements TerminalSessionController {
     final address = host.startsWith('[') && host.endsWith(']') ? host.substring(1, host.length - 1) : host;
     try {
       final socket = await Socket.connect(address, port, timeout: _reachTimeout);
+      serverVersion = await readIdentification(socket);
       socket.destroy();
       return null;
     } on SocketException catch (e) {
@@ -216,6 +270,42 @@ class PtySessionController implements TerminalSessionController {
       };
       return 'Could not connect to $host:$port: $why.';
     }
+  }
+
+  /// The `SSH-...` line a server sends as soon as it accepts a connection
+  /// (RFC 4253 allows other lines before it). Gives up after a moment or a
+  /// kilobyte; nothing is sent.
+  @visibleForTesting
+  static Future<String> readIdentification(Socket socket) async {
+    final done = Completer<String>();
+    final seen = <int>[];
+    String? pick() {
+      final lines = latin1.decode(seen).split('\n');
+      // The last piece has no newline yet: it may still be arriving.
+      for (final line in lines.take(lines.length - 1)) {
+        if (line.startsWith('SSH-')) return line.trim();
+      }
+      return null;
+    }
+
+    final sub = socket.listen(
+      (data) {
+        seen.addAll(data);
+        final line = pick();
+        if (line != null && !done.isCompleted) done.complete(line);
+        if (seen.length > 1024 && !done.isCompleted) done.complete('');
+      },
+      onError: (_) {
+        if (!done.isCompleted) done.complete('');
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete(pick() ?? '');
+      },
+      cancelOnError: true,
+    );
+    final line = await done.future.timeout(const Duration(seconds: 2), onTimeout: () => pick() ?? '');
+    await sub.cancel();
+    return line;
   }
 
   void _fail(String message) {
@@ -546,6 +636,7 @@ class PtySessionController implements TerminalSessionController {
     final text = _pending.toString();
     _pending.clear();
     terminal.write(text);
+    _sniffAdd(text);
   }
 
   void _attachPty(int generation, {required bool cleanUpEarly}) {
@@ -594,6 +685,7 @@ class PtySessionController implements TerminalSessionController {
 
   void _stopProcess() {
     _generation++;
+    _sniffStop();
     _flushTimer?.cancel();
     _flush();
     try {

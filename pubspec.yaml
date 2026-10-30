@@ -49,6 +49,7 @@ dependencies:
   # Verifies the checksum published with a release before the updater
   # runs the installer it just downloaded (see services/update_service.dart).
   crypto: ^3.0.0
+  flutter_svg: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -76,6 +77,7 @@ flutter:
 
   assets:
     - assets/icon/commands_mark.png
+    - assets/devices/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

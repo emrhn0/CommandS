@@ -12,6 +12,7 @@ import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
 import 'app_dialog.dart';
 import 'context_menu.dart';
+import 'device_icon.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
 import '../l10n/strings.dart';
@@ -1252,6 +1253,10 @@ class _ConnectionRow extends StatelessWidget {
       onOpen: onOpen,
       openStatus: _openStatus(app),
       icon: conn.protocol == ConnectionProtocol.rdp ? Icons.desktop_windows_outlined : Icons.terminal,
+      leading: switch (DeviceIcon.of(conn)) {
+        final kind? => DeviceIcon(kind),
+        null => null,
+      },
       // Name and host were one run of identical text ("name - host"), which
       // made every row look the same at a glance. The name carries the
       // meaning, so it gets the weight and the host trails behind it, dimmer.
@@ -1390,6 +1395,7 @@ class _TreeRow extends StatefulWidget {
     required this.onSecondary,
     required this.onOpen,
     required this.icon,
+    this.leading,
     required this.title,
     required this.menuItems,
     required this.onMenu,
@@ -1415,6 +1421,9 @@ class _TreeRow extends StatefulWidget {
   /// Double click: connect / open or close the folder / open the layout.
   final VoidCallback onOpen;
   final IconData icon;
+
+  /// Drawn instead of [icon] when set: a device's logo.
+  final Widget? leading;
   final String title;
 
   /// The host, for a connection. Drawn dimmer, after the name.
@@ -1591,7 +1600,7 @@ class _TreeRowState extends State<_TreeRow> {
                           _OpenBadge(
                             status: widget.openStatus,
                             cutout: isDark ? AppColors.darkPanel : AppColors.lightPanel,
-                            child: Icon(widget.icon, size: 16, color: text),
+                            child: widget.leading ?? Icon(widget.icon, size: 16, color: text),
                           ),
                           const SizedBox(width: 8),
                           Expanded(

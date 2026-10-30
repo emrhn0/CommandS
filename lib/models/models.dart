@@ -4,6 +4,30 @@ const _uuid = Uuid();
 
 enum ConnectionProtocol { ssh, rdp }
 
+/// What is at the other end of a connection, shown as its maker's logo in
+/// the connection list. Learnt from what the device prints when a session
+/// opens (see device_detect.dart), or picked by hand.
+enum DeviceKind {
+  linux('Linux'),
+  vmware('VMware ESXi / vCenter'),
+  windows('Windows'),
+  paloalto('Palo Alto'),
+  fortinet('Fortinet'),
+  cisco('Cisco'),
+  aruba('Aruba'),
+  huawei('Huawei');
+
+  const DeviceKind(this.label);
+  final String label;
+
+  static DeviceKind? byName(String? name) {
+    for (final k in values) {
+      if (k.name == name) return k;
+    }
+    return null;
+  }
+}
+
 class ConnectionFolder {
   String id;
   String name;
@@ -39,6 +63,12 @@ class SavedConnection {
   bool rdpClipboard; // RDP only — redirect local clipboard to/from the session
   bool rdpWallpaper; // RDP only — show remote desktop wallpaper (off = faster)
 
+  /// The kind of device, for its logo. Null until it is known.
+  DeviceKind? device;
+
+  /// [device] was picked by hand, so detection leaves it alone.
+  bool deviceManual;
+
   SavedConnection({
     String? id,
     required this.name,
@@ -52,6 +82,8 @@ class SavedConnection {
     this.domain,
     this.rdpClipboard = true,
     this.rdpWallpaper = false,
+    this.device,
+    this.deviceManual = false,
   }) : id = id ?? _uuid.v4();
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +99,8 @@ class SavedConnection {
         'domain': domain,
         'rdpClipboard': rdpClipboard,
         'rdpWallpaper': rdpWallpaper,
+        if (device != null) 'device': device!.name,
+        if (deviceManual) 'deviceManual': true,
       };
 
   factory SavedConnection.fromJson(Map<String, dynamic> json) => SavedConnection(
@@ -85,6 +119,8 @@ class SavedConnection {
         domain: json['domain'] as String?,
         rdpClipboard: json['rdpClipboard'] as bool? ?? true,
         rdpWallpaper: json['rdpWallpaper'] as bool? ?? false,
+        device: DeviceKind.byName(json['device'] as String?),
+        deviceManual: json['deviceManual'] as bool? ?? false,
       );
 
   String get label => '$name - $host';

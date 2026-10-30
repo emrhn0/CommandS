@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
 import 'app_dialog.dart';
+import 'device_icon.dart';
 import 'folder_picker.dart';
 import '../l10n/strings.dart';
 
@@ -63,6 +64,12 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   bool _rdpClipboard = true;
   bool _rdpWallpaper = false;
 
+  /// Picked in the Device menu; null is "Automatic".
+  DeviceKind? _pickedDevice;
+
+  /// What detection found earlier, kept while the menu says Automatic.
+  DeviceKind? _detectedDevice;
+
   bool get _isEdit => widget.existing != null;
 
   @override
@@ -80,6 +87,11 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       _protocol = existing.protocol;
       _rdpClipboard = existing.rdpClipboard;
       _rdpWallpaper = existing.rdpWallpaper;
+      if (existing.deviceManual) {
+        _pickedDevice = existing.device;
+      } else {
+        _detectedDevice = existing.device;
+      }
     } else {
       _folderId = widget.initialFolderId;
       final prefill = widget.prefill;
@@ -135,6 +147,44 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       domain: _domain.text.trim().isEmpty ? null : _domain.text.trim(),
       rdpClipboard: _rdpClipboard,
       rdpWallpaper: _rdpWallpaper,
+      device: _pickedDevice ?? _detectedDevice,
+      deviceManual: _pickedDevice != null,
+    );
+  }
+
+  Widget _deviceRow(DeviceKind? kind, String label) => Row(
+        children: [
+          SizedBox(width: 22, child: kind == null ? const Icon(Icons.auto_awesome_outlined, size: 15) : DeviceIcon(kind)),
+          const SizedBox(width: 10),
+          Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+        ],
+      );
+
+  Widget _deviceField() {
+    final detected = _detectedDevice;
+    return LabeledField(
+      label: 'Device',
+      child: DropdownButtonFormField<DeviceKind?>(
+        key: const ValueKey('device-field'),
+        initialValue: _pickedDevice,
+        isExpanded: true,
+        borderRadius: BorderRadius.circular(6),
+        decoration: const InputDecoration(isDense: true),
+        items: [
+          DropdownMenuItem(
+            value: null,
+            child: _deviceRow(
+              null,
+              detected == null
+                  ? tr('Automatic (learnt when you connect)')
+                  : tr('Automatic ({device})', {'device': detected.label}),
+            ),
+          ),
+          for (final k in DeviceKind.values)
+            if (k != DeviceKind.windows) DropdownMenuItem(value: k, child: _deviceRow(k, k.label)),
+        ],
+        onChanged: (v) => setState(() => _pickedDevice = v),
+      ),
     );
   }
 
@@ -244,6 +294,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
               onChanged: (v) => setState(() => _folderId = v),
             ),
           ),
+          if (!rdp) _deviceField(),
           const _Section('Credentials'),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
