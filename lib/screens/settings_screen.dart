@@ -741,7 +741,7 @@ class _ImportExport extends StatelessWidget {
               child: _ActionTile(
                 icon: Icons.file_download_outlined,
                 title: 'Import connections',
-                description: 'From a CommandS export (JSON, XML or CSV), or a Remote Desktop Manager export.',
+                description: 'From an export file (JSON, XML or CSV).',
                 action: 'Import…',
                 onPressed: () => showImportDialog(context),
               ),

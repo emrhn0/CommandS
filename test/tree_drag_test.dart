@@ -1,5 +1,6 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
+import 'package:commands/services/pty_session.dart';
 import 'package:commands/widgets/connection_tree.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -94,5 +95,42 @@ void main() {
     await tester.pumpAndSettle();
     await drag(tester, tester.getCenter(find.text('INNER')), const Offset(150, 380));
     expect(inner.parentId, isNull);
+  });
+
+  testWidgets('a jittery double click on a connection in a folder opens it and leaves it where it is', (
+    tester,
+  ) async {
+    await pumpTree(tester);
+    PtySessionController.checkReachability = false;
+    addTearDown(() => PtySessionController.checkReachability = true);
+    await tester.tap(find.byIcon(Icons.chevron_right).at(2)); // open CHARLIE
+    await tester.pumpAndSettle();
+    final p = tester.getCenter(find.text('DEVICE-01'));
+    // First click: the hand moves a couple of pixels while the button is down.
+    final g1 = await tester.startGesture(p, kind: PointerDeviceKind.mouse);
+    await g1.moveTo(p + const Offset(2, 1));
+    await g1.up();
+    await tester.pump(const Duration(milliseconds: 80));
+    final g2 = await tester.startGesture(p + const Offset(2, 1), kind: PointerDeviceKind.mouse);
+    await g2.up();
+    await tester.pump();
+    expect(app.connections.single.folderId, c.id, reason: 'still in its folder');
+    expect(app.tabs, hasLength(1), reason: 'the double click connected');
+    for (final t in app.tabs) {
+      t.controller.dispose();
+    }
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('picked up and put back on itself, a connection stays in its folder', (tester) async {
+    await pumpTree(tester);
+    await tester.tap(find.byIcon(Icons.chevron_right).at(2)); // open CHARLIE
+    await tester.pumpAndSettle();
+    final p = tester.getCenter(find.text('DEVICE-01'));
+    await drag(tester, p, p + const Offset(30, 4));
+    expect(app.connections.single.folderId, c.id);
+    // And on another connection-less spot of its own row, further out.
+    await drag(tester, p, p + const Offset(-20, -3));
+    expect(app.connections.single.folderId, c.id);
   });
 }

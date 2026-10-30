@@ -52,6 +52,18 @@ class _ConnectionTreeState extends State<ConnectionTree> {
 
   final _scroll = ScrollController();
 
+  /// Rows in the tree as last built, and whether a drag is over the empty
+  /// space below them (the top-level drop area).
+  int _rowCount = 0;
+  bool _overEmpty = false;
+
+  bool _belowRows(Offset global) {
+    final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    final y = box.globalToLocal(global).dy + (_scroll.hasClients ? _scroll.offset : 0);
+    return y >= _rowCount * kTreeRowHeight;
+  }
+
   /// Set while something is being dragged; drives edge auto-scroll.
   bool _dragging = false;
   Timer? _autoScroll;
@@ -253,7 +265,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
           _placeBeside(items, folder, zone == _Zone.after, app);
         }
       },
-      child: Draggable<_DragItems>(
+      child: _TreeDraggable<_DragItems>(
         data: _dragItemsFor(row, app),
         dragAnchorStrategy: pointerDragAnchorStrategy,
         onDragStarted: () {
@@ -581,6 +593,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
 
   Widget _buildTree(AppState app) {
     final rows = _visibleRows(app);
+    _rowCount = rows.length;
     final openByFolder = _openByFolder(app);
     if (app.folders.isEmpty && app.connections.isEmpty) {
       return const _EmptyTreeHint();
@@ -592,10 +605,24 @@ class _ConnectionTreeState extends State<ConnectionTree> {
       child: DragTarget<_DragItems>(
         key: _listKey,
         onWillAcceptWithDetails: (d) => _canDrop(d.data, null, app),
-        onAcceptWithDetails: (d) => _drop(d.data, null, app),
+        onMove: (d) {
+          final below = _belowRows(d.offset);
+          if (below != _overEmpty) setState(() => _overEmpty = below);
+        },
+        onLeave: (_) {
+          if (_overEmpty) setState(() => _overEmpty = false);
+        },
+        // Only on the empty space below the rows. A drop on a row that the
+        // row turned down (a connection onto itself, say) used to fall
+        // through to here and send the item to the top level.
+        onAcceptWithDetails: (d) {
+          final below = _belowRows(d.offset);
+          setState(() => _overEmpty = false);
+          if (below) _drop(d.data, null, app);
+        },
         builder: (context, candidates, _) => DecoratedBox(
           decoration: BoxDecoration(
-            color: candidates.isEmpty
+            color: candidates.isEmpty || !_overEmpty
                 ? Colors.transparent
                 : Theme.of(context).colorScheme.primary.withValues(alpha: 0.04),
           ),
@@ -708,6 +735,57 @@ class _ConnectionTreeState extends State<ConnectionTree> {
 }
 
 enum _Zone { none, before, into, after }
+
+/// A [Draggable] that starts only once the pointer has moved a few pixels,
+/// like Windows' drag threshold. Flutter starts a mouse drag after a single
+/// pixel, so the hand's jitter during a click or double click picked the row
+/// up, and the click dropped it somewhere else.
+class _TreeDraggable<T extends Object> extends Draggable<T> {
+  const _TreeDraggable({
+    required super.child,
+    required super.feedback,
+    super.data,
+    super.childWhenDragging,
+    super.dragAnchorStrategy,
+    super.onDragStarted,
+    super.onDragEnd,
+    super.onDraggableCanceled,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer(GestureMultiDragStartCallback onStart) =>
+      _ThresholdDragRecognizer()..onStart = onStart;
+}
+
+class _ThresholdDragRecognizer extends MultiDragGestureRecognizer {
+  _ThresholdDragRecognizer() : super(debugOwner: null);
+
+  /// Pixels the pointer must travel before a drag begins.
+  static const double threshold = 6;
+
+  @override
+  MultiDragPointerState createNewPointerState(PointerDownEvent event) =>
+      _ThresholdPointerState(event.position, event.kind, gestureSettings);
+
+  @override
+  String get debugDescription => 'tree drag';
+}
+
+class _ThresholdPointerState extends MultiDragPointerState {
+  _ThresholdPointerState(super.initialPosition, super.kind, super.deviceGestureSettings);
+
+  @override
+  void checkForResolutionAfterMove() {
+    if (pendingDelta!.distance > _ThresholdDragRecognizer.threshold) {
+      resolve(GestureDisposition.accepted);
+    }
+  }
+
+  @override
+  void accepted(GestureMultiDragStartCallback starter) {
+    starter(initialPosition);
+  }
+}
 
 /// One row as a drop target, drawing where a drop would land: an outline
 /// for "into", a line with a knob above or below for "place here" -- both

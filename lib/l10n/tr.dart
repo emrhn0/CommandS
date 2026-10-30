@@ -184,8 +184,7 @@ const turkish = <String, String>{
   'Import connections': 'Bağlantıları içe aktar',
   'Export connections': 'Bağlantıları dışa aktar',
   'Import from Remote Desktop Manager': 'Remote Desktop Manager’dan içe aktar',
-  'From a CommandS export (JSON, XML or CSV), or a Remote Desktop Manager export.':
-      'Bir CommandS dışa aktarımından (JSON, XML veya CSV) ya da Remote Desktop Manager dışa aktarımından.',
+  'From an export file (JSON, XML or CSV).': 'Bir dışa aktarma dosyasından (JSON, XML veya CSV).',
   'Save some or all of your connections as JSON, XML or CSV.':
       'Bağlantılarınızın bir kısmını ya da tamamını JSON, XML veya CSV olarak kaydedin.',
   'Import…': 'İçe aktar…',
