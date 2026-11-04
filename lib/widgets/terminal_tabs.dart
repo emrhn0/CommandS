@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +18,7 @@ import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
 import 'terminal_drag_select.dart';
+import 'threshold_draggable.dart';
 import '../l10n/strings.dart';
 
 class TerminalTabsArea extends StatelessWidget {
@@ -65,7 +67,16 @@ class TerminalTabsArea extends StatelessWidget {
       children: [
         _TabBarRow(app: app),
         const Divider(height: 1),
-        Expanded(child: _PaneTreeView(node: layout)),
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _PaneTreeView(node: layout),
+              if (app.draggingTabId != null && app.tabs.length > 1)
+                _LayoutPicker(tabId: app.draggingTabId!, tabCount: app.tabs.length),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -89,6 +100,9 @@ class _TabBarRow extends StatelessWidget {
         final members = app.tabs.where((t) => group.tabIds.contains(t.id)).toList();
         chips.add(
           _TabChip(
+            key: ValueKey('group-${group.id}'),
+            tabIds: members.map((t) => t.id).toList(),
+            isGroup: true,
             title: group.name ?? tr('Split View'),
             tooltip: members.map(_tabTitle).join('\n'),
             active: app.activeGroupId == group.id,
@@ -104,6 +118,9 @@ class _TabBarRow extends StatelessWidget {
       final isRdp = tab.controller is RdpSessionController || tab.controller is MacRdpSessionController;
       chips.add(
         _TabChip(
+          key: ValueKey('tab-${tab.id}'),
+          tabIds: [tab.id],
+          isGroup: false,
           title: _tabTitle(tab),
           active:
               app.activeGroupId == null &&
@@ -131,7 +148,11 @@ class _TabBarRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: ListView(scrollDirection: Axis.horizontal, children: chips),
+            // Behind the chips, the rest of the strip: a drop there goes last.
+            child: DragTarget<_TabDrag>(
+              onAcceptWithDetails: (d) => app.moveTabs(d.data.tabIds, null),
+              builder: (context, _, _) => ListView(scrollDirection: Axis.horizontal, children: chips),
+            ),
           ),
           _SplitViewButton(active: app.activeGroupId != null, enabled: app.tabs.length > 1),
         ],
@@ -274,8 +295,22 @@ class _SplitViewButton extends StatelessWidget {
   }
 }
 
-class _TabChip extends StatelessWidget {
+/// What dragging a tab's chip carries.
+class _TabDrag {
+  const _TabDrag({required this.tabIds, required this.isGroup});
+
+  /// The tab, or every session of a split, which moves as one.
+  final List<String> tabIds;
+  final bool isGroup;
+}
+
+/// A tab in the strip. It can be dragged along the strip to reorder it, like a
+/// browser's, and a plain tab can also be dragged onto the panes to split them.
+class _TabChip extends StatefulWidget {
   const _TabChip({
+    super.key,
+    required this.tabIds,
+    required this.isGroup,
     required this.title,
     required this.active,
     required this.icon,
@@ -286,6 +321,9 @@ class _TabChip extends StatelessWidget {
     this.tooltip,
   });
 
+  /// The sessions behind this chip, in tab order.
+  final List<String> tabIds;
+  final bool isGroup;
   final String title;
   final bool active;
   final IconData icon;
@@ -297,6 +335,36 @@ class _TabChip extends StatelessWidget {
   final VoidCallback onClose;
   final ValueChanged<Offset> onMenu;
 
+  @override
+  State<_TabChip> createState() => _TabChipState();
+}
+
+class _TabChipState extends State<_TabChip> {
+  /// Which side of this chip a dragged tab would land on; null when none.
+  bool? _dropAfter;
+  bool _dragging = false;
+
+  /// Kept for a drag that ends after this chip has gone: dropped onto a pane,
+  /// a tab's chip becomes the split's.
+  AppState? _app;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _app = context.read<AppState>();
+  }
+
+  @override
+  void dispose() {
+    // A Draggable reports no end once it is unmounted, and sessions must not
+    // stay hidden. Not during this frame: listeners would rebuild mid-build.
+    if (_dragging) {
+      final app = _app;
+      WidgetsBinding.instance.addPostFrameCallback((_) => app?.setTabDrag(active: false));
+    }
+    super.dispose();
+  }
+
   Widget _chip(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
@@ -304,8 +372,8 @@ class _TabChip extends StatelessWidget {
       margin: const EdgeInsets.only(right: 2),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: active ? scheme.surface : Colors.transparent,
-        border: Border(bottom: BorderSide(color: active ? scheme.primary : Colors.transparent, width: 2)),
+        color: widget.active ? scheme.surface : Colors.transparent,
+        border: Border(bottom: BorderSide(color: widget.active ? scheme.primary : Colors.transparent, width: 2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.max,
@@ -319,7 +387,7 @@ class _TabChip extends StatelessWidget {
             width: 7,
             height: 7,
             decoration: BoxDecoration(
-              color: switch (status) {
+              color: switch (widget.status) {
                 SessionStatus.running => const Color(0xFF2EB85C),
                 SessionStatus.starting => const Color(0xFFE0A526),
                 SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
@@ -328,13 +396,13 @@ class _TabChip extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Icon(icon, size: 12),
+          Icon(widget.icon, size: 12),
           const SizedBox(width: 4),
           Expanded(
-            child: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+            child: Text(widget.title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
           ),
           InkWell(
-            onTap: onClose,
+            onTap: widget.onClose,
             child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 14)),
           ),
         ],
@@ -342,16 +410,316 @@ class _TabChip extends StatelessWidget {
     );
   }
 
+  void _dragStarted() {
+    setState(() => _dragging = true);
+    _app?.setTabDrag(active: true, tabId: widget.isGroup ? null : widget.tabIds.single);
+  }
+
+  void _dragEnded() {
+    if (mounted) setState(() => _dragging = false);
+    _app?.setTabDrag(active: false);
+  }
+
+  void _setDropAfter(bool? after) {
+    if (_dropAfter != after) setState(() => _dropAfter = after);
+  }
+
+  bool _isAfter(DragTargetDetails<_TabDrag> d) {
+    final box = context.findRenderObject() as RenderBox;
+    return box.globalToLocal(d.offset).dx > box.size.width / 2;
+  }
+
+  void _drop(DragTargetDetails<_TabDrag> d) {
+    final app = context.read<AppState>();
+    String? before = widget.tabIds.first;
+    if (_isAfter(d)) {
+      // The first tab past this chip that is not itself moving.
+      final ids = app.tabs.map((t) => t.id).toList();
+      final lastHere = widget.tabIds.map(ids.indexOf).reduce((a, b) => a > b ? a : b);
+      before = ids.skip(lastHere + 1).where((id) => !d.data.tabIds.contains(id)).firstOrNull;
+    }
+    _setDropAfter(null);
+    app.moveTabs(d.data.tabIds, before);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final chip = GestureDetector(
-      onTap: onTap,
-      onSecondaryTapDown: (d) => onMenu(d.globalPosition),
+    final accent = Theme.of(context).colorScheme.primary;
+    final Widget chip = GestureDetector(
+      onTap: widget.onTap,
+      onSecondaryTapDown: (d) => widget.onMenu(d.globalPosition),
       child: _chip(context),
     );
-    return tooltip == null
+    final content = widget.tooltip == null
         ? chip
-        : Tooltip(message: tooltip!, waitDuration: const Duration(milliseconds: 600), child: chip);
+        : Tooltip(message: widget.tooltip!, waitDuration: const Duration(milliseconds: 600), child: chip);
+    return DragTarget<_TabDrag>(
+      onWillAcceptWithDetails: (d) => !d.data.tabIds.any(widget.tabIds.contains),
+      onMove: (d) => _setDropAfter(_isAfter(d)),
+      onLeave: (_) => _setDropAfter(null),
+      onAcceptWithDetails: _drop,
+      builder: (context, _, _) => Stack(
+        children: [
+          ThresholdDraggable<_TabDrag>(
+            data: _TabDrag(tabIds: widget.tabIds, isGroup: widget.isGroup),
+            dragAnchorStrategy: pointerDragAnchorStrategy,
+            onDragStarted: _dragStarted,
+            onDragEnd: (_) => _dragEnded(),
+            onDraggableCanceled: (_, _) => _dragEnded(),
+            feedback: _TabDragFeedback(title: widget.title, icon: widget.icon),
+            child: Opacity(opacity: _dragging ? 0.45 : 1, child: content),
+          ),
+          if (_dropAfter != null)
+            Positioned(
+              top: 4,
+              bottom: 4,
+              left: _dropAfter! ? null : 0,
+              right: _dropAfter! ? 0 : null,
+              child: IgnorePointer(child: Container(width: 2, color: accent)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The chip under the pointer while a tab is being dragged.
+class _TabDragFeedback extends StatelessWidget {
+  const _TabDragFeedback({required this.title, required this.icon});
+  final String title;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 200),
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Where a dragged tab would land: the frosted area Windows shows while
+/// snapping a window. [fraction] is that area as a part of its parent.
+class _SnapPreview extends StatelessWidget {
+  const _SnapPreview({required this.fraction});
+  final Rect fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth, h = constraints.maxHeight;
+        return Stack(
+          children: [
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              left: fraction.left * w,
+              top: fraction.top * h,
+              width: fraction.width * w,
+              height: fraction.height * h,
+              child: IgnorePointer(
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: ClipRRect(
+                    key: const ValueKey('snap-preview'),
+                    borderRadius: BorderRadius.circular(8),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: accent.withValues(alpha: 0.75), width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One pane as a target for a dragged tab: dropped near an edge, the tab takes
+/// that half of the pane, with a preview of it while the drag is there.
+class _PaneDropTarget extends StatefulWidget {
+  const _PaneDropTarget({super.key, required this.tabId, required this.child});
+  final String tabId;
+  final Widget child;
+
+  @override
+  State<_PaneDropTarget> createState() => _PaneDropTargetState();
+}
+
+class _PaneDropTargetState extends State<_PaneDropTarget> {
+  PaneSide? _side;
+
+  PaneSide? _sideFor(DragTargetDetails<_TabDrag> d) {
+    final box = context.findRenderObject() as RenderBox;
+    return paneSideAt(box.size, box.globalToLocal(d.offset));
+  }
+
+  void _set(PaneSide? side) {
+    if (_side != side) setState(() => _side = side);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    return DragTarget<_TabDrag>(
+      onWillAcceptWithDetails: (d) => !d.data.isGroup && app.canDropTabBeside(d.data.tabIds.single, widget.tabId),
+      onMove: (d) => _set(_sideFor(d)),
+      onLeave: (_) => _set(null),
+      onAcceptWithDetails: (d) {
+        final side = _sideFor(d);
+        _set(null);
+        if (side != null) app.dropTabBeside(d.data.tabIds.single, widget.tabId, side);
+      },
+      builder: (context, _, _) => Stack(
+        fit: StackFit.expand,
+        children: [
+          widget.child,
+          if (_side != null) _SnapPreview(fraction: paneSideRect(_side!)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown while a tab is being dragged, like Windows' Snap Layouts: drop the tab
+/// on a pane of one of these and the tab area takes that arrangement.
+class _LayoutPicker extends StatefulWidget {
+  const _LayoutPicker({required this.tabId, required this.tabCount});
+  final String tabId;
+  final int tabCount;
+
+  @override
+  State<_LayoutPicker> createState() => _LayoutPickerState();
+}
+
+class _LayoutPickerState extends State<_LayoutPicker> {
+  Rect? _hovered;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final presets = SplitPreset.values.where((p) => p.slots >= 2 && p.slots <= widget.tabCount).toList();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (_hovered != null) _SnapPreview(fraction: _hovered!),
+        Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Material(
+              elevation: 6,
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final preset in presets)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: _PresetTile(
+                          preset: preset,
+                          onHover: (rect) => setState(() => _hovered = rect),
+                          onDrop: (slot) => context.read<AppState>().dropTabInPreset(widget.tabId, preset, slot),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A small drawing of a layout, each pane of it a drop target.
+class _PresetTile extends StatefulWidget {
+  const _PresetTile({required this.preset, required this.onHover, required this.onDrop});
+  final SplitPreset preset;
+  final ValueChanged<Rect?> onHover;
+  final ValueChanged<int> onDrop;
+
+  @override
+  State<_PresetTile> createState() => _PresetTileState();
+}
+
+class _PresetTileState extends State<_PresetTile> {
+  static const double _width = 56, _height = 38;
+  int? _hoveredSlot;
+
+  void _hover(int? slot, Rect? rect) {
+    setState(() => _hoveredSlot = slot);
+    widget.onHover(rect);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final rects = presetSlotRects(widget.preset);
+    return SizedBox(
+      width: _width,
+      height: _height,
+      child: Stack(
+        children: [
+          for (var i = 0; i < rects.length; i++)
+            Positioned(
+              left: rects[i].left * _width,
+              top: rects[i].top * _height,
+              width: rects[i].width * _width,
+              height: rects[i].height * _height,
+              child: DragTarget<_TabDrag>(
+                onWillAcceptWithDetails: (d) => !d.data.isGroup,
+                onMove: (_) {
+                  if (_hoveredSlot != i) _hover(i, rects[i]);
+                },
+                onLeave: (_) => _hover(null, null),
+                onAcceptWithDetails: (_) {
+                  _hover(null, null);
+                  widget.onDrop(i);
+                },
+                builder: (context, _, _) => Container(
+                  key: ValueKey('layout-${widget.preset.name}-$i'),
+                  margin: const EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    color: _hoveredSlot == i ? scheme.primary : scheme.onSurface.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -376,7 +744,11 @@ class _PaneTreeView extends StatelessWidget {
         }
       }
       if (tab == null) return const SizedBox.shrink();
-      return _SessionPane(key: ValueKey(tab.id), controller: tab.controller, active: true);
+      return _PaneDropTarget(
+        key: ValueKey(tab.id),
+        tabId: tab.id,
+        child: _SessionPane(controller: tab.controller, active: true),
+      );
     }
     final split = n as PaneSplit;
     return _ResizableSplit(split: split);
@@ -435,7 +807,7 @@ class _ResizableSplitState extends State<_ResizableSplit> {
 
 /// Picks the right view for whatever kind of session this tab holds.
 class _SessionPane extends StatelessWidget {
-  const _SessionPane({super.key, required this.controller, required this.active});
+  const _SessionPane({required this.controller, required this.active});
   final SessionController controller;
   final bool active;
 

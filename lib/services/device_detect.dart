@@ -13,7 +13,7 @@ import '../models/models.dart';
 /// Null when nothing gives it away; the next connection tries again.
 DeviceKind? detectDevice({String serverVersion = '', String output = '', bool settled = false}) {
   final v = serverVersion;
-  if (v.contains('Cisco')) return DeviceKind.cisco;
+  if (v.toLowerCase().contains('cisco')) return DeviceKind.cisco;
   if (v.contains('HUAWEI')) return DeviceKind.huawei;
   if (v.contains('OpenSSH_for_Windows')) return DeviceKind.windows;
 
@@ -37,7 +37,23 @@ final List<(DeviceKind, RegExp)> _rules = [
   (DeviceKind.fortinet, RegExp(r'Forti(Gate|OS|Switch|Analyzer|Manager|WiFi)')),
   (DeviceKind.huawei, RegExp(r'The max number of VTY users|Huawei Versatile Routing Platform|Huawei Technologies')),
   (DeviceKind.aruba, RegExp(r'ArubaOS|Aruba Networks|HPE Aruba|Aruba Instant|ProCurve')),
-  (DeviceKind.cisco, RegExp(r'Cisco (IOS|Nexus|Systems|Adaptive Security|Catalyst)')),
+  (
+    DeviceKind.cisco,
+    RegExp(
+      r'Cisco (IOS|Nexus|Systems|Adaptive Security|Catalyst|Small Business|Business|Sx\d+)'
+      // Many switches name no maker on login: a custom banner, and an
+      // identification line that is not their own. What they print once in
+      // use still gives them away, as the session's output is read.
+      r'|\bIOS[- ]XE\b|\bNX-OS\b|\bWS-C\d{4}'
+      r'|^Building configuration\.\.\.'
+      r'|^Current configuration ?: ?\d+ bytes'
+      r"|^% Invalid input detected at '\^' marker"
+      r'|^\s*macro (auto smartport|description)\b'
+      r'|^\s*switchport access vlan \d+\s*$'
+      r'|^\s*spanning-tree (portfast|bpduguard enable)\b',
+      multiLine: true,
+    ),
+  ),
   (DeviceKind.windows, RegExp(r'Microsoft Windows \[Version|^PS [A-Z]:\\', multiLine: true)),
   (
     DeviceKind.linux,

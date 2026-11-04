@@ -529,6 +529,22 @@ class RdpChannel {
       _channel.invokeMethod<void>('setSuspended', {'suspended': suspended});
 }
 
+/// Hides embedded RDP sessions while a tab is being dragged. A session's native
+/// window would otherwise cover the drop targets in its pane and swallow the
+/// drag crossing it, which is why splitting by dragging once could not work
+/// next to a remote desktop. Sessions come back when the drag ends.
+class RdpTabDrag {
+  static bool _active = false;
+
+  static void set(bool active) {
+    if (_active == active) return;
+    _active = active;
+    if (!Platform.isWindows) return;
+    // No native side in widget tests, and nothing to undo if the call fails.
+    RdpChannel.instance.setSuspended(active).catchError((Object _) {});
+  }
+}
+
 /// Hides embedded RDP sessions for as long as a dialog, menu or other pushed
 /// route is on screen.
 ///

@@ -272,6 +272,12 @@ class PtySessionController implements TerminalSessionController {
     }
   }
 
+  /// How long to wait for the identification line. Only a slow server waits
+  /// this long, and a busy switch can take a few seconds to answer; giving up
+  /// early left it without its logo.
+  @visibleForTesting
+  static const identificationTimeout = Duration(seconds: 6);
+
   /// The `SSH-...` line a server sends as soon as it accepts a connection
   /// (RFC 4253 allows other lines before it). Gives up after a moment or a
   /// kilobyte; nothing is sent.
@@ -303,7 +309,7 @@ class PtySessionController implements TerminalSessionController {
       },
       cancelOnError: true,
     );
-    final line = await done.future.timeout(const Duration(seconds: 2), onTimeout: () => pick() ?? '');
+    final line = await done.future.timeout(identificationTimeout, onTimeout: () => pick() ?? '');
     await sub.cancel();
     return line;
   }

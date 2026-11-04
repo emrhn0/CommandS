@@ -49,6 +49,8 @@ dependencies:
   # Verifies the checksum published with a release before the updater
   # runs the installer it just downloaded (see services/update_service.dart).
   crypto: ^3.0.0
+  # AES-GCM for remembered passwords (see services/password_vault.dart).
+  pointycastle: ^4.0.0
   flutter_svg: ^2.3.2
 
 dev_dependencies:

@@ -13,13 +13,11 @@ import '../l10n/strings.dart';
 /// Opens the Split view dialog: pick a layout, then drag open tabs into its
 /// panes.
 ///
-/// This replaced splitting by dragging a tab chip onto an edge of a pane,
-/// which could never work with RDP: the session is a native window drawn over
-/// its pane, so Flutter never saw a drag that crossed it, and a tab could not
-/// be dropped next to a remote desktop. A dialog is a route, which makes every
-/// embedded session step aside while it is open (see `RdpModalObserver`), so
-/// here the whole arrangement is visible and droppable regardless of what is
-/// in each pane.
+/// A dialog is a route, which makes every embedded session step aside while it
+/// is open (see `RdpModalObserver`), so here the whole arrangement is visible
+/// and droppable regardless of what is in each pane. Dragging a tab onto a pane
+/// works too (see `_PaneDropTarget`), with sessions hidden during the drag by
+/// `RdpTabDrag`; this dialog also edits and saves arrangements.
 Future<void> showSplitViewDialog(BuildContext context) {
   return showDialog<void>(context: context, builder: (_) => const _SplitViewDialog());
 }

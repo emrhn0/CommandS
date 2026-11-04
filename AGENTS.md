@@ -41,6 +41,7 @@ flutter test integration_test/<file> -d windows   # real-window tests, Windows o
 | `lib/services/rdp_session.dart`, `windows/runner/rdp_*.cpp` | Embedded RDP (ActiveX host). |
 | `lib/services/mac_rdp_session.dart` | macOS RDP: launches FreeRDP or Microsoft's client. |
 | `lib/services/storage_service.dart`, `rdm_import.dart` | Persistence, import/export (JSON, XML, CSV). |
+| `lib/services/password_vault.dart` | AES-GCM for remembered passwords; the key lives in DPAPI (Windows) or the Keychain (macOS). |
 | `lib/services/feedback_service.dart` | Anonymous feedback to a Google Form. |
 | `lib/services/update_service.dart` | In-app updater (GitHub releases, SHA256 check). |
 | `lib/widgets/connection_tree.dart` | The left-hand tree: selection, double click, drag and drop, folder order, selection bar. |
@@ -90,6 +91,13 @@ Do not "simplify" these without reading why.
     until the threshold.
   - The dragged row is dimmed in place. Do not use `childWhenDragging`: it
     rebuilt the row and broke double click.
+- **RDP sessions hide during a tab drag** (`RdpTabDrag`). Their native window
+  would cover the drop targets and swallow the drag.
+- **Remembered passwords are encrypted only in storage.** `saveConnections`
+  writes `passwordEnc`. If encryption fails the password stays as it was, and
+  a value that cannot be opened is saved back untouched: never lose one.
+  Under `flutter test` the key store is in memory, so tests cannot reach the
+  real key.
 - **Terminal output is batched** (about one flush per 16 ms) and decoded as one
   UTF-8 stream. Drawing every chunk made busy sessions stutter.
 - **Keyboard** behaves as in PuTTY.

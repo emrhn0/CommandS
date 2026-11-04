@@ -1,7 +1,10 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xml/xml.dart';
 import '../models/models.dart';
+import 'password_vault.dart';
 
 class ParsedImport {
   ParsedImport({required this.folders, required this.connections, this.layouts = const []});
@@ -13,6 +16,9 @@ class ParsedImport {
 /// Everything (folders, connections, remembered passwords) lives in one JSON
 /// blob in shared_preferences — mRemoteNG-style single-store simplicity,
 /// stored in roaming app data outside the install dir so it survives upgrades.
+///
+/// Remembered passwords are encrypted in that blob, under `passwordEnc`, with
+/// a key held by the OS (see [PasswordVault]); they are plain only in memory.
 class StorageService {
   static const _kFolders = 'commands.folders';
   static const _kConnections = 'commands.connections';
@@ -44,17 +50,71 @@ class StorageService {
     await prefs.setString(_kFolders, jsonEncode(folders.map((f) => f.toJson()).toList()));
   }
 
+  static const _kPasswordEnc = 'passwordEnc';
+
+  PasswordVault? _vaultInstance;
+  PasswordVault get _vault => _vaultInstance ??= PasswordVault(PasswordVault.platformStore());
+
+  /// Encrypted values that could not be opened (say the key cannot be read
+  /// right now), by connection id. Saved back as they were, so a passing
+  /// problem does not wipe them on the next save.
+  final Map<String, String> _unopened = {};
+
+  /// A password was found in plain text, as older versions saved it, and the
+  /// next save will encrypt it.
+  bool needsPasswordMigration = false;
+
   Future<List<SavedConnection>> loadConnections() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kConnections);
+    needsPasswordMigration = false;
+    _unopened.clear();
     if (raw == null) return [];
     final list = jsonDecode(raw) as List;
-    return list.map((e) => SavedConnection.fromJson(e as Map<String, dynamic>)).toList();
+    final connections = <SavedConnection>[];
+    for (final e in list) {
+      final json = e as Map<String, dynamic>;
+      final connection = SavedConnection.fromJson(json);
+      final sealed = json[_kPasswordEnc] as String?;
+      if (sealed != null) {
+        try {
+          connection.password = await _vault.decrypt(sealed, connection.id);
+        } catch (error) {
+          debugPrint('A saved password could not be decrypted: ${error.runtimeType}');
+          _unopened[connection.id] = sealed;
+        }
+      } else if (connection.password.isNotEmpty) {
+        needsPasswordMigration = true;
+      }
+      connections.add(connection);
+    }
+    return connections;
   }
 
   Future<void> saveConnections(List<SavedConnection> connections) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kConnections, jsonEncode(connections.map((c) => c.toJson()).toList()));
+    final encoded = <Map<String, dynamic>>[];
+    var migrated = true;
+    for (final c in connections) {
+      final json = c.toJson();
+      final password = json['password'] as String? ?? '';
+      if (password.isNotEmpty) {
+        try {
+          json[_kPasswordEnc] = await _vault.encrypt(password, c.id);
+          json['password'] = '';
+        } catch (error) {
+          // Losing the password would be worse than keeping it as it was:
+          // left as is, and tried again on the next save or start.
+          debugPrint('A password could not be encrypted: ${error.runtimeType}');
+          migrated = false;
+        }
+      } else if (c.rememberPassword && _unopened.containsKey(c.id)) {
+        json[_kPasswordEnc] = _unopened[c.id];
+      }
+      encoded.add(json);
+    }
+    await prefs.setString(_kConnections, jsonEncode(encoded));
+    needsPasswordMigration = !migrated;
   }
 
   // ---- JSON export/import ----

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:commands/models/models.dart';
@@ -68,6 +67,51 @@ void main() {
     });
   });
 
+  group('a Cisco that names no maker on login', () {
+    const plainBanner = 'Authorized access only.\r\nswitch-01#';
+
+    test('stays unknown until it prints something of its own', () {
+      expect(detectDevice(serverVersion: 'SSH-2.0-Generic_1.0', output: plainBanner), isNull);
+    });
+
+    test('is known from its running config', () {
+      const config = '$plainBanner show running-config interface GigabitEthernet2/0/34\r\n'
+          'interface GigabitEthernet2/0/34\r\n'
+          ' switchport access vlan 40\r\n'
+          ' spanning-tree portfast\r\n';
+      expect(detectDevice(serverVersion: 'SSH-2.0-Generic_1.0', output: config), DeviceKind.cisco);
+    });
+
+    test('is known from a smartport macro line', () {
+      expect(detectDevice(output: ' macro auto smartport type ip_phone_desktop\r\n'), DeviceKind.cisco);
+    });
+
+    test('is known from an IOS error', () {
+      expect(detectDevice(output: "% Invalid input detected at '^' marker.\r\n"), DeviceKind.cisco);
+    });
+
+    test('whatever the case of the identification line', () {
+      expect(detectDevice(serverVersion: 'SSH-2.0-CISCO_WLC'), DeviceKind.cisco);
+    });
+  });
+
+  test('a Huawei interface config is not taken for a Cisco', () {
+    const huawei = 'interface GigabitEthernet0/0/1\r\n port default vlan 40\r\n';
+    expect(detectDevice(output: huawei), isNot(DeviceKind.cisco));
+  });
+
+  test('a slow server still gets its identification line read', () async {
+    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((s) {
+      Future<void>.delayed(const Duration(milliseconds: 2500), () => s.add('SSH-2.0-Slow_1.0\r\n'.codeUnits));
+    });
+    final socket = await Socket.connect(InternetAddress.loopbackIPv4, server.port);
+    final line = await PtySessionController.readIdentification(socket);
+    socket.destroy();
+    await server.close();
+    expect(line, 'SSH-2.0-Slow_1.0');
+  });
+
   test('the identification line is read without sending anything', () async {
     final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     final received = <int>[];
@@ -88,7 +132,7 @@ void main() {
     final held = <Socket>[];
     server.listen(held.add);
     final socket = await Socket.connect(InternetAddress.loopbackIPv4, server.port);
-    final line = await PtySessionController.readIdentification(socket).timeout(const Duration(seconds: 5));
+    final line = await PtySessionController.readIdentification(socket).timeout(const Duration(seconds: 8));
     socket.destroy();
     for (final s in held) {
       s.destroy();

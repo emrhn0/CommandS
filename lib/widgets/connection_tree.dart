@@ -15,6 +15,7 @@ import 'context_menu.dart';
 import 'device_icon.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
+import 'threshold_draggable.dart';
 import '../l10n/strings.dart';
 
 /// A row in the flattened, virtualized tree — a folder header, a connection
@@ -233,10 +234,42 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     _flashRows(items.folderIds);
   }
 
+  /// Connections only, and not [target] itself: they may be placed next to
+  /// it, in its folder.
+  bool _canPlaceConnectionsBeside(_DragItems items, SavedConnection target) =>
+      items.connectionIds.isNotEmpty &&
+      items.folderIds.isEmpty &&
+      items.layoutIds.isEmpty &&
+      !items.connectionIds.contains(target.id);
+
+  Future<void> _placeConnectionsBeside(_DragItems items, SavedConnection target, bool after, AppState app) async {
+    _stopHoverExpand();
+    String? before = target.id;
+    if (after) {
+      final siblings = app
+          .sortConnections(app.connections.where((c) => c.folderId == target.folderId).toList())
+          .map((c) => c.id)
+          .where((id) => !items.connectionIds.contains(id))
+          .toList();
+      final i = siblings.indexOf(target.id);
+      before = i + 1 < siblings.length ? siblings[i + 1] : null;
+    }
+    await app.placeConnections(items.connectionIds, target.folderId, before: before);
+    if (!mounted) return;
+    setState(() {
+      if (target.folderId != null) _expanded.add(target.folderId!);
+      _selected
+        ..clear()
+        ..addAll(items.connectionIds);
+    });
+    _flashRows(items.connectionIds);
+  }
+
   /// Makes [child] draggable and a drop target. A folder row takes items
   /// into itself, or -- for folders dropped on its top or bottom third --
   /// places them above or below it; a connection or layout row takes items
-  /// into the folder it is in ([dropFolderId]).
+  /// into the folder it is in ([dropFolderId]), or -- for connections dropped
+  /// on its top or bottom edge -- places them above or below it.
   Widget _dragAndDrop(_Row row, AppState app, Widget child, {required String? dropFolderId}) {
     final title = row.folder?.name ?? row.layout?.name ?? row.connection?.name ?? '';
     final icon = row.folder != null
@@ -247,12 +280,15 @@ class _ConnectionTreeState extends State<ConnectionTree> {
               ? Icons.desktop_windows_outlined
               : Icons.terminal);
     final folder = row.folder;
+    final connection = row.connection;
     final id = _rowId(row)!;
     return _DropZone(
       depth: row.depth,
       flash: _flash.contains(id),
       canInto: (items) => _canDrop(items, dropFolderId, app),
-      canReorder: (items) => folder != null && _canPlaceBeside(items, folder, app),
+      canReorder: (items) =>
+          (folder != null && _canPlaceBeside(items, folder, app)) ||
+          (connection != null && _canPlaceConnectionsBeside(items, connection)),
       onInto: () {
         if (folder != null) _startHoverExpand(folder.id);
       },
@@ -268,9 +304,11 @@ class _ConnectionTreeState extends State<ConnectionTree> {
           ).then((_) => _flashRows([...items.folderIds, ...items.connectionIds, ...items.layoutIds]));
         } else if (folder != null) {
           _placeBeside(items, folder, zone == _Zone.after, app);
+        } else if (connection != null) {
+          _placeConnectionsBeside(items, connection, zone == _Zone.after, app);
         }
       },
-      child: _TreeDraggable<_DragItems>(
+      child: ThresholdDraggable<_DragItems>(
         data: _dragItemsFor(row, app),
         dragAnchorStrategy: pointerDragAnchorStrategy,
         onDragStarted: () {
@@ -324,8 +362,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     List<ConnectionFolder> foldersUnder(String? parentId) =>
         app.sortFolders(app.folders.where((f) => f.parentId == parentId).toList());
     List<SavedConnection> connectionsUnder(String? folderId) =>
-        app.connections.where((c) => c.folderId == folderId).toList()
-          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        app.sortConnections(app.connections.where((c) => c.folderId == folderId).toList());
     // Saved layouts sit above a folder's connections: there are few of them
     // and each opens several of the connections below.
     List<SavedLayout> layoutsUnder(String? folderId) =>
@@ -749,80 +786,6 @@ class _ConnectionTreeState extends State<ConnectionTree> {
 }
 
 enum _Zone { none, before, into, after }
-
-/// A [Draggable] that starts only once the pointer has moved a few pixels,
-/// like Windows' drag threshold. Flutter starts a mouse drag after a single
-/// pixel, so the hand's jitter during a click or double click picked the row
-/// up, and the click dropped it somewhere else.
-class _TreeDraggable<T extends Object> extends Draggable<T> {
-  const _TreeDraggable({
-    required super.child,
-    required super.feedback,
-    super.data,
-    super.childWhenDragging,
-    super.dragAnchorStrategy,
-    super.onDragStarted,
-    super.onDragEnd,
-    super.onDraggableCanceled,
-  });
-
-  @override
-  MultiDragGestureRecognizer createRecognizer(GestureMultiDragStartCallback onStart) =>
-      _ThresholdDragRecognizer()..onStart = onStart;
-}
-
-class _ThresholdDragRecognizer extends MultiDragGestureRecognizer {
-  _ThresholdDragRecognizer() : super(debugOwner: null);
-
-  /// Pixels the pointer must travel before a drag begins.
-  static const double threshold = 6;
-
-  @override
-  MultiDragPointerState createNewPointerState(PointerDownEvent event) =>
-      _ThresholdPointerState(event.position, event.kind, gestureSettings);
-
-  @override
-  String get debugDescription => 'tree drag';
-}
-
-class _ThresholdPointerState extends MultiDragPointerState {
-  _ThresholdPointerState(super.initialPosition, super.kind, super.deviceGestureSettings);
-
-  /// Set when the arena gave us the pointer before it had moved far enough:
-  /// on a plain row we are the arena's only member, and a lone member wins
-  /// the moment the button goes down. Starting the drag right then is what
-  /// turned every click into a drag.
-  GestureMultiDragStartCallback? _starter;
-
-  bool get _farEnough => pendingDelta!.distance > _ThresholdDragRecognizer.threshold;
-
-  @override
-  void checkForResolutionAfterMove() {
-    if (!_farEnough) return;
-    final starter = _starter;
-    if (starter != null) {
-      _starter = null;
-      starter(initialPosition);
-    } else {
-      resolve(GestureDisposition.accepted);
-    }
-  }
-
-  @override
-  void accepted(GestureMultiDragStartCallback starter) {
-    if (_farEnough) {
-      starter(initialPosition);
-    } else {
-      _starter = starter;
-    }
-  }
-
-  @override
-  void dispose() {
-    _starter = null;
-    super.dispose();
-  }
-}
 
 /// One row as a drop target, drawing where a drop would land: an outline
 /// for "into", a line with a knob above or below for "place here" -- both

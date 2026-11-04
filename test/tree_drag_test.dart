@@ -80,6 +80,62 @@ void main() {
     expect(tester.getCenter(find.text('CHARLIE')).dy, lessThan(tester.getCenter(find.text('ALPHA')).dy));
   });
 
+  group('connection order', () {
+    late SavedConnection second, third;
+
+    Future<void> withThree(WidgetTester tester) async {
+      await pumpTree(tester);
+      second = SavedConnection(name: 'DEVICE-02', host: '192.0.2.11', folderId: c.id);
+      third = SavedConnection(name: 'DEVICE-03', host: '192.0.2.12', folderId: c.id);
+      app.connections.addAll([second, third]);
+      await tester.tap(find.byIcon(Icons.chevron_right).at(2)); // open CHARLIE
+      await tester.pumpAndSettle();
+    }
+
+    List<String> shown() =>
+        app.sortConnections(app.connections.where((e) => e.folderId == c.id).toList()).map((e) => e.name).toList();
+
+    testWidgets('a connection dropped on the bottom edge of another goes below it, and the order stays', (
+      tester,
+    ) async {
+      await withThree(tester);
+      final bottom = tester.getCenter(find.text('DEVICE-01')).translate(0, 10);
+      await drag(tester, tester.getCenter(find.text('DEVICE-03')), bottom);
+      expect(shown(), ['DEVICE-01', 'DEVICE-03', 'DEVICE-02']);
+      expect(tester.getCenter(find.text('DEVICE-03')).dy, lessThan(tester.getCenter(find.text('DEVICE-02')).dy));
+      expect(app.connections.firstWhere((e) => e.id == third.id).folderId, c.id);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('commands.connectionOrder'), isNotEmpty);
+    });
+
+    testWidgets('a connection dropped on the middle of a row in its own folder still takes a place', (tester) async {
+      await withThree(tester);
+      final top = tester.getCenter(find.text('DEVICE-01')).translate(0, -4);
+      await drag(tester, tester.getCenter(find.text('DEVICE-02')), top);
+      expect(shown().first, 'DEVICE-02');
+    });
+
+    testWidgets('dropped beside a row of another folder, it moves there at that place', (tester) async {
+      await withThree(tester);
+      final outside = SavedConnection(name: 'DEVICE-00', host: '192.0.2.13');
+      app.connections.add(outside);
+      app.setSidebarWidth(300); // any notification, to show the new row
+      await tester.pumpAndSettle();
+      final bottom = tester.getCenter(find.text('DEVICE-01')).translate(0, 10);
+      await drag(tester, tester.getCenter(find.text('DEVICE-00')), bottom);
+      expect(outside.folderId, c.id);
+      expect(shown(), ['DEVICE-01', 'DEVICE-00', 'DEVICE-02', 'DEVICE-03']);
+    });
+
+    testWidgets('new connections with no place yet come after arranged ones, by name', (tester) async {
+      await withThree(tester);
+      await app.placeConnections([third.id], c.id, before: conn.id);
+      app.connections.add(SavedConnection(name: 'AAA', host: '192.0.2.14', folderId: c.id));
+      expect(shown().first, 'DEVICE-03');
+      expect(shown().contains('AAA'), isTrue);
+    });
+  });
+
   testWidgets('a folder cannot go inside its own subfolder', (tester) async {
     await pumpTree(tester);
     await tester.tap(find.byIcon(Icons.chevron_right).first); // open ALPHA
