@@ -8,6 +8,7 @@ import 'package:xterm/xterm.dart';
 import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
 import '../services/pane_layout.dart';
+import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
 import '../services/serial_session.dart';
 import '../services/session_controller.dart';
@@ -1016,9 +1017,29 @@ class _TerminalPaneState extends State<_TerminalPane> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final style = terminalStyle(family: app.terminalFontFamily, size: app.terminalFontSize);
-    return GestureDetector(
+    final terminal = GestureDetector(
       onTap: () => _focusNode.requestFocus(),
       child: TerminalViewport(style: style, background: app.terminalBackground, child: _view(app, style)),
+    );
+    final session = widget.controller;
+    if (session is! PtySessionController) return terminal;
+    return Column(
+      children: [
+        ValueListenableBuilder<String?>(
+          valueListenable: session.loginQuestion,
+          builder: (context, question, _) => question == null
+              ? const SizedBox.shrink()
+              : _LoginQuestionBar(
+                  question: question,
+                  hasPassword: session.hasSavedPassword,
+                  onAnswer: (yes) {
+                    session.answerLoginQuestion(yes: yes);
+                    _focusNode.requestFocus();
+                  },
+                ),
+        ),
+        Expanded(child: terminal),
+      ],
     );
   }
 
@@ -1061,6 +1082,51 @@ class _TerminalPaneState extends State<_TerminalPane> {
       theme: TerminalThemes.withColors(
         background: app.terminalBackground,
         foreground: app.terminalForeground,
+      ),
+    );
+  }
+}
+
+/// A yes/no question the server asked at login, so it can be answered with a
+/// click, with the saved password filled in after a yes.
+class _LoginQuestionBar extends StatelessWidget {
+  const _LoginQuestionBar({required this.question, required this.hasPassword, required this.onAnswer});
+
+  final String question;
+  final bool hasPassword;
+  final ValueChanged<bool> onAnswer;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          children: [
+            const Icon(Icons.help_outline, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(question, style: const TextStyle(fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  if (!hasPassword)
+                    Text(
+                      tr('No password is saved for this connection, so you will need to type it.'),
+                      style: TextStyle(fontSize: 11, color: theme.textTheme.bodySmall?.color),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(onPressed: () => onAnswer(false), child: Text(tr('No'))),
+            const SizedBox(width: 4),
+            FilledButton(onPressed: () => onAnswer(true), child: Text(tr('Yes'))),
+          ],
+        ),
       ),
     );
   }

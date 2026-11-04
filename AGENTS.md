@@ -65,6 +65,10 @@ Do not "simplify" these without reading why.
   - **Known hosts** are kept in the app's own file under `%APPDATA%\CommandS`.
   - **Host and username** are checked against strict patterns before they go
     into the batch launcher.
+- **A login question that reaches the terminal gets a bar** (`LoginWatcher`).
+  Normally askpass answers it. The saved password is typed only at OpenSSH's
+  own `(user@host)` prompt, once, after such a question, early in the session,
+  as a logged-in device can print anything.
 - **The reach check comes before `login as:`.** A TCP connect to the SSH port
   runs first, so an address with nothing behind it fails clearly instead of
   showing a prompt. The same connect reads the server's `SSH-2.0-...` line for

@@ -280,5 +280,9 @@ const turkish = <String, String>{
   'You can still download it yourself from the release page.':
       'Yine de sürüm sayfasından kendiniz indirebilirsiniz.',
   'Skip this version': 'Bu sürümü atla',
+  'Yes': 'Evet',
+  'No': 'Hayır',
+  'No password is saved for this connection, so you will need to type it.':
+      'Bu bağlantıda kayıtlı parola yok, parolayı sizin yazmanız gerekecek.',
   'Remind me later': 'Daha sonra hatırlat',
 };

@@ -8,6 +8,7 @@ import 'package:xterm/xterm.dart';
 
 import '../models/models.dart';
 import 'device_detect.dart';
+import 'login_watcher.dart';
 import 'session_controller.dart';
 
 export 'session_controller.dart' show SessionStatus;
@@ -86,6 +87,55 @@ class PtySessionController implements TerminalSessionController {
 
   String? lastError;
 
+  /// A yes/no question from the server that reached the terminal, shown as a
+  /// bar above it. Null otherwise. Questions normally never get here: the
+  /// askpass helper answers them when the session has a password.
+  final loginQuestion = ValueNotifier<String?>(null);
+
+  /// Whether a saved password will follow a yes.
+  bool get hasSavedPassword => _password.isNotEmpty;
+
+  LoginWatcher? _login;
+
+  /// Takes the place of the process's input in tests.
+  @visibleForTesting
+  void Function(String)? writeOverride;
+
+  void _write(String data) {
+    final override = writeOverride;
+    if (override != null) {
+      override(data);
+    } else {
+      _pty?.write(Uint8List.fromList(utf8.encode(data)));
+    }
+  }
+
+  /// Answers [loginQuestion] from its bar. The password prompt that follows a
+  /// yes is filled in from the saved password, if there is one.
+  void answerLoginQuestion({required bool yes}) {
+    if (loginQuestion.value == null) return;
+    loginQuestion.value = null;
+    if (!yes) _login?.declined();
+    _write(yes ? 'yes\r' : 'no\r');
+  }
+
+  void _watchLogin(String text) {
+    final event = _login?.feed(text);
+    if (event is LoginQuestion) {
+      loginQuestion.value = event.text;
+    } else if (event is LoginPasswordPrompt) {
+      loginQuestion.value = null;
+      if (_password.isNotEmpty) _write('$_password\r');
+    }
+  }
+
+  /// Output as it comes from the process, for tests.
+  @visibleForTesting
+  void debugWatchLogin(String text, {required String user, required String host}) {
+    _login ??= LoginWatcher(user: user, host: host);
+    _watchLogin(text);
+  }
+
   /// Told once per connection what kind of device answered, when that can
   /// be read from what it printed (see [detectDevice]).
   void Function(DeviceKind kind)? onDeviceDetected;
@@ -145,7 +195,9 @@ class PtySessionController implements TerminalSessionController {
       line(data);
       return;
     }
-    _pty?.write(Uint8List.fromList(utf8.encode(data)));
+    // Answered by hand in the terminal: the bar has nothing left to ask.
+    if (loginQuestion.value != null && data.contains('\r')) loginQuestion.value = null;
+    _write(data);
   }
 
   /// Hosts and usernames end up inside a batch file, so anything that could
@@ -199,6 +251,8 @@ class PtySessionController implements TerminalSessionController {
     final generation = ++_generation;
     serverVersion = '';
     _sniffStop();
+    _login = null;
+    loginQuestion.value = null;
     try {
       if (!_safeHost.hasMatch(host)) {
         throw UnsafeTargetError('Refusing to connect: "$host" is not a valid host name or address.');
@@ -231,6 +285,7 @@ class PtySessionController implements TerminalSessionController {
         throw UnsafeTargetError('Refusing to connect: "$_username" is not a valid user name.');
       }
       if (ssh != null) {
+        _login = LoginWatcher(user: _username, host: host);
         await _startOpenSsh(ssh, generation);
       } else {
         await _startPlink(generation);
@@ -643,6 +698,7 @@ class PtySessionController implements TerminalSessionController {
     _pending.clear();
     terminal.write(text);
     _sniffAdd(text);
+    _watchLogin(text);
   }
 
   void _attachPty(int generation, {required bool cleanUpEarly}) {
@@ -714,6 +770,7 @@ class PtySessionController implements TerminalSessionController {
 
   @override
   void dispose() {
+    loginQuestion.dispose();
     _lineInput = null;
     _stopProcess();
     _statusController.close();
