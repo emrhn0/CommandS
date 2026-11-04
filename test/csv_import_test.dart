@@ -29,6 +29,21 @@ void main() {
     expect(root.name, 'EXAMPLE CORP');
   });
 
+  test('csv roundtrip with newlines in quoted fields', () {
+    final connection = SavedConnection(
+      name: 'DEVICE-01\nrack 2',
+      host: '192.0.2.10',
+      rememberPassword: true,
+      password: 'ExamplePass1\nline 2',
+    );
+    final csv = svc.exportCsv(folders: [], connections: [connection]);
+    final parsed = svc.parseCsv(csv).connections.single;
+
+    expect(parsed.name, connection.name);
+    expect(parsed.password, connection.password);
+    expect(parsed.host, connection.host);
+  });
+
   test('csv import from a plain spreadsheet (no CommandS header)', () {
     const csv = 'Ad,Anamakine,Kullanıcı adı,Parola,Klasör\n'
         'HOST1,192.0.2.15,exampleadmin,ExamplePass2,EXAMPLE CORP\n';

@@ -23,6 +23,7 @@ void main() {
 
     test('a malformed tag never reads as newer', () {
       expect(UpdateService.compareVersions('garbage', 'v1.0.0'), lessThan(0));
+      expect(UpdateService.compareVersions('v9.bad.0', 'v1.0.0'), lessThan(0));
     });
   });
 

@@ -247,6 +247,25 @@ class StorageService {
     return fields;
   }
 
+  List<String> _csvRecords(String csv) {
+    final records = <String>[];
+    final record = StringBuffer();
+    var inQuotes = false;
+    for (var i = 0; i < csv.length; i++) {
+      final ch = csv[i];
+      if (ch == '"') inQuotes = !inQuotes;
+      if (!inQuotes && (ch == '\r' || ch == '\n')) {
+        if (record.toString().trim().isNotEmpty) records.add(record.toString());
+        record.clear();
+        if (ch == '\r' && i + 1 < csv.length && csv[i + 1] == '\n') i++;
+      } else {
+        record.write(ch);
+      }
+    }
+    if (record.toString().trim().isNotEmpty) records.add(record.toString());
+    return records;
+  }
+
   /// Parses a CSV with a header row. Column order and delimiter are
   /// flexible: recognizes CommandS's own export, plain spreadsheets, and --
   /// because these are the files that actually carry real passwords --
@@ -255,7 +274,7 @@ class StorageService {
   /// (`;`-delimited, GUID `Id`/`Parent` folder hierarchy instead of a path
   /// column, `Username`/`Password`/`Protocol`).
   ParsedImport parseCsv(String csvStr) {
-    final lines = csvStr.split(RegExp(r'\r\n|\r|\n')).where((l) => l.trim().isNotEmpty).toList();
+    final lines = _csvRecords(csvStr);
     if (lines.isEmpty) return ParsedImport(folders: [], connections: []);
 
     // A BOM (common in Excel-exported CSVs) would otherwise end up glued to

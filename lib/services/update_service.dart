@@ -150,23 +150,24 @@ class UpdateService {
   }
 
   /// Compares `vX.Y.Z` strings. Returns >0 when [a] is newer than [b].
-  /// Anything unparseable in a segment counts as 0, so a malformed tag can
-  /// never be read as newer than a real version.
+  /// Malformed tags sort below valid versions.
   static int compareVersions(String a, String b) {
-    List<int> parts(String v) {
+    List<int>? parts(String v) {
       final cleaned = v.trim().toLowerCase();
       final body = cleaned.startsWith('v') ? cleaned.substring(1) : cleaned;
       // Drop any pre-release/build suffix: only the numeric core is compared.
       final core = body.split(RegExp(r'[-+]')).first;
-      final out = core.split('.').map((s) => int.tryParse(s) ?? 0).toList();
-      while (out.length < 3) {
-        out.add(0);
-      }
-      return out;
+      final segments = core.split('.');
+      if (segments.length != 3) return null;
+      final numbers = segments.map(int.tryParse).toList();
+      if (numbers.any((n) => n == null)) return null;
+      return numbers.cast<int>();
     }
 
     final x = parts(a);
     final y = parts(b);
+    if (x == null) return y == null ? 0 : -1;
+    if (y == null) return 1;
     for (var i = 0; i < 3; i++) {
       if (x[i] != y[i]) return x[i] - y[i];
     }
