@@ -666,23 +666,110 @@ void RdpAxHost::Focus() {
   SetFocus(hwnd_);
 }
 
-void RdpAxHost::SendCtrlAltDelete() {
-  if (dispatch_ == nullptr || !connected_) return;
-  // Windows intercepts the real Ctrl+Alt+Del before any application sees it,
-  // so a windowed session can only get one by asking the control to inject it.
-  VARIANT result;
-  VariantInit(&result);
-  std::vector<VARIANT> args;
-  args.push_back(VarLong(0));  // RemoteActionCtrlAltDel
-  if (FAILED(DispCall(dispatch_, L"SendRemoteAction", std::move(args),
-                      &result))) {
-    VariantClear(&result);
-    // Older controls expose it only on the non-scriptable interface, which
-    // this host does not reach through IDispatch; Ctrl+Alt+End typed into the
-    // session does the same thing there.
-    return;
+namespace {
+
+// IMsRdpClientNonScriptable, laid out as in mstscax.dll's type library: its
+// slots follow IUnknown, and SendKeys is the last. Declared here because the
+// interface is not reachable through IDispatch.
+const IID kIID_NonScriptable = {
+    0x2f079c4c, 0x87b2, 0x4afd, {0x97, 0xab, 0x20, 0xcd, 0xb4, 0x30, 0x38, 0xae}};
+
+struct INonScriptableKeys : public IUnknown {
+  virtual HRESULT STDMETHODCALLTYPE ClearTextPasswordPut() = 0;
+  virtual HRESULT STDMETHODCALLTYPE PortablePasswordPut() = 0;
+  virtual HRESULT STDMETHODCALLTYPE PortablePasswordGet() = 0;
+  virtual HRESULT STDMETHODCALLTYPE PortableSaltPut() = 0;
+  virtual HRESULT STDMETHODCALLTYPE PortableSaltGet() = 0;
+  virtual HRESULT STDMETHODCALLTYPE BinaryPasswordPut() = 0;
+  virtual HRESULT STDMETHODCALLTYPE BinaryPasswordGet() = 0;
+  virtual HRESULT STDMETHODCALLTYPE BinarySaltPut() = 0;
+  virtual HRESULT STDMETHODCALLTYPE BinarySaltGet() = 0;
+  virtual HRESULT STDMETHODCALLTYPE ResetPassword() = 0;
+  virtual HRESULT STDMETHODCALLTYPE NotifyRedirectDeviceChange(UINT_PTR, LONG_PTR) = 0;
+  virtual HRESULT STDMETHODCALLTYPE SendKeys(LONG count, VARIANT_BOOL* key_up,
+                                             LONG* scan_codes) = 0;
+};
+
+void PressCtrlAltEnd() {
+  const WORD keys[] = {VK_CONTROL, VK_MENU, VK_END};
+  const int count = static_cast<int>(std::size(keys));
+  std::vector<INPUT> inputs;
+  for (int i = 0; i < count * 2; i++) {
+    const bool up = i >= count;
+    INPUT input = {};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = keys[up ? count * 2 - 1 - i : i];
+    input.ki.dwFlags = (up ? KEYEVENTF_KEYUP : 0) |
+                       (input.ki.wVk == VK_END ? KEYEVENTF_EXTENDEDKEY : 0);
+    inputs.push_back(input);
   }
-  VariantClear(&result);
+  SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
+}
+
+}  // namespace
+
+void RdpAxHost::SendCtrlAltDelete() {
+  if (control_ == nullptr || !connected_) return;
+  // Windows intercepts the real Ctrl+Alt+Del before any application sees it,
+  // so the keys are handed to the control directly. They go to whichever part
+  // of it has the keyboard, hence the focus first.
+  Focus();
+  INonScriptableKeys* keys = nullptr;
+  HRESULT hr = control_->QueryInterface(kIID_NonScriptable,
+                                        reinterpret_cast<void**>(&keys));
+  if (SUCCEEDED(hr) && keys != nullptr) {
+    VARIANT_BOOL key_up[] = {VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE,
+                             VARIANT_TRUE,  VARIANT_TRUE,  VARIANT_TRUE};
+    LONG scan_codes[] = {0x1D, 0x38, 0x53, 0x53, 0x38, 0x1D};  // Ctrl, Alt, Del
+    hr = keys->SendKeys(6, key_up, scan_codes);
+    keys->Release();
+  }
+  // Ctrl+Alt+End is what the session itself takes as Ctrl+Alt+Del.
+  if (FAILED(hr)) PressCtrlAltEnd();
+}
+
+bool RdpAxHost::CaptureFrame(std::vector<uint8_t>* pixels, int* width, int* height) {
+  if (hwnd_ == nullptr || !IsWindowVisible(hwnd_)) return false;
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) return false;
+  const int w = rc.right - rc.left;
+  const int h = rc.bottom - rc.top;
+  if (w <= 0 || h <= 0) return false;
+
+  BITMAPINFO info = {};
+  info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth = w;
+  info.bmiHeader.biHeight = -h;  // top-down
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 32;
+  info.bmiHeader.biCompression = BI_RGB;
+
+  // From the screen: the session draws through its own surfaces, which asking
+  // the window to paint itself can miss. It is on top of this app here, as the
+  // user has just clicked in this app.
+  HDC screen = GetDC(nullptr);
+  HDC memory = CreateCompatibleDC(screen);
+  void* bits = nullptr;
+  HBITMAP bitmap = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+  bool ok = false;
+  if (bitmap != nullptr && bits != nullptr) {
+    HGDIOBJ previous = SelectObject(memory, bitmap);
+    ok = BitBlt(memory, 0, 0, w, h, screen, rc.left, rc.top, SRCCOPY) != FALSE;
+    SelectObject(memory, previous);
+    if (ok) {
+      const size_t size = static_cast<size_t>(w) * h * 4;
+      const uint8_t* source = static_cast<const uint8_t*>(bits);
+      pixels->assign(source, source + size);
+      // BitBlt leaves alpha undefined, and zero would read as transparent.
+      for (size_t i = 3; i < size; i += 4) (*pixels)[i] = 255;
+      *width = w;
+      *height = h;
+    }
+  }
+  if (bitmap != nullptr) DeleteObject(bitmap);
+  DeleteDC(memory);
+  ReleaseDC(nullptr, screen);
+  return ok;
 }
 
 std::wstring RdpAxHost::DescribeDisconnect(int reason, int* extended_out) {

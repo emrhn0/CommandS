@@ -78,8 +78,13 @@ Do not "simplify" these without reading why.
     child session window got painted over.
   - Because the window is owned, it has to be hidden while Flutter dialogs are
     open (`RdpModalObserver`).
-  - Nothing Flutter draws inside the pane is visible, so session controls live
-    in a bar above it.
+  - Nothing Flutter draws inside the pane is visible, so session actions live
+    in the tab's right-click menu.
+  - While hidden, the pane shows a still picture of the session
+    (`RdpChannel.holdSuspended`), so a menu does not turn it black. The picture
+    stays in memory only.
+  - Ctrl+Alt+Del goes through `IMsRdpClientNonScriptable::SendKeys`.
+    `SendRemoteAction` has no such action; its value 0 means Charms.
 - **Tree clicks work like Explorer.** One click selects, a double click opens.
   - Double clicks are detected from pointer-down timestamps in a `Listener`,
     not with a double-tap recognizer, which would delay every single click.

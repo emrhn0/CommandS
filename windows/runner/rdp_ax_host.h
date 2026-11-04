@@ -41,6 +41,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace commands {
 
@@ -132,6 +133,11 @@ class RdpAxHost : public IOleClientSite,
   // Ctrl+Alt+Del, which cannot be typed into a windowed session because the
   // local Secure Attention Sequence swallows it.
   void SendCtrlAltDelete();
+
+  // Copies what the session window shows now, as top-down BGRA. False when it
+  // is not on screen. Lets the app show a still picture while the window steps
+  // aside for a menu or a dialog, rather than a black pane.
+  bool CaptureFrame(std::vector<uint8_t>* pixels, int* width, int* height);
 
   void set_event_sink(EventSink sink) { event_sink_ = std::move(sink); }
 

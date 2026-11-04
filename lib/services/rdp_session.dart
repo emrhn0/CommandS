@@ -69,6 +69,10 @@ class RdpSessionController implements SessionController {
   /// control is worth offering.
   bool get supportsDynamicResolution => _dynamicResolution ?? false;
 
+  /// What the session last showed, drawn in its place while its window has
+  /// stepped aside for a menu or a dialog. Null otherwise.
+  final frozenFrame = ValueNotifier<ui.Image?>(null);
+
   int? _hostId;
   bool _started = false;
   bool _disposed = false;
@@ -108,7 +112,7 @@ class RdpSessionController implements SessionController {
         return;
       }
       _hostId = id;
-      RdpChannel.instance.register(id, _onNativeEvent);
+      RdpChannel.instance.register(id, _onNativeEvent, frame: frozenFrame);
       if (!_active) await RdpChannel.instance.setVisible(id, false);
       _dynamicResolution = await RdpChannel.instance.connect(
         id: id,
@@ -326,9 +330,13 @@ class RdpSessionController implements SessionController {
 
   /// Windows swallows the real Ctrl+Alt+Del before any app sees it, so a
   /// windowed session can only get one by asking the control to inject it.
+  /// Sent a moment later, as it is asked for from a menu: the session's window
+  /// has to be back and able to take the keyboard.
   void sendCtrlAltDelete() {
-    final id = _hostId;
-    if (id != null) RdpChannel.instance.sendCtrlAltDel(id);
+    Timer(const Duration(milliseconds: 150), () {
+      final id = _hostId;
+      if (id != null && !_disposed) RdpChannel.instance.sendCtrlAltDel(id);
+    });
   }
 
   /// Tears the session down and negotiates a fresh one at the pane's current
@@ -374,6 +382,9 @@ class RdpSessionController implements SessionController {
       RdpChannel.instance.unregister(id);
       RdpChannel.instance.destroy(id);
     }
+    final frame = frozenFrame.value;
+    frozenFrame.dispose();
+    frame?.dispose();
     _statusController.close();
   }
 }
@@ -411,11 +422,88 @@ class RdpChannel {
   final _channel = const MethodChannel('commands/rdp');
   final _listeners = <int, void Function(RdpNativeEvent)>{};
 
-  void register(int id, void Function(RdpNativeEvent) listener) {
+  final _frameTargets = <int, ValueNotifier<ui.Image?>>{};
+
+  void register(int id, void Function(RdpNativeEvent) listener, {ValueNotifier<ui.Image?>? frame}) {
     _listeners[id] = listener;
+    if (frame != null) _frameTargets[id] = frame;
   }
 
-  void unregister(int id) => _listeners.remove(id);
+  void unregister(int id) {
+    _listeners.remove(id);
+    _frameTargets.remove(id)?.value = null;
+  }
+
+  /// How many things want sessions out of the way: an open dialog or menu, a
+  /// tab being dragged.
+  int _holds = 0;
+  int _holdGeneration = 0;
+
+  /// Asks for every session to step aside (or says it no longer has to). The
+  /// sessions leave a still picture behind, so a pane does not go black just
+  /// because a menu opened.
+  void holdSuspended(bool hold) {
+    final was = _holds > 0;
+    _holds = (_holds + (hold ? 1 : -1)).clamp(0, 1 << 20);
+    final now = _holds > 0;
+    if (was == now) return;
+    final generation = ++_holdGeneration;
+    if (now) {
+      _freezeThenSuspend(generation);
+    } else {
+      // At once, so anything sent to a session next finds it back.
+      _safely(setSuspended(false));
+      // The picture stays a moment, or the pane flashes black as the window
+      // comes back.
+      Timer(const Duration(milliseconds: 150), () {
+        if (generation == _holdGeneration) _clearFrames();
+      });
+    }
+  }
+
+  void _safely(Future<void> call) => call.catchError((Object _) {});
+
+  Future<void> _freezeThenSuspend(int generation) async {
+    try {
+      final frames = await _channel.invokeListMethod<Object?>('captureFrames');
+      for (final f in frames ?? const <Object?>[]) {
+        final frame = (f as Map).cast<String, Object?>();
+        final target = _frameTargets[frame['id'] as int];
+        if (target == null) continue;
+        final image = await _decode(
+          frame['pixels'] as Uint8List,
+          frame['width'] as int,
+          frame['height'] as int,
+        );
+        if (generation != _holdGeneration) {
+          image.dispose();
+          return;
+        }
+        final old = target.value;
+        target.value = image;
+        old?.dispose();
+      }
+    } catch (_) {
+      // No picture is only cosmetic. The session still has to step aside.
+    }
+    // Let go of in the meantime: the session stays where it is.
+    if (generation != _holdGeneration) return;
+    _safely(setSuspended(true));
+  }
+
+  Future<ui.Image> _decode(Uint8List pixels, int width, int height) {
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(pixels, width, height, ui.PixelFormat.bgra8888, done.complete);
+    return done.future;
+  }
+
+  void _clearFrames() {
+    for (final target in _frameTargets.values) {
+      final old = target.value;
+      target.value = null;
+      old?.dispose();
+    }
+  }
 
   Future<dynamic> _onCall(MethodCall call) async {
     if (call.method != 'event') return null;
@@ -540,8 +628,7 @@ class RdpTabDrag {
     if (_active == active) return;
     _active = active;
     if (!Platform.isWindows) return;
-    // No native side in widget tests, and nothing to undo if the call fails.
-    RdpChannel.instance.setSuspended(active).catchError((Object _) {});
+    RdpChannel.instance.holdSuspended(active);
   }
 }
 
@@ -563,7 +650,7 @@ class RdpModalObserver extends NavigatorObserver {
     final wasOpen = _depth > 0;
     _depth = (_depth + delta).clamp(0, 1 << 20);
     final isOpen = _depth > 0;
-    if (wasOpen != isOpen) RdpChannel.instance.setSuspended(isOpen);
+    if (wasOpen != isOpen) RdpChannel.instance.holdSuspended(isOpen);
   }
 
   @override

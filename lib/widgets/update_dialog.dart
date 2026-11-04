@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -15,36 +16,65 @@ import '../l10n/strings.dart';
 /// prompt has a [Navigator] to open on and the window is already up: a dialog
 /// is the one thing here the user has to answer, and it should not be waiting
 /// for them before the app has finished appearing.
+///
+/// Then again every hour while the app stays open, as a release can come out
+/// while someone is working. "Remind me later" brings the prompt back an hour
+/// after it was answered.
 class UpdateGate extends StatefulWidget {
-  const UpdateGate({super.key, required this.child});
+  const UpdateGate({super.key, required this.child, @visibleForTesting this.checker = UpdateService.check});
   final Widget child;
+  final Future<UpdateInfo?> Function() checker;
 
   @override
   State<UpdateGate> createState() => _UpdateGateState();
 }
 
 class _UpdateGateState extends State<UpdateGate> {
-  bool _checked = false;
+  static const _settle = Duration(seconds: 3);
+  static const _interval = Duration(hours: 1);
+
+  /// How soon to look again when the prompt could not be shown, because
+  /// another dialog was open.
+  static const _busyRetry = Duration(minutes: 1);
+
+  Timer? _next;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
-  }
-
-  Future<void> _check() async {
-    if (_checked) return;
-    _checked = true;
     // Let the window settle first. The check is a network round trip on a
     // background isolate's I/O, so it never blocks the UI, but showing a
     // dialog over a half-drawn app looks like a fault.
-    await Future.delayed(const Duration(seconds: 3));
-    final info = await UpdateService.check();
-    if (!mounted || info == null) return;
-    UpdateService.available.value = info;
-    if (await UpdateService.isSkipped(info.version)) return;
+    _next = Timer(_settle, _round);
+  }
+
+  @override
+  void dispose() {
+    _next?.cancel();
+    super.dispose();
+  }
+
+  /// One check. The next is timed from the end of this one, so the hour after
+  /// "Remind me later" starts when it was pressed, and a prompt left open never
+  /// has a second one opened over it.
+  Future<void> _round() async {
+    var wait = _interval;
+    final info = await widget.checker();
     if (!mounted) return;
-    await showUpdateDialog(context, info);
+    if (info != null) {
+      UpdateService.available.value = info;
+      if (!await UpdateService.isSkipped(info.version)) {
+        if (!mounted) return;
+        // Not over a dialog the user is in the middle of.
+        if (ModalRoute.of(context)?.isCurrent ?? true) {
+          await showUpdateDialog(context, info);
+          if (!mounted) return;
+        } else {
+          wait = _busyRetry;
+        }
+      }
+    }
+    _next = Timer(wait, _round);
   }
 
   @override

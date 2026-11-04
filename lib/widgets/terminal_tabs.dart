@@ -178,23 +178,33 @@ Future<void> _showGroupMenu(BuildContext context, AppState app, TabGroup group, 
       .where((t) => t.controller.status == SessionStatus.error || t.controller.status == SessionStatus.closed)
       .where(canReconnect)
       .toList();
+  final remote = app.tabs.where((t) => group.tabIds.contains(t.id)).where(canSendCtrlAltDel).toList();
   final key = await showContextMenu(
     context,
     position: at,
     header: group.name ?? tr('Split View'),
     actions: [
       if (dropped.isNotEmpty) const MenuAction('reconnect', 'Reconnect dropped sessions', Icons.refresh),
+      for (final t in remote)
+        MenuAction('ctrlaltdel:${t.id}', '${tr('Send Ctrl+Alt+Del')}: ${_tabTitle(t)}', Icons.keyboard),
       MenuAction(
         'edit',
         'Edit split view…',
         Icons.vertical_split_outlined,
-        separatorBefore: dropped.isNotEmpty,
+        separatorBefore: dropped.isNotEmpty || remote.isNotEmpty,
       ),
       MenuAction('ungroup', 'Separate into tabs', Icons.tab_outlined),
       MenuAction('close', 'Close all sessions', Icons.close, separatorBefore: true),
     ],
   );
   if (key == null || !context.mounted) return;
+  if (key.startsWith('ctrlaltdel:')) {
+    final id = key.substring('ctrlaltdel:'.length);
+    for (final t in remote) {
+      if (t.id == id) (t.controller as RdpSessionController).sendCtrlAltDelete();
+    }
+    return;
+  }
   switch (key) {
     case 'reconnect':
       dropped.forEach(reconnectTab);
@@ -227,6 +237,13 @@ void reconnectTab(OpenTab tab) {
   }
 }
 
+/// A live embedded session: the real keys never reach it, as Windows keeps
+/// them, so it is sent from the tab's menu.
+bool canSendCtrlAltDel(OpenTab tab) {
+  final c = tab.controller;
+  return c is RdpSessionController && c.status == SessionStatus.running;
+}
+
 /// Right-click on a tab. A quick connection can be saved from here, with
 /// what it is connected to already filled in; a saved one can be edited.
 Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offset at) async {
@@ -239,6 +256,7 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
     actions: [
       // First when the session has dropped: that is what the menu is for then.
       if (canReconnect(tab)) const MenuAction('reconnect', 'Reconnect', Icons.refresh),
+      if (canSendCtrlAltDel(tab)) const MenuAction('ctrlaltdel', 'Send Ctrl+Alt+Del', Icons.keyboard),
       if (unsaved != null)
         MenuAction(
           'save',
@@ -255,6 +273,8 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
   switch (key) {
     case 'reconnect':
       reconnectTab(tab);
+    case 'ctrlaltdel':
+      (tab.controller as RdpSessionController).sendCtrlAltDelete();
     case 'save':
       final conn = await showSaveQuickConnectionDialog(context, unsaved!);
       if (conn != null) app.linkTabToConnection(tab.id, conn);

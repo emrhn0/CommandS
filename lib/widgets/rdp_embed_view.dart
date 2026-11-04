@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -6,21 +7,10 @@ import '../services/rdp_session.dart';
 import '../services/session_controller.dart';
 import '../l10n/strings.dart';
 
-/// Height of the session bar above an embedded RDP surface.
-///
-/// The session *is* a native child window sitting over its share of the pane,
-/// which means Flutter cannot draw anything on top of it — a floating overlay
-/// button inside the pane is painted behind the session and can be neither seen
-/// nor clicked. (The previous implementation's "reconnect to fit" button was
-/// positioned exactly there.) So the controls get their own strip that the
-/// native window is kept out of, rather than an overlay that silently doesn't
-/// work.
-const double _kSessionBarHeight = 26;
-
-/// The Flutter-side half of an embedded RDP session: a strip of controls, and
-/// below it a black placeholder whose on-screen rectangle is reported to
-/// [RdpSessionController.reposition] so the native ActiveX host window stays
-/// exactly over it.
+/// The Flutter-side half of an embedded RDP session: a black placeholder whose
+/// on-screen rectangle is reported to [RdpSessionController.reposition] so the
+/// native ActiveX host window stays exactly over it. Nothing Flutter draws here
+/// shows over a live session, so its actions are in the tab's right-click menu.
 ///
 /// The native window is a real child of the app's top-level window, a sibling
 /// of Flutter's view, created `WS_CLIPSIBLINGS` under a `WS_CLIPCHILDREN`
@@ -115,152 +105,47 @@ class _RdpEmbedViewState extends State<RdpEmbedView> with WidgetsBindingObserver
       initialData: widget.controller.status,
       builder: (context, snapshot) {
         final status = snapshot.data ?? SessionStatus.starting;
-        return Column(
-          children: [
-            _SessionBar(
-              host: widget.controller.tabTitle ?? widget.controller.host,
-              status: status,
-              // Where the server renegotiates resolution on resize there is
-              // nothing for a manual reconnect to fix, so it isn't offered.
-              showRefit: status == SessionStatus.running && !widget.controller.supportsDynamicResolution,
-              onRefit: _reconnect,
-              onCtrlAltDel: status == SessionStatus.running ? widget.controller.sendCtrlAltDelete : null,
-              onReconnect: status == SessionStatus.running ? null : _reconnect,
+        return Stack(
+      children: [
+        // The native session window sits over this — it's the hole
+        // being kept clear for it. A tap only reaches Flutter before
+        // that window exists (or after it is hidden on failure), and
+        // means the user wants to type into the session.
+        Listener(
+          onPointerDown: (_) => widget.controller.focus(),
+          child: Container(key: _key, color: Colors.black),
+        ),
+        // What the session was showing, while its window has stepped aside.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ValueListenableBuilder<ui.Image?>(
+              valueListenable: widget.controller.frozenFrame,
+              builder: (context, frame, _) =>
+                  frame == null ? const SizedBox.shrink() : RawImage(image: frame, fit: BoxFit.fill),
             ),
-            Expanded(
-              child: Stack(
-                children: [
-                  // The native session window sits over this — it's the hole
-                  // being kept clear for it. A tap only reaches Flutter before
-                  // that window exists (or after it is hidden on failure), and
-                  // means the user wants to type into the session.
-                  Listener(
-                    onPointerDown: (_) => widget.controller.focus(),
-                    child: Container(key: _key, color: Colors.black),
-                  ),
-                  if (status == SessionStatus.starting)
-                    const Center(child: CircularProgressIndicator())
-                  else if (status == SessionStatus.error)
-                    _RdpMessage(
-                      icon: Icons.error_outline,
-                      title: tr('Remote Desktop disconnected'),
-                      detail: widget.controller.lastError ?? tr('The session could not be started.'),
-                      onRetry: _reconnect,
-                    )
-                  else if (status == SessionStatus.closed)
-                    _RdpMessage(
-                      icon: Icons.power_settings_new,
-                      title: tr('Session ended'),
-                      detail:
-                          widget.controller.lastError ??
-                          tr('The remote session was closed. Reconnect to start a new one.'),
-                      onRetry: _reconnect,
-                    ),
-                ],
-              ),
-            ),
-          ],
-        );
+          ),
+        ),
+        if (status == SessionStatus.starting)
+          const Center(child: CircularProgressIndicator())
+        else if (status == SessionStatus.error)
+          _RdpMessage(
+            icon: Icons.error_outline,
+            title: tr('Remote Desktop disconnected'),
+            detail: widget.controller.lastError ?? tr('The session could not be started.'),
+            onRetry: _reconnect,
+          )
+        else if (status == SessionStatus.closed)
+          _RdpMessage(
+            icon: Icons.power_settings_new,
+            title: tr('Session ended'),
+            detail:
+                widget.controller.lastError ??
+                tr('The remote session was closed. Reconnect to start a new one.'),
+            onRetry: _reconnect,
+          ),
+      ],
+    );
       },
-    );
-  }
-}
-
-/// The strip above the session. Holds the two things that cannot be done from
-/// inside a windowed RDP session — sending Ctrl+Alt+Del, which Windows
-/// intercepts locally before any app sees it, and (on servers with no dynamic
-/// resolution) reconnecting to fit a resized pane — plus the session's state,
-/// which is otherwise invisible once the desktop is drawing.
-class _SessionBar extends StatelessWidget {
-  const _SessionBar({
-    required this.host,
-    required this.status,
-    required this.showRefit,
-    required this.onRefit,
-    required this.onCtrlAltDel,
-    required this.onReconnect,
-  });
-
-  final String host;
-  final SessionStatus status;
-  final bool showRefit;
-  final VoidCallback onRefit;
-  final VoidCallback? onCtrlAltDel;
-  final VoidCallback? onReconnect;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final (label, color) = switch (status) {
-      SessionStatus.starting => ('Connecting', scheme.onSurface.withValues(alpha: 0.5)),
-      SessionStatus.running => ('Connected', scheme.onSurface.withValues(alpha: 0.5)),
-      SessionStatus.closed => ('Ended', scheme.onSurface.withValues(alpha: 0.5)),
-      SessionStatus.error => ('Disconnected', scheme.error),
-    };
-    return SizedBox(
-      height: _kSessionBarHeight,
-      child: Material(
-        color: scheme.surface,
-        child: Row(
-          children: [
-            const SizedBox(width: 8),
-            Icon(Icons.desktop_windows_outlined, size: 12, color: color),
-            const SizedBox(width: 6),
-            // The name and state take all the room the buttons leave, so the
-            // buttons sit against the right edge at any pane width. (A
-            // Flexible name beside a Spacer split the free space between
-            // them, which parked the buttons part-way along the bar.)
-            Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(host, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(tr(label), style: TextStyle(fontSize: 10, color: color)),
-                ],
-              ),
-            ),
-            if (showRefit)
-              _BarButton(
-                tooltip: tr('Reconnect to fill the current pane size'),
-                icon: Icons.aspect_ratio,
-                onPressed: onRefit,
-              ),
-            if (onReconnect != null)
-              _BarButton(tooltip: tr('Reconnect'), icon: Icons.refresh, onPressed: onReconnect!),
-            // Last, so it is always the top-right corner of the session.
-            if (onCtrlAltDel != null)
-              _BarButton(tooltip: tr('Send Ctrl+Alt+Del'), icon: Icons.keyboard, onPressed: onCtrlAltDel!),
-            const SizedBox(width: 4),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BarButton extends StatelessWidget {
-  const _BarButton({required this.tooltip, required this.icon, required this.onPressed});
-
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      // Above the bar, not below it: below is the session's own window, which
-      // is drawn over anything Flutter puts there.
-      preferBelow: false,
-      child: InkWell(
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-          child: Icon(icon, size: 14),
-        ),
-      ),
     );
   }
 }

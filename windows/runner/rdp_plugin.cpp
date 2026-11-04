@@ -133,6 +133,24 @@ void RdpPlugin::HandleMethodCall(
     return;
   }
 
+  if (method == "captureFrames") {
+    flutter::EncodableList frames;
+    for (auto& entry : hosts_) {
+      std::vector<uint8_t> pixels;
+      int width = 0;
+      int height = 0;
+      if (!entry.second->CaptureFrame(&pixels, &width, &height)) continue;
+      flutter::EncodableMap frame;
+      frame[EncodableValue("id")] = EncodableValue(entry.first);
+      frame[EncodableValue("width")] = EncodableValue(width);
+      frame[EncodableValue("height")] = EncodableValue(height);
+      frame[EncodableValue("pixels")] = EncodableValue(std::move(pixels));
+      frames.push_back(EncodableValue(std::move(frame)));
+    }
+    result->Success(EncodableValue(std::move(frames)));
+    return;
+  }
+
   if (method == "create") {
     auto* host = new RdpAxHost();
     const int id = next_id_++;

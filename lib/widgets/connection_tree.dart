@@ -38,7 +38,7 @@ class ConnectionTree extends StatefulWidget {
   State<ConnectionTree> createState() => _ConnectionTreeState();
 }
 
-class _ConnectionTreeState extends State<ConnectionTree> {
+class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObserver {
   final _search = TextEditingController();
   String _query = '';
 
@@ -330,7 +330,28 @@ class _ConnectionTreeState extends State<ConnectionTree> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// A click anywhere else in the app drops the selection, as in Explorer. Not
+  /// while a menu or dialog is open: those act on the selection.
+  void _clearIfNothingOnTop() {
+    if (_selected.isEmpty || !mounted) return;
+    if (ModalRoute.of(context)?.isCurrent ?? true) _clearSelection();
+  }
+
+  /// A click in an embedded RDP session never reaches Flutter: it shows here as
+  /// the app window losing the keyboard.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive) _clearIfNothingOnTop();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _search.dispose();
     _scroll.dispose();
     _autoScroll?.cancel();
@@ -592,27 +613,37 @@ class _ConnectionTreeState extends State<ConnectionTree> {
             ],
           ),
         ),
-        // One selected row is just the cursor, as in Explorer; the bulk
-        // actions are for picking several.
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 160),
-          transitionBuilder: (child, anim) => SizeTransition(
-            sizeFactor: anim,
-            alignment: Alignment.topCenter,
-            child: FadeTransition(opacity: anim, child: child),
+        Expanded(
+          child: TapRegion(
+            onTapOutside: (_) => _clearIfNothingOnTop(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // One selected row is just the cursor, as in Explorer; the bulk
+                // actions are for picking several.
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  transitionBuilder: (child, anim) => SizeTransition(
+                    sizeFactor: anim,
+                    alignment: Alignment.topCenter,
+                    child: FadeTransition(opacity: anim, child: child),
+                  ),
+                  child: _selected.length > 1
+                      ? _SelectionBar(
+                          count: _selected.length,
+                          total: app.connections.length + app.folders.length,
+                          onDelete: () => _deleteSelected(app),
+                          onMove: () => _moveSelected(app),
+                          onSelectAll: () => _selectAll(app),
+                          onCancel: _clearSelection,
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+                Expanded(child: _query.isEmpty ? _buildTree(app) : _buildFiltered(app)),
+              ],
+            ),
           ),
-          child: _selected.length > 1
-              ? _SelectionBar(
-                  count: _selected.length,
-                  total: app.connections.length + app.folders.length,
-                  onDelete: () => _deleteSelected(app),
-                  onMove: () => _moveSelected(app),
-                  onSelectAll: () => _selectAll(app),
-                  onCancel: _clearSelection,
-                )
-              : const SizedBox(width: double.infinity),
         ),
-        Expanded(child: _query.isEmpty ? _buildTree(app) : _buildFiltered(app)),
       ],
     );
   }
@@ -653,6 +684,10 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     // below the rows goes out of every folder.
     return Listener(
       onPointerMove: _onDragPointerMove,
+      // The empty space below the rows is "elsewhere" too.
+      onPointerDown: (e) {
+        if (e.buttons == kPrimaryButton && _belowRows(e.position)) _clearSelection();
+      },
       child: DragTarget<_DragItems>(
         key: _listKey,
         onWillAcceptWithDetails: (d) => _canDrop(d.data, null, app),
@@ -701,6 +736,7 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     if (row.folder != null) {
       final expanded = _expanded.contains(row.folder!.id);
       void toggle() => setState(() {
+        _selected.clear();
         if (expanded) {
           _expanded.remove(row.folder!.id);
         } else {
