@@ -54,6 +54,16 @@ void main() {
       expect(detectDevice(output: 'Hewlett Packard Enterprise Development LP'), isNull);
     });
 
+    test('HPE networking support banner identifies a switch without a model line', () {
+      const legal = '(C) Copyright 2017-2026 Hewlett Packard Enterprise Development LP\r\n'
+          'Confidential computer software. License found at\r\n'
+          'https://www.hpe.com/software/SWLicensing.\r\n';
+      const support = 'Please register your products now at: https://networkingsupport.hpe.com';
+      expect(detectDevice(output: legal), isNull);
+      expect(detectDevice(output: '$legal$support'), DeviceKind.hpe);
+      expect(detectDevice(output: 'ArubaOS-CX\r\n$support'), DeviceKind.aruba);
+    });
+
     test('a coloured bash prompt is Linux; a bare ESXi prompt is not', () {
       expect(
         detectDevice(output: '\x1B[01;32muser@host\x1B[00m:\x1B[01;34m~\x1B[00m\$ '),
