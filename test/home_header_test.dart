@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/home_screen.dart';
 import 'package:commands/services/update_service.dart';
@@ -54,6 +57,3 @@ void main() {
     expect(find.text('CONNECTION'), findsOneWidget);
   });
 }
-import 'dart:io';
-import 'dart:ui' as ui;
-
