@@ -7,6 +7,7 @@ import 'package:flutter_pty/flutter_pty.dart';
 import 'package:xterm/xterm.dart';
 
 import '../models/models.dart';
+import '../app_version.dart';
 import 'device_detect.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
@@ -554,9 +555,9 @@ class PtySessionController implements TerminalSessionController {
       // Our own known_hosts, so CommandS neither reads nor fills in the
       // user's ~/.ssh. %APPDATA% is expanded by the batch file at run time,
       // which keeps a non-ASCII profile path out of the file's own encoding.
-      final hostsDir = Directory('${Platform.environment['APPDATA']}\\CommandS');
+      final hostsDir = Directory('${Platform.environment['APPDATA']}\\$appDataDirName');
       if (!hostsDir.existsSync()) hostsDir.createSync(recursive: true);
-      final args = await _sshArgs(ssh, knownHosts: r'%APPDATA%\CommandS\known_hosts');
+      final args = await _sshArgs(ssh, knownHosts: '%APPDATA%\\$appDataDirName\\known_hosts');
       if (generation != _generation) return;
       // flutter_pty's Windows backend concatenates argv without quoting *and*
       // repeats the executable as argv[1]; a batch wrapper sidesteps both,

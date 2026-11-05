@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'package:pointycastle/export.dart';
 import 'package:win32/win32.dart';
 
+import '../app_version.dart';
+
 const _cryptProtectUiForbidden = 0x1;
 
 /// Keeps the one key that remembered passwords are encrypted with, where only
@@ -33,7 +35,7 @@ class MemoryKeyStore implements KeyStore {
 /// Windows: a file in the app's roaming folder, encrypted with DPAPI, so it
 /// opens only for the same Windows account.
 class DpapiKeyStore implements KeyStore {
-  DpapiKeyStore({String? path}) : _path = path ?? '${Platform.environment['APPDATA']}\\CommandS\\password.key';
+  DpapiKeyStore({String? path}) : _path = path ?? '${Platform.environment['APPDATA']}\\$appDataDirName\\password.key';
   final String _path;
 
   @override
@@ -77,7 +79,7 @@ class DpapiKeyStore implements KeyStore {
 /// macOS: the login keychain, through `security`. The key goes in on stdin, as
 /// a command line can be read by other processes.
 class KeychainKeyStore implements KeyStore {
-  static const _service = 'CommandS';
+  static const _service = appName;
   static const _account = 'password-key';
 
   @override

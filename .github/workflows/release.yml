@@ -1,6 +1,6 @@
 name: Build and release
 
-# Push a v*.*.* tag to build Windows + macOS and publish a GitHub Release.
+# Push a vX.Y.Z tag for stable or vX.Y.Z-beta.N for a prerelease.
 #
 # The builds go straight onto a draft release rather than through workflow
 # artifacts: artifact storage has an account-wide quota, and once it was
@@ -11,7 +11,14 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "v*.*.*-beta.*"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Build channel to validate without publishing
+        type: choice
+        options: [stable, beta]
+        default: beta
 
 permissions:
   contents: write
@@ -21,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
+      channel: ${{ steps.ver.outputs.channel }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -30,8 +38,16 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+            if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+              echo "channel=beta" >> "$GITHUB_OUTPUT"
+            elif [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "channel=stable" >> "$GITHUB_OUTPUT"
+            else
+              echo "Unsupported release tag: ${GITHUB_REF}" >&2; exit 1
+            fi
           else
             echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+            echo "channel=${{ inputs.channel || 'stable' }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Open a draft release for the builds to land on
@@ -39,14 +55,20 @@ jobs:
         shell: bash
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "CommandS $TAG" --notes "Building..."
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            if [[ "$TAG" == *-beta.* ]]; then
+              gh release create "$TAG" --draft --prerelease --title "CommandS Beta $TAG" --notes "Building..."
+            else
+              gh release create "$TAG" --draft --title "CommandS $TAG" --notes "Building..."
+            fi
+          fi
 
   windows:
     needs: version
     runs-on: windows-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      COMMANDS_CHANNEL: ${{ needs.version.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
 
@@ -57,7 +79,22 @@ jobs:
       - name: Build Flutter Windows release
         run: |
           flutter pub get
-          flutter build windows --release
+          flutter analyze lib test
+          flutter test
+          flutter build windows --release --dart-define=COMMANDS_CHANNEL=$env:COMMANDS_CHANNEL --dart-define=COMMANDS_VERSION=v$env:VERSION
+
+      - name: Capture pull request screenshot
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          COMMANDS_CAPTURE_PR_SCREENSHOT: '1'
+        run: |
+          flutter test test/home_header_test.dart
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/pr-images/new-connection-after.png
+          git commit -m 'docs: add sidebar layout screenshot'
+          git push origin "HEAD:${{ github.ref_name }}"
 
       # The fallback SSH client, for a Windows without the OpenSSH client.
       - name: Bundle plink.exe
@@ -75,14 +112,16 @@ jobs:
       - name: Build installer (.exe)
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
-            "/DMyAppVersion=$env:VERSION" `
-            windows\installer.iss
+          $options = @("/DMyAppVersion=$env:VERSION")
+          if ($env:COMMANDS_CHANNEL -eq 'beta') { $options += '/DBetaBuild' }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" @options windows\installer.iss
 
       - name: Zip portable build (no-installer alternative)
         shell: bash
         run: |
-          OUT="CommandS_${VERSION}_windows_portable"
+          PREFIX="CommandS"
+          if [ "$COMMANDS_CHANNEL" = beta ]; then PREFIX="CommandS_Beta"; fi
+          OUT="${PREFIX}_${VERSION}_windows_portable"
           mkdir -p "dist2/$OUT"
           cp -r build/windows/x64/runner/Release/* "dist2/$OUT/"
           cd dist2 && 7z a "${OUT}.zip" "$OUT"
@@ -100,6 +139,7 @@ jobs:
     runs-on: macos-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      COMMANDS_CHANNEL: ${{ needs.version.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
 
@@ -110,14 +150,19 @@ jobs:
       - name: Build Flutter macOS release
         run: |
           flutter pub get
-          flutter build macos --release
+          if [ "$COMMANDS_CHANNEL" = beta ]; then
+            perl -pi -e 's/^PRODUCT_NAME = CommandS$/PRODUCT_NAME = CommandS Beta/; s/^PRODUCT_BUNDLE_IDENTIFIER = com\.commands\.commands$/PRODUCT_BUNDLE_IDENTIFIER = com.commands.commands.beta/' macos/Runner/Configs/AppInfo.xcconfig
+          fi
+          flutter build macos --release --dart-define=COMMANDS_CHANNEL=$COMMANDS_CHANNEL --dart-define=COMMANDS_VERSION=v$VERSION
 
       - name: Zip the .app (ditto keeps the bundle structure intact)
         shell: bash
         run: |
           mkdir -p dist2
           APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app")
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist2/CommandS_${VERSION}_macOS.zip"
+          PREFIX="CommandS"
+          if [ "$COMMANDS_CHANNEL" = beta ]; then PREFIX="CommandS_Beta"; fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist2/${PREFIX}_${VERSION}_macOS.zip"
 
       - name: Attach to the draft release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -133,6 +178,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      COMMANDS_CHANNEL: ${{ needs.version.outputs.channel }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
     steps:
@@ -160,7 +206,9 @@ jobs:
           done
           cat SHA256SUMS.txt
 
-          PREV_TAG=$(git tag --list 'v*.*.*' --sort=-v:refname | grep -v "^${TAG}\$" | head -n1 || true)
+          TAG_FILTER='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          if [ "$COMMANDS_CHANNEL" = beta ]; then TAG_FILTER='^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; fi
+          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -E "$TAG_FILTER" | grep -v "^${TAG}\$" | head -n1 || true)
           if [ -n "$PREV_TAG" ]; then
             # A hand-written list for users (shown in the app's update
             # dialog) when there is one; otherwise the commit subjects.
@@ -176,32 +224,47 @@ jobs:
             CHANGELOG_HEADER="## What's changed"
           fi
 
-          NOTES="CommandS ${VERSION}
+          NAME="CommandS"
+          PREFIX="CommandS"
+          APP="CommandS.app"
+          EXE="commands.exe"
+          MIGRATION_NOTE='2. Upgrading from 1.0.23 or earlier: the app used to install as `commands.app`. Delete that one — saved connections move across by themselves on first launch.'
+          if [ "$COMMANDS_CHANNEL" = beta ]; then
+            NAME="CommandS Beta"; PREFIX="CommandS_Beta"; APP="CommandS Beta.app"; EXE="beta_commands.exe"
+            MIGRATION_NOTE=''
+          fi
+          NOTES="${NAME} ${VERSION}
 
           ${CHANGELOG_HEADER}
           ${CHANGELOG}
 
           ## Windows
           - \`..._Setup.exe\` - installer (no admin rights needed, Start Menu + Desktop shortcuts, proper uninstall). Recommended.
-          - \`..._portable.zip\` - unzip and run commands.exe directly, no install.
+          - \`..._portable.zip\` - unzip and run ${EXE} directly, no install.
 
           ## macOS
-          1. Unzip \`CommandS_${VERSION}_macOS.zip\` and drag the app to **Applications**.
-          2. Upgrading from 1.0.23 or earlier: the app used to install as \`commands.app\`. Delete that one — saved connections move across by themselves on first launch.
+          1. Unzip \`${PREFIX}_${VERSION}_macOS.zip\` and drag the app to **Applications**.
+          ${MIGRATION_NOTE}
           3. Not notarized (no paid Apple Developer account), so macOS quarantines it on first download. Run this once in Terminal:
              \`\`\`
-             xattr -dr com.apple.quarantine /Applications/CommandS.app
+             xattr -dr com.apple.quarantine "/Applications/${APP}"
              \`\`\`
           "
 
           gh release upload "$TAG" SHA256SUMS.txt --clobber
-          gh release edit "$TAG" --title "CommandS $TAG" --notes "$NOTES" --draft=false --latest
+          if [ "$COMMANDS_CHANNEL" = beta ]; then
+            gh release edit "$TAG" --title "CommandS Beta $TAG" --notes "$NOTES" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" --title "CommandS $TAG" --notes "$NOTES" --draft=false --prerelease=false --latest
+          fi
 
       - name: Prune old releases (keep latest 5)
         shell: bash
         run: |
-          gh release list --json tagName,publishedAt,isDraft \
-            --jq '[.[] | select(.isDraft == false)] | sort_by(.publishedAt) | reverse | .[5:] | .[].tagName' \
+          PRERELEASE=false
+          if [ "$COMMANDS_CHANNEL" = beta ]; then PRERELEASE=true; fi
+          gh release list --limit 100 --json tagName,publishedAt,isDraft,isPrerelease \
+            --jq "[.[] | select(.isDraft == false and .isPrerelease == $PRERELEASE)] | sort_by(.publishedAt) | reverse | .[5:] | .[].tagName" \
           | while read -r old; do
               echo "deleting old release $old"
               gh release delete "$old" --yes || true

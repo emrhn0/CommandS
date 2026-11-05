@@ -223,7 +223,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 /// restarting the app to get the prompt again. Lives in the sidebar header and
 /// takes no space at all until there is something to offer.
 class UpdateButton extends StatelessWidget {
-  const UpdateButton({super.key});
+  const UpdateButton({super.key, this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -249,11 +251,13 @@ class UpdateButton extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.system_update_alt, size: 13, color: scheme.onPrimary),
-                    const SizedBox(width: 5),
-                    Text(
-                      tr('Update to {version}', {'version': info.version}),
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onPrimary),
-                    ),
+                    if (!compact) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        tr('Update to {version}', {'version': info.version}),
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onPrimary),
+                      ),
+                    ],
                   ],
                 ),
               ),

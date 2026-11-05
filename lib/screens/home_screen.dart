@@ -38,8 +38,27 @@ class HomeScreen extends StatelessWidget {
                         child: Row(
                           children: [
                             // Only appears once a newer release has been found.
-                            const UpdateButton(),
+                            const UpdateButton(compact: true),
                             const Spacer(),
+                            SizedBox(
+                              height: 26,
+                              child: width < 230
+                                  ? Tooltip(
+                                      message: tr('New Connection'),
+                                      child: ElevatedButton(
+                                        key: const Key('sidebar-new-connection'),
+                                        onPressed: () => showNewConnectionDialog(context),
+                                        child: const Icon(Icons.add, size: 15),
+                                      ),
+                                    )
+                                  : ElevatedButton.icon(
+                                      key: const Key('sidebar-new-connection'),
+                                      onPressed: () => showNewConnectionDialog(context),
+                                      icon: const Icon(Icons.add, size: 15),
+                                      label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),
+                                    ),
+                            ),
+                            const SizedBox(width: 8),
                             // Theme, terminal colours, import/export and
                             // updates all live on the Settings page now,
                             // instead of four unlabelled icons here.
@@ -49,17 +68,6 @@ class HomeScreen extends StatelessWidget {
                               onTap: () => showSettings(context),
                             ),
                           ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-                        child: SizedBox(
-                          height: 30,
-                          child: ElevatedButton.icon(
-                            onPressed: () => showNewConnectionDialog(context),
-                            icon: const Icon(Icons.add, size: 15),
-                            label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),
-                          ),
                         ),
                       ),
                       const Expanded(child: ConnectionTree()),

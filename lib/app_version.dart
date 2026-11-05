@@ -1,5 +1,13 @@
-/// Not read from `pubspec.yaml` -- its version field isn't wired to the
-/// actual vX.Y.Z release tags this app ships under, and there's no runtime
-/// package-info plumbing to read it if it were. Bump by hand alongside the
-/// git tag each release.
-const String appVersion = 'v1.1.25';
+/// CI supplies the release tag. Local builds use the current source version.
+const String appVersion = String.fromEnvironment('COMMANDS_VERSION', defaultValue: 'v1.1.25');
+
+enum ReleaseChannel { stable, beta }
+
+/// Set by the build, independent of the update channel chosen in Settings.
+const String _buildChannel = String.fromEnvironment('COMMANDS_CHANNEL', defaultValue: 'stable');
+const ReleaseChannel buildChannel = _buildChannel == 'beta' ? ReleaseChannel.beta : ReleaseChannel.stable;
+const String appName = buildChannel == ReleaseChannel.beta ? 'CommandS Beta' : 'CommandS';
+const String appDataDirName = buildChannel == ReleaseChannel.beta ? 'CommandS-Beta' : 'CommandS';
+
+ReleaseChannel releaseChannelFromString(String? value) =>
+    value == 'beta' ? ReleaseChannel.beta : ReleaseChannel.stable;

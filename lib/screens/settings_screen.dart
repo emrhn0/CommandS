@@ -856,6 +856,7 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
     });
     final result = await UpdateService.checkNow();
     if (!mounted) return;
+    if (result.info != null && result.info!.channel != context.read<AppState>().updateChannel) return;
     setState(() {
       if (result.failed) {
         _phase = _Phase.failed;
@@ -869,6 +870,16 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
         UpdateService.available.value = result.info;
         _phase = _Phase.available;
       }
+    });
+  }
+
+  Future<void> _chooseChannel(ReleaseChannel channel) async {
+    await context.read<AppState>().setUpdateChannel(channel);
+    UpdateService.available.value = null;
+    if (!mounted) return;
+    setState(() {
+      _phase = _Phase.idle;
+      _info = null;
     });
   }
 
@@ -902,6 +913,23 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Text(tr('Release channel'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final channel in ReleaseChannel.values)
+              ChoiceChip(
+                label: Text(tr(channel == ReleaseChannel.beta ? 'Beta' : 'Stable')),
+                selected: context.watch<AppState>().updateChannel == channel,
+                onSelected: (_) => _chooseChannel(channel),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(tr('Beta installs beside stable and keeps separate settings and connections.'),
+            style: TextStyle(fontSize: 12, color: dim)),
+        const SizedBox(height: 20),
         Row(
           children: [
             Expanded(
@@ -909,7 +937,7 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'CommandS $appVersion',
+                    '$appName $appVersion',
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 3),

@@ -20,6 +20,8 @@ class UpdateService {
   static const _repo = 'CommandS';
   static const _latestUrl =
       'https://api.github.com/repos/$_owner/$_repo/releases/latest';
+  static const _releasesUrl =
+      'https://api.github.com/repos/$_owner/$_repo/releases?per_page=100';
 
   /// GitHub rejects API requests without one.
   static const _userAgent = 'CommandS-Updater';
@@ -50,21 +52,41 @@ class UpdateService {
   /// which one happened.
   static Future<UpdateCheck> checkNow() async {
     try {
-      final release = await _fetchJson(_latestUrl);
-      if (release == null) return const UpdateCheck.failed();
+      final prefs = await SharedPreferences.getInstance();
+      final channel = prefs.getString('commands.update.channel') == null
+          ? buildChannel
+          : releaseChannelFromString(prefs.getString('commands.update.channel'));
+      final releases = channel == ReleaseChannel.beta ? await _fetchReleaseList() : null;
+      if (channel == ReleaseChannel.beta && releases == null) return const UpdateCheck.failed();
+      final release = channel == ReleaseChannel.stable
+          ? await _fetchJson(_latestUrl)
+          : selectRelease(releases, channel);
+      if (release == null) {
+        return channel == ReleaseChannel.beta
+            ? const UpdateCheck.upToDate()
+            : const UpdateCheck.failed();
+      }
 
       final tag = release['tag_name'] as String?;
       if (tag == null || tag.isEmpty) return const UpdateCheck.failed();
-      if (release['draft'] == true || release['prerelease'] == true) {
+      if (!matchesChannel(release, channel)) {
         return const UpdateCheck.upToDate();
       }
-      if (compareVersions(tag, appVersion) <= 0) return const UpdateCheck.upToDate();
+      if (channel == buildChannel && compareVersions(tag, appVersion) <= 0) {
+        return const UpdateCheck.upToDate();
+      }
+      final currentPrefs = await SharedPreferences.getInstance();
+      final currentChannel = currentPrefs.getString('commands.update.channel') == null
+          ? buildChannel
+          : releaseChannelFromString(currentPrefs.getString('commands.update.channel'));
+      if (currentChannel != channel) return const UpdateCheck.upToDate();
 
       final assets = (release['assets'] as List?) ?? const [];
-      final plan = await _plan(assets);
+      final plan = await _plan(assets, tag, channel);
 
       return UpdateCheck.available(UpdateInfo(
         version: tag,
+        channel: channel,
         releaseUrl: release['html_url'] as String? ??
             'https://github.com/$_owner/$_repo/releases/latest',
         notes: (release['body'] as String? ?? '').trim(),
@@ -77,6 +99,30 @@ class UpdateService {
     } catch (_) {
       return const UpdateCheck.failed();
     }
+  }
+
+  /// GitHub's /latest endpoint excludes prereleases. Choose the newest beta
+  /// from the ordinary release list, ignoring drafts and other tag formats.
+  static Map<String, dynamic>? selectRelease(List<dynamic>? releases, ReleaseChannel channel) {
+    if (releases == null) return null;
+    Map<String, dynamic>? newest;
+    for (final raw in releases) {
+      if (raw is! Map<String, dynamic> || !matchesChannel(raw, channel)) continue;
+      if (newest == null || compareVersions(raw['tag_name'] as String, newest['tag_name'] as String) > 0) {
+        newest = raw;
+      }
+    }
+    return newest;
+  }
+
+  static bool matchesChannel(Map<String, dynamic> release, ReleaseChannel channel) {
+    if (release['draft'] == true) return false;
+    final tag = release['tag_name'];
+    if (tag is! String) return false;
+    if (channel == ReleaseChannel.beta) {
+      return release['prerelease'] == true && RegExp(r'^v\d+\.\d+\.\d+-beta\.\d+$').hasMatch(tag);
+    }
+    return release['prerelease'] != true && RegExp(r'^v\d+\.\d+\.\d+$').hasMatch(tag);
   }
 
   /// Whether the user asked not to be prompted about [version].
@@ -115,22 +161,28 @@ class UpdateService {
   ///   installs per-user and relaunches the installed copy.
   /// * macOS: replace the running app, or put the new one in Applications if
   ///   the running one is somewhere it cannot be replaced (see [_macTarget]).
-  static Future<_Plan?> _plan(List<dynamic> assets) async {
-    _Asset? find(String suffix) {
+  static Future<_Plan?> _plan(List<dynamic> assets, String tag, ReleaseChannel channel) async {
+    final prefix = channel == ReleaseChannel.beta ? 'CommandS_Beta_' : 'CommandS_';
+    final version = tag.substring(1);
+    _Asset? find(String ending) {
       for (final raw in assets) {
         if (raw is! Map) continue;
         final name = raw['name'] as String?;
         final url = raw['browser_download_url'] as String?;
         if (name == null || url == null) continue;
-        if (!name.toLowerCase().endsWith(suffix)) continue;
+        if (name != '$prefix$version$ending') continue;
         return _Asset(name, url, (raw['size'] as num?)?.toInt() ?? 0);
       }
       return null;
     }
 
     if (Platform.isWindows) {
-      final installer = find('setup.exe');
-      final portable = find('windows_portable.zip');
+      final installer = find('_windows_Setup.exe');
+      final portable = find('_windows_portable.zip');
+      if (channel != buildChannel && installer != null) {
+        return _Plan(UpdateMethod.windowsInstaller, installer);
+      }
+      if (channel != buildChannel) return null;
       if (installer != null && await _isInstalledCopy()) {
         return _Plan(UpdateMethod.windowsInstaller, installer);
       }
@@ -141,27 +193,25 @@ class UpdateService {
       return null;
     }
     if (Platform.isMacOS) {
-      final app = find('macos.zip');
-      if (app != null && _macTarget() != null) {
+      final app = find('_macOS.zip');
+      if (app != null && _macTarget(channel) != null) {
         return _Plan(UpdateMethod.macApp, app);
       }
     }
     return null;
   }
 
-  /// Compares `vX.Y.Z` strings. Returns >0 when [a] is newer than [b].
+  /// Compares stable and `-beta.N` tags. A beta sorts before its stable tag.
   /// Malformed tags sort below valid versions.
   static int compareVersions(String a, String b) {
     List<int>? parts(String v) {
       final cleaned = v.trim().toLowerCase();
-      final body = cleaned.startsWith('v') ? cleaned.substring(1) : cleaned;
-      // Drop any pre-release/build suffix: only the numeric core is compared.
-      final core = body.split(RegExp(r'[-+]')).first;
-      final segments = core.split('.');
-      if (segments.length != 3) return null;
-      final numbers = segments.map(int.tryParse).toList();
-      if (numbers.any((n) => n == null)) return null;
-      return numbers.cast<int>();
+      final match = RegExp(r'^v?(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$').firstMatch(cleaned);
+      if (match == null) return null;
+      return [
+        for (var i = 1; i <= 4; i++)
+          if (i == 4 && match.group(i) == null) -1 else int.parse(match.group(i)!),
+      ];
     }
 
     final x = parts(a);
@@ -171,7 +221,9 @@ class UpdateService {
     for (var i = 0; i < 3; i++) {
       if (x[i] != y[i]) return x[i] - y[i];
     }
-    return 0;
+    if (x[3] == -1) return y[3] == -1 ? 0 : 1;
+    if (y[3] == -1) return -1;
+    return x[3] - y[3];
   }
 
   static Future<Map<String, dynamic>?> _fetchJson(String url) async {
@@ -179,6 +231,13 @@ class UpdateService {
     if (body == null) return null;
     final decoded = jsonDecode(utf8.decode(body));
     return decoded is Map<String, dynamic> ? decoded : null;
+  }
+
+  static Future<List<dynamic>?> _fetchReleaseList() async {
+    final body = await _fetch(_releasesUrl, accept: 'application/vnd.github+json');
+    if (body == null) return null;
+    final decoded = jsonDecode(utf8.decode(body));
+    return decoded is List<dynamic> ? decoded : null;
   }
 
   /// One redirect-following GET. `dart:io`'s client is used rather than adding
@@ -249,9 +308,9 @@ class UpdateService {
         case UpdateMethod.windowsInstaller:
           return await _handOverWindows(file);
         case UpdateMethod.windowsPortable:
-          return await _handOverWindowsPortable(file, dir);
+          return await _handOverWindowsPortable(file, dir, info.channel);
         case UpdateMethod.macApp:
-          return await _handOverMac(file, dir);
+          return await _handOverMac(file, dir, info.channel);
       }
     } catch (e) {
       return e.toString();
@@ -306,7 +365,7 @@ class UpdateService {
     return null;
   }
 
-  static Future<String?> _handOverWindowsPortable(File zip, Directory work) async {
+  static Future<String?> _handOverWindowsPortable(File zip, Directory work, ReleaseChannel channel) async {
     final target = File(Platform.resolvedExecutable).parent.path;
     final sep = Platform.pathSeparator;
     final extractTo = Directory('${work.path}${sep}extracted');
@@ -320,8 +379,9 @@ class UpdateService {
     if (unzip.exitCode != 0) return 'Could not unpack the update.';
     // The zip holds a single CommandS_<version>_windows_portable folder.
     final folders = extractTo.listSync().whereType<Directory>().toList();
+    final executable = channel == ReleaseChannel.beta ? 'beta_commands.exe' : 'commands.exe';
     if (folders.length != 1 ||
-        !File('${folders.single.path}${sep}commands.exe').existsSync()) {
+        !File('${folders.single.path}$sep$executable').existsSync()) {
       return 'The update does not contain CommandS.';
     }
 
@@ -349,6 +409,7 @@ class UpdateService {
         '-Source', folders.single.path,
         '-Target', target,
         '-Backup', '${work.path}${sep}previous',
+        '-Executable', executable,
       ],
     );
     return null;
@@ -358,7 +419,7 @@ class UpdateService {
   /// relaunches it. The old files are copied aside first and copied back if
   /// replacing them fails part-way, so a failed update leaves a working app.
   static const _windowsPortableScript = r"""
-param([int]$ProcessId, [string]$Source, [string]$Target, [string]$Backup)
+param([int]$ProcessId, [string]$Source, [string]$Target, [string]$Backup, [string]$Executable)
 $ErrorActionPreference = 'Stop'
 try { Wait-Process -Id $ProcessId -Timeout 60 -ErrorAction SilentlyContinue } catch {}
 Start-Sleep -Milliseconds 500
@@ -369,11 +430,11 @@ try {
 } catch {
   try { Copy-Item -Path (Join-Path $Backup '*') -Destination $Target -Recurse -Force } catch {}
 }
-Start-Process -FilePath (Join-Path $Target 'commands.exe')
+Start-Process -FilePath (Join-Path $Target $Executable)
 """;
 
-  static Future<String?> _handOverMac(File zip, Directory work) async {
-    final target = _macTarget();
+  static Future<String?> _handOverMac(File zip, Directory work, ReleaseChannel channel) async {
+    final target = _macTarget(channel);
     if (target == null) return 'There is nowhere this user can install the update.';
 
     final extractTo = Directory('${work.path}/extracted');
@@ -386,7 +447,10 @@ Start-Process -FilePath (Join-Path $Target 'commands.exe')
         .whereType<Directory>()
         .where((d) => d.path.endsWith('.app'))
         .toList();
-    if (fresh.length != 1) return 'The update does not contain an app.';
+    final expectedApp = channel == ReleaseChannel.beta ? 'CommandS Beta.app' : 'CommandS.app';
+    if (fresh.length != 1 || !fresh.single.path.endsWith('/$expectedApp')) {
+      return 'The update does not contain an app.';
+    }
 
     final script = File('${work.path}/swap.sh');
     await script.writeAsString(_macSwapScript);
@@ -435,7 +499,7 @@ rm -rf "$WORK"
   /// read-only App Translocation copy, or it sits in a folder this user
   /// cannot write to -- into /Applications, or ~/Applications for a user who
   /// cannot write there either. Null only if none of those is writable.
-  static String? _macTarget() {
+  static String? _macTarget(ReleaseChannel channel) {
     bool writable(String dir) {
       final probe = File('$dir/.commands_update_probe_$pid');
       try {
@@ -449,19 +513,20 @@ rm -rf "$WORK"
 
     // .../CommandS.app/Contents/MacOS/CommandS
     final bundle = File(Platform.resolvedExecutable).parent.parent.parent;
-    if (bundle.path.endsWith('.app') &&
+    if (channel == buildChannel && bundle.path.endsWith('.app') &&
         !bundle.path.contains('/AppTranslocation/') &&
         writable(bundle.parent.path)) {
       return bundle.path;
     }
-    if (writable('/Applications')) return '/Applications/CommandS.app';
+    final appBundle = channel == ReleaseChannel.beta ? 'CommandS Beta.app' : 'CommandS.app';
+    if (writable('/Applications')) return '/Applications/$appBundle';
     final home = Platform.environment['HOME'];
     if (home != null) {
       final userApps = Directory('$home/Applications');
       try {
         userApps.createSync(recursive: true);
       } catch (_) {}
-      if (writable(userApps.path)) return '${userApps.path}/CommandS.app';
+      if (writable(userApps.path)) return '${userApps.path}/$appBundle';
     }
     return null;
   }
@@ -472,7 +537,9 @@ rm -rf "$WORK"
     try {
       final result = await Process.run('reg', [
         'query',
-        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{4C6F0A1E-7B2A-4E1B-9F0C-3A6D1C2E7B90}_is1',
+        buildChannel == ReleaseChannel.beta
+            ? r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{D94019C4-79D2-4C0C-9C84-61035E49EA02}_is1'
+            : r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{4C6F0A1E-7B2A-4E1B-9F0C-3A6D1C2E7B90}_is1',
         '/v',
         'InstallLocation',
       ]);
@@ -626,6 +693,7 @@ class UpdateCheck {
 class UpdateInfo {
   const UpdateInfo({
     required this.version,
+    this.channel = ReleaseChannel.stable,
     required this.releaseUrl,
     required this.notes,
     required this.assetName,
@@ -637,6 +705,7 @@ class UpdateInfo {
 
   /// The release tag, e.g. `v1.0.26`.
   final String version;
+  final ReleaseChannel channel;
   final String releaseUrl;
 
   /// The release notes, as written on GitHub (Markdown).
