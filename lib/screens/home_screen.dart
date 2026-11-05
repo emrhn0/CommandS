@@ -37,9 +37,6 @@ class HomeScreen extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            // Only appears once a newer release has been found.
-                            const UpdateButton(compact: true),
-                            const Spacer(),
                             SizedBox(
                               height: 26,
                               child: width < 230
@@ -68,6 +65,9 @@ class HomeScreen extends StatelessWidget {
                                       label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),
                                     ),
                             ),
+                            const Spacer(),
+                            // Only appears once a newer release has been found.
+                            const UpdateButton(compact: true),
                             const SizedBox(width: 8),
                             // Theme, terminal colours, import/export and
                             // updates all live on the Settings page now,

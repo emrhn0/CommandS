@@ -30,6 +30,7 @@ void main() {
 
     final button = find.byKey(const Key('sidebar-new-connection'));
     expect(button, findsOneWidget);
+    expect(tester.getTopLeft(button).dx, lessThan(24));
     expect((tester.getCenter(button).dy - tester.getCenter(find.byIcon(Icons.settings_outlined)).dy).abs(),
         lessThan(4));
 
@@ -46,6 +47,8 @@ void main() {
     app.setSidebarWidth(AppState.minSidebarWidth);
     await tester.pump();
     expect(button, findsOneWidget);
+    expect(tester.getTopLeft(button).dx, lessThan(24));
+    expect(tester.takeException(), isNull);
 
     await tester.tap(button);
     await tester.pumpAndSettle();
