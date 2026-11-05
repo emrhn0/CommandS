@@ -31,6 +31,22 @@ class _Row {
   final int depth;
 }
 
+Future<void> _promptName(
+  BuildContext context,
+  String title,
+  String initial,
+  ValueChanged<String> onSubmit,
+) async {
+  final result = await showTextInputDialog(
+    context,
+    title: title,
+    initial: initial,
+    okLabel: initial.isEmpty ? 'Create' : 'Rename',
+    icon: initial.isEmpty ? Icons.create_new_folder_outlined : Icons.edit_outlined,
+  );
+  if (result != null) onSubmit(result);
+}
+
 class ConnectionTree extends StatefulWidget {
   const ConnectionTree({super.key});
 
@@ -358,22 +374,6 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     _hoverExpand?.cancel();
     _flashTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _promptName(
-    BuildContext context,
-    String title,
-    String initial,
-    ValueChanged<String> onSubmit,
-  ) async {
-    final result = await showTextInputDialog(
-      context,
-      title: title,
-      initial: initial,
-      okLabel: initial.isEmpty ? 'Create' : 'Rename',
-      icon: initial.isEmpty ? Icons.create_new_folder_outlined : Icons.edit_outlined,
-    );
-    if (result != null) onSubmit(result);
   }
 
   List<_Row> _visibleRows(AppState app) {
@@ -1145,12 +1145,20 @@ class _FolderRowState extends State<_FolderRow> {
       bold: true,
       menuItems: const [
         MenuAction('new', 'New connection here', Icons.add),
+        MenuAction('newFolder', 'New folder here', Icons.create_new_folder_outlined),
         MenuAction('rename', 'Rename', Icons.edit_outlined),
         MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
       onMenu: (key) async {
         if (key == 'new') {
           showNewConnectionDialog(context, folderId: widget.folder.id);
+        } else if (key == 'newFolder') {
+          await _promptName(
+            context,
+            'New folder',
+            '',
+            (name) => app.addFolder(name, parentId: widget.folder.id),
+          );
         } else if (key == 'rename') {
           final name = await showTextInputDialog(
             context,

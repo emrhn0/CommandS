@@ -58,6 +58,28 @@ void main() {
     expect(app.connections, isEmpty);
   });
 
+  testWidgets('New folder here creates a child of the clicked folder', (tester) async {
+    await pumpTree(tester);
+    final parent = ConnectionFolder(name: 'CUSTOMER-A');
+    app.folders.add(parent);
+    app.notifyListeners();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('CUSTOMER-A'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.text('New folder here'), findsOneWidget);
+
+    await tester.tap(find.text('New folder here'));
+    await tester.pumpAndSettle();
+    expect(find.text('New folder'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, 'DEVICE-01');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Create'));
+    await tester.pumpAndSettle();
+
+    final child = app.folders.singleWhere((folder) => folder.name == 'DEVICE-01');
+    expect(child.parentId, parent.id);
+  });
+
   testWidgets('Rename and Delete folder use the app dialogs', (tester) async {
     await pumpTree(tester);
     await tester.tap(find.text('switch-01'), buttons: kSecondaryMouseButton);
