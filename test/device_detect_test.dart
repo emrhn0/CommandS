@@ -44,6 +44,16 @@ void main() {
       expect(detectDevice(output: 'Microsoft Windows [Version 10.0.20348.2340]\r\n'), DeviceKind.windows);
     });
 
+    test('an HP 5406R switch banner is HPE before the key prompt', () {
+      const banner = 'Please register your products now at: www.hpe.com/networking/register\r\n'
+          'HP J9850A Switch 5406Rzl2\r\n'
+          'Software revision KB.16.11.0029\r\n'
+          '(C) Copyright 2026 Hewlett Packard Enterprise Development LP\r\n'
+          'Press any key to continue';
+      expect(detectDevice(output: banner), DeviceKind.hpe);
+      expect(detectDevice(output: 'Hewlett Packard Enterprise Development LP'), isNull);
+    });
+
     test('a coloured bash prompt is Linux; a bare ESXi prompt is not', () {
       expect(
         detectDevice(output: '\x1B[01;32muser@host\x1B[00m:\x1B[01;34m~\x1B[00m\$ '),
@@ -147,6 +157,8 @@ void main() {
     expect(back.device, DeviceKind.paloalto);
     expect(back.deviceManual, isFalse);
     expect(SavedConnection.fromJson(SavedConnection(name: 'x', host: '192.0.2.1').toJson()).device, isNull);
+    final hpe = SavedConnection(name: 'DEVICE-02', host: '192.0.2.11', device: DeviceKind.hpe);
+    expect(SavedConnection.fromJson(hpe.toJson()).device, DeviceKind.hpe);
   });
 
   testWidgets('the list shows the logo; RDP is always Windows', (tester) async {
@@ -157,6 +169,7 @@ void main() {
       SavedConnection(name: 'DEVICE-01', host: '192.0.2.10', device: DeviceKind.paloalto),
       SavedConnection(name: 'DEVICE-02', host: '192.0.2.11', port: 3389, protocol: ConnectionProtocol.rdp),
       SavedConnection(name: 'DEVICE-03', host: '192.0.2.12'),
+      SavedConnection(name: 'DEVICE-04', host: '192.0.2.13', device: DeviceKind.hpe),
     ]);
     await tester.pumpWidget(ChangeNotifierProvider.value(
       value: app,
@@ -165,6 +178,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('device-paloalto')), findsOneWidget);
     expect(find.byKey(const ValueKey('device-windows')), findsOneWidget);
+    expect(find.byKey(const ValueKey('device-hpe')), findsOneWidget);
     expect(find.byIcon(Icons.terminal), findsOneWidget, reason: 'unknown devices keep the plain icon');
   });
 
@@ -209,10 +223,10 @@ void main() {
     final app = await openEdit(tester, SavedConnection(name: 'DEVICE-01', host: '192.0.2.10'));
     await tester.tap(find.byKey(const ValueKey('device-field')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Huawei').last);
+    await tester.tap(find.text('HPE').last);
     await tester.pumpAndSettle();
     await save(tester);
-    expect(app.connections.single.device, DeviceKind.huawei);
+    expect(app.connections.single.device, DeviceKind.hpe);
     expect(app.connections.single.deviceManual, isTrue);
   });
 

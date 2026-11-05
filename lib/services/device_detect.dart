@@ -36,6 +36,7 @@ final List<(DeviceKind, RegExp)> _rules = [
   (DeviceKind.paloalto, RegExp(r'Number of failed attempts since last successful login|PAN-OS')),
   (DeviceKind.fortinet, RegExp(r'Forti(Gate|OS|Switch|Analyzer|Manager|WiFi)')),
   (DeviceKind.huawei, RegExp(r'The max number of VTY users|Huawei Versatile Routing Platform|Huawei Technologies')),
+  (DeviceKind.hpe, RegExp(r'^[ \t]*(?:HP|HPE) J\d{4}[A-Z] Switch\b', multiLine: true)),
   (DeviceKind.aruba, RegExp(r'ArubaOS|Aruba Networks|HPE Aruba|Aruba Instant|ProCurve')),
   (
     DeviceKind.cisco,
