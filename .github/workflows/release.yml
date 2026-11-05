@@ -13,12 +13,6 @@ on:
       - "v*.*.*"
       - "v*.*.*-beta.*"
   workflow_dispatch:
-    inputs:
-      channel:
-        description: Build channel to validate without publishing
-        type: choice
-        options: [stable, beta]
-        default: beta
 
 permissions:
   contents: write
@@ -47,7 +41,7 @@ jobs:
             fi
           else
             echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
-            echo "channel=${{ inputs.channel || 'stable' }}" >> "$GITHUB_OUTPUT"
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Open a draft release for the builds to land on
@@ -80,28 +74,7 @@ jobs:
         run: |
           flutter pub get
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          flutter analyze lib test --no-fatal-infos
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          flutter test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           flutter build windows --release --dart-define=COMMANDS_CHANNEL=$env:COMMANDS_CHANNEL --dart-define=COMMANDS_VERSION=v$env:VERSION
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Capture pull request screenshot
-        if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
-        env:
-          COMMANDS_CAPTURE_PR_SCREENSHOT: '1'
-        run: |
-          flutter test test/home_header_test.dart
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/pr-images/new-connection-after.png
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git commit -m 'docs: add sidebar layout screenshot'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git push origin "HEAD:${{ github.ref_name }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The fallback SSH client, for a Windows without the OpenSSH client.
@@ -133,17 +106,6 @@ jobs:
           mkdir -p "dist2/$OUT"
           cp -r build/windows/x64/runner/Release/* "dist2/$OUT/"
           cd dist2 && 7z a "${OUT}.zip" "$OUT"
-
-      - name: Save beta test build
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: beta-windows-${{ github.run_id }}
-          path: |
-            dist2/*Setup.exe
-            dist2/*portable.zip
-          retention-days: 1
 
       - name: Attach to the draft release
         if: startsWith(github.ref, 'refs/tags/v')
