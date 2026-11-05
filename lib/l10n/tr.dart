@@ -263,6 +263,7 @@ const turkish = <String, String>{
   'Could not reach GitHub to check for updates. Check the internet connection and try again.': 'Güncellemeleri denetlemek için GitHub’a ulaşılamadı. İnternet bağlantısını kontrol edip tekrar deneyin.',
   "You're up to date — {version} is the latest version.": 'Güncelsiniz — {version} en son sürüm.',
   'CommandS {version} is available': 'CommandS {version} yayında',
+  'CommandS Beta {version} is available': 'CommandS Beta {version} yayında',
   'Update to {version} now?': 'Şimdi {version} sürümüne güncellensin mi?',
   'Update to {version}': '{version} sürümüne güncelle',
   'Yes, update': 'Evet, güncelle',

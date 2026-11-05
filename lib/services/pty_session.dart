@@ -645,7 +645,7 @@ class PtySessionController implements TerminalSessionController {
     _attachPty(generation, cleanUpEarly: true);
   }
 
-  static const _utf8SessionName = 'CommandS-UTF8';
+  static const _utf8SessionName = buildChannel == ReleaseChannel.beta ? 'CommandS-Beta-UTF8' : 'CommandS-UTF8';
   static bool? _utf8SessionReady;
 
   /// A PuTTY saved session pinned to UTF-8, so `-load` can pull it in;
@@ -655,7 +655,7 @@ class PtySessionController implements TerminalSessionController {
     try {
       final result = await Process.run('reg', [
         'add',
-        r'HKCU\Software\SimonTatham\PuTTY\Sessions\CommandS-UTF8',
+        'HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\$_utf8SessionName',
         '/v',
         'LineCodePage',
         '/t',
@@ -666,7 +666,7 @@ class PtySessionController implements TerminalSessionController {
       ]);
       await Process.run('reg', [
         'add',
-        r'HKCU\Software\SimonTatham\PuTTY\Sessions\CommandS-UTF8',
+        'HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\$_utf8SessionName',
         '/v',
         'Protocol',
         '/t',

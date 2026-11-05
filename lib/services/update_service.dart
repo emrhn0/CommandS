@@ -88,7 +88,7 @@ class UpdateService {
         version: tag,
         channel: channel,
         releaseUrl: release['html_url'] as String? ??
-            'https://github.com/$_owner/$_repo/releases/latest',
+            'https://github.com/$_owner/$_repo/releases/tag/$tag',
         notes: (release['body'] as String? ?? '').trim(),
         assetName: plan?.asset.name,
         assetUrl: plan?.asset.url,

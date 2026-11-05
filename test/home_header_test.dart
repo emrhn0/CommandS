@@ -26,10 +26,11 @@ void main() {
     addTearDown(() => UpdateService.available.value = null);
 
     final captureKey = GlobalKey();
+    late AppState app;
     await tester.pumpWidget(RepaintBoundary(
       key: captureKey,
       child: ChangeNotifierProvider(
-        create: (_) => AppState(),
+        create: (_) => app = AppState(),
         child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
       ),
     ));
@@ -51,6 +52,20 @@ void main() {
       final bytes = await cropped.toByteData(format: ui.ImageByteFormat.png);
       await File('docs/pr-images/new-connection-after.png').writeAsBytes(bytes!.buffer.asUint8List());
     }
+
+    UpdateService.available.value = const UpdateInfo(
+      version: 'v9.9.9',
+      releaseUrl: 'https://example.invalid',
+      notes: '',
+      assetName: null,
+      assetUrl: null,
+      assetSize: 0,
+      checksumsUrl: null,
+      method: null,
+    );
+    app.setSidebarWidth(AppState.minSidebarWidth);
+    await tester.pump();
+    expect(button, findsOneWidget);
 
     await tester.tap(button);
     await tester.pumpAndSettle();

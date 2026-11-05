@@ -47,12 +47,22 @@ class HomeScreen extends StatelessWidget {
                                       message: tr('New Connection'),
                                       child: ElevatedButton(
                                         key: const Key('sidebar-new-connection'),
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                                          minimumSize: const Size(0, 26),
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
                                         onPressed: () => showNewConnectionDialog(context),
                                         child: const Icon(Icons.add, size: 15),
                                       ),
                                     )
                                   : ElevatedButton.icon(
                                       key: const Key('sidebar-new-connection'),
+                                      style: ElevatedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                                        minimumSize: const Size(0, 26),
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      ),
                                       onPressed: () => showNewConnectionDialog(context),
                                       icon: const Icon(Icons.add, size: 15),
                                       label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),

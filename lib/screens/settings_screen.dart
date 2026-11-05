@@ -1006,7 +1006,9 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      tr('CommandS {version} is available', {'version': info.version}),
+                      tr(info.channel == ReleaseChannel.beta
+                          ? 'CommandS Beta {version} is available'
+                          : 'CommandS {version} is available', {'version': info.version}),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                     ),
                   ),
