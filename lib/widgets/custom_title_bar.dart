@@ -55,34 +55,47 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isMac = Platform.isMacOS;
+    // The name sits in the middle of the window whatever its size, over the
+    // drag area rather than in it, so the caption buttons do not push it off
+    // centre. It lets the pointer through, so the whole bar still drags.
+    final title = IgnorePointer(
+      child: Center(
+        child: Row(
+          key: const ValueKey('title-bar-name'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AppMark(size: 16),
+            const SizedBox(width: 7),
+            Text(
+              appName,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+                color: isDark ? AppColors.darkText : AppColors.lightText,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
     return Container(
       height: kTitleBarHeight,
       color: isDark ? AppColors.darkBg : AppColors.lightPanel,
-      child: Row(
+      child: Stack(
         children: [
-          Expanded(
-            child: DragToMoveArea(
-              child: SizedBox(
-                height: double.infinity,
-                child: Row(
-                  children: [
-                    // Clear of the traffic lights on macOS.
-                    SizedBox(width: isMac ? 78 : 10),
-                    const AppMark(size: 16),
-                    const SizedBox(width: 7),
-                    Text(
-                      appName,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3,
-                        color: isDark ? AppColors.darkText : AppColors.lightText,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          _buttons(isMac),
+          Positioned.fill(child: title),
+        ],
+      ),
+    );
+  }
+
+  Widget _buttons(bool isMac) {
+    return Row(
+        children: [
+          const Expanded(
+            child: DragToMoveArea(child: SizedBox(height: double.infinity)),
           ),
           if (!isMac) ...[
             _CaptionButton(
@@ -111,7 +124,6 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
             ),
           ],
         ],
-      ),
     );
   }
 }
