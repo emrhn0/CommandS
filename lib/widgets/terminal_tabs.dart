@@ -453,6 +453,7 @@ class _TabChipState extends State<_TabChip> {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       constraints: BoxConstraints(minWidth: widget.nested ? 90 : 120, maxWidth: widget.nested ? 170 : 200),
+      height: 36,
       margin: const EdgeInsets.only(right: 2),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
