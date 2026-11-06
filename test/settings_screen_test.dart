@@ -1,3 +1,4 @@
+import 'package:commands/app_version.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/settings_screen.dart';
 import 'package:commands/theme/app_theme.dart';
@@ -84,6 +85,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.themeMode, ThemeMode.dark);
     expect(prefs.getString('commands.themeMode'), 'dark');
+  });
+
+  testWidgets('release channel choice is saved', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late AppState app;
+    await tester.pumpWidget(ChangeNotifierProvider(
+      create: (_) => app = AppState(),
+      child: const MaterialApp(home: SettingsScreen()),
+    ));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Beta'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Beta'));
+    await tester.pumpAndSettle();
+
+    expect(app.updateChannel, ReleaseChannel.beta);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('commands.update.channel'), 'beta');
   });
 
   testWidgets('quick connect defaults to Serial with a fixed COM; SSH and RDP drop it', (tester) async {

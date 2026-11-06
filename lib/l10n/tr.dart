@@ -253,12 +253,18 @@ const turkish = <String, String>{
   'Use #RRGGBB, #RGB or rgb(r, g, b)': '#RRGGBB, #RGB veya rgb(r, g, b) kullanın',
 
   // ---- Updates ----
+  'Release channel': 'Sürüm kanalı',
+  'Stable': 'Kararlı',
+  'Beta': 'Beta',
+  'Beta installs beside stable and keeps separate settings and connections.':
+      'Beta, kararlı sürümün yanına kurulur ve ayarları ile bağlantıları ayrı tutar.',
   'Installed version': 'Yüklü sürüm',
   'Check for updates': 'Güncellemeleri denetle',
   'Checking for updates…': 'Güncellemeler denetleniyor…',
   'Could not reach GitHub to check for updates. Check the internet connection and try again.': 'Güncellemeleri denetlemek için GitHub’a ulaşılamadı. İnternet bağlantısını kontrol edip tekrar deneyin.',
   "You're up to date — {version} is the latest version.": 'Güncelsiniz — {version} en son sürüm.',
   'CommandS {version} is available': 'CommandS {version} yayında',
+  'CommandS Beta {version} is available': 'CommandS Beta {version} yayında',
   'Update to {version} now?': 'Şimdi {version} sürümüne güncellensin mi?',
   'Update to {version}': '{version} sürümüne güncelle',
   'Yes, update': 'Evet, güncelle',

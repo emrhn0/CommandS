@@ -92,6 +92,12 @@ Push a `vX.Y.Z` tag to trigger `.github/workflows/release.yml`, which builds
 Windows (installer + portable zip, `plink.exe` bundled) and macOS (zipped
 .app) and publishes a GitHub Release.
 
+A `vX.Y.Z-beta.N` tag publishes a prerelease. CommandS Beta installs beside
+stable with separate connections, settings, SSH host keys, and password vault.
+Its Windows executable is `beta_commands.exe`. Choose **Stable** or **Beta**
+under Settings > Updates to check that channel; switching channels installs
+the other app beside the current one.
+
 ```
 git tag v0.1.0
 git push origin v0.1.0

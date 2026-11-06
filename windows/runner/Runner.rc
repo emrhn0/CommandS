@@ -72,6 +72,16 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 #define VERSION_AS_STRING "1.0.0"
 #endif
 
+#ifdef COMMANDS_BETA
+#define APP_COMPANY "com.commands.beta"
+#define APP_PRODUCT "commands-beta"
+#define APP_EXE "beta_commands.exe"
+#else
+#define APP_COMPANY "com.commands"
+#define APP_PRODUCT "commands"
+#define APP_EXE "commands.exe"
+#endif
+
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION VERSION_AS_NUMBER
  PRODUCTVERSION VERSION_AS_NUMBER
@@ -89,13 +99,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.commands" "\0"
-            VALUE "FileDescription", "commands" "\0"
+            VALUE "CompanyName", APP_COMPANY "\0"
+            VALUE "FileDescription", APP_PRODUCT "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "commands" "\0"
+            VALUE "InternalName", APP_PRODUCT "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.commands. All rights reserved." "\0"
-            VALUE "OriginalFilename", "commands.exe" "\0"
-            VALUE "ProductName", "commands" "\0"
+            VALUE "OriginalFilename", APP_EXE "\0"
+            VALUE "ProductName", APP_PRODUCT "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

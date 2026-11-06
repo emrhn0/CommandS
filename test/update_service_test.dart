@@ -1,3 +1,4 @@
+import 'package:commands/app_version.dart';
 import 'package:commands/services/update_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -25,6 +26,30 @@ void main() {
       expect(UpdateService.compareVersions('garbage', 'v1.0.0'), lessThan(0));
       expect(UpdateService.compareVersions('v9.bad.0', 'v1.0.0'), lessThan(0));
     });
+
+    test('orders beta builds before stable and by beta number', () {
+      expect(UpdateService.compareVersions('v1.2.0-beta.2', 'v1.2.0-beta.1'), greaterThan(0));
+      expect(UpdateService.compareVersions('v1.2.0-beta.2', 'v1.2.0'), lessThan(0));
+      expect(UpdateService.compareVersions('v1.2.0', 'v1.2.0-beta.2'), greaterThan(0));
+    });
+  });
+
+  test('selects newest published beta and rejects stable releases', () {
+    Map<String, dynamic> release(String tag, {bool prerelease = true, bool draft = false}) => {
+          'tag_name': tag,
+          'prerelease': prerelease,
+          'draft': draft,
+        };
+    final releases = [
+      release('v1.3.0', prerelease: false),
+      release('v1.4.0-beta.1', draft: true),
+      release('v1.2.0-beta.2'),
+      release('v1.2.0-beta.1'),
+      release('v1.9.0-rc.1'),
+    ];
+    expect(UpdateService.selectRelease(releases, ReleaseChannel.beta)?['tag_name'], 'v1.2.0-beta.2');
+    expect(UpdateService.selectRelease(releases, ReleaseChannel.stable)?['tag_name'], 'v1.3.0');
+    expect(UpdateService.matchesChannel(release('v1.4.0-beta.1'), ReleaseChannel.stable), isFalse);
   });
 
   group('plainNotes', () {

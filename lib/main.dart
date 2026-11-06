@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'providers/app_state.dart';
+import 'app_version.dart';
 import 'screens/home_screen.dart';
 import 'services/rdp_session.dart';
 import 'theme/app_theme.dart';
@@ -16,7 +17,7 @@ void main() async {
     const WindowOptions(
       size: Size(1280, 800),
       minimumSize: Size(900, 600),
-      title: 'CommandS',
+      title: appName,
       // Replaced by CustomTitleBar — the native caption only showed the OS
       // accent color (orange here) behind plain system buttons, nothing
       // like the rest of the app.
@@ -53,7 +54,7 @@ class CommandSApp extends StatelessWidget {
       create: (_) => AppState(),
       child: Consumer<AppState>(
         builder: (context, app, _) => MaterialApp(
-          title: 'CommandS',
+          title: appName,
           debugShowCheckedModeBanner: false,
           themeMode: app.themeMode,
           theme: AppTheme.light(),

@@ -105,11 +105,15 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
             padding: const EdgeInsets.only(bottom: 4, left: 2),
             child: Row(
               children: [
-                Text(
-                  trCount(app.connections.length, '{n} connection', '{n} connections'),
-                  style: TextStyle(fontSize: 10, color: theme.textTheme.bodySmall?.color),
+                Expanded(
+                  child: Text(
+                    trCount(app.connections.length, '{n} connection', '{n} connections'),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(fontSize: 10, color: theme.textTheme.bodySmall?.color),
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Text(
                   appVersion,
                   style: TextStyle(

@@ -5,6 +5,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
+import '../app_version.dart';
 import '../l10n/strings.dart';
 
 const double kTitleBarHeight = 32;
@@ -70,7 +71,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
                     const AppMark(size: 16),
                     const SizedBox(width: 7),
                     Text(
-                      'CommandS',
+                      appName,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
