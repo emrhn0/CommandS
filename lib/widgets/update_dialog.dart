@@ -221,6 +221,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   }
 }
 
+/// The update button's fill, the same green as a connected session's dot.
+const updateGreen = Color(0xFF2EB85C);
+
 /// The way back to an update after "Remind me later" (or "Skip"), without
 /// restarting the app to get the prompt again. Lives in the sidebar header and
 /// takes no space at all until there is something to offer.
@@ -235,7 +238,6 @@ class UpdateButton extends StatelessWidget {
       valueListenable: UpdateService.available,
       builder: (context, info, _) {
         if (info == null) return const SizedBox.shrink();
-        final scheme = Theme.of(context).colorScheme;
         return Tooltip(
           message: tr(info.channel == ReleaseChannel.beta
               ? 'CommandS Beta {version} is available'
@@ -243,8 +245,10 @@ class UpdateButton extends StatelessWidget {
           child: Material(
             // Filled, unlike everything else in the header: it is the one
             // control there that is not always present, and it should be
-            // noticed the first time it is.
-            color: scheme.primary,
+            // noticed the first time it is. Green in either theme, the
+            // colour of "go" rather than the theme's own.
+            key: const ValueKey('update-button'),
+            color: updateGreen,
             borderRadius: BorderRadius.circular(4),
             child: InkWell(
               borderRadius: BorderRadius.circular(4),
@@ -254,12 +258,12 @@ class UpdateButton extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.system_update_alt, size: 13, color: scheme.onPrimary),
+                    Icon(Icons.system_update_alt, size: 13, color: Colors.white),
                     if (!compact) ...[
                       const SizedBox(width: 5),
                       Text(
                         tr('Update to {version}', {'version': info.version}),
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onPrimary),
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
                       ),
                     ],
                   ],

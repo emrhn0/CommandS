@@ -113,4 +113,17 @@ void main() {
     expect(prompt, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
+
+  for (final dark in [false, true]) {
+    testWidgets('the update button is green in the ${dark ? 'dark' : 'light'} theme', (tester) async {
+      UpdateService.available.value = _release;
+      addTearDown(() => UpdateService.available.value = null);
+      await tester.pumpWidget(MaterialApp(
+        theme: dark ? ThemeData.dark() : ThemeData.light(),
+        home: const Scaffold(body: Center(child: UpdateButton(compact: true))),
+      ));
+      final material = tester.widget<Material>(find.byKey(const ValueKey('update-button')));
+      expect(material.color, updateGreen);
+    });
+  }
 }

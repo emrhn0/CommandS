@@ -51,7 +51,7 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             if [[ "$TAG" == *-beta.* ]]; then
-              gh release create "$TAG" --draft --prerelease --title "CommandS Beta $TAG" --notes "Building..."
+              gh release create "$TAG" --draft --prerelease --title "CommandS $TAG" --notes "Building..."
             else
               gh release create "$TAG" --draft --title "CommandS $TAG" --notes "Building..."
             fi
@@ -234,7 +234,7 @@ jobs:
 
           gh release upload "$TAG" SHA256SUMS.txt --clobber
           if [ "$COMMANDS_CHANNEL" = beta ]; then
-            gh release edit "$TAG" --title "CommandS Beta $TAG" --notes "$NOTES" --draft=false --prerelease --latest=false
+            gh release edit "$TAG" --title "CommandS $TAG" --notes "$NOTES" --draft=false --prerelease --latest=false
           else
             gh release edit "$TAG" --title "CommandS $TAG" --notes "$NOTES" --draft=false --prerelease=false --latest
           fi
