@@ -43,6 +43,7 @@ const turkish = <String, String>{
   'Automatic ({device})': 'Otomatik ({device})',
   'selected': 'seçili',
   'New connection here': 'Buraya yeni bağlantı',
+  'New folder here': 'Buraya yeni klasör',
   'Delete folder': 'Klasörü sil',
   'Edit…': 'Düzenle…',
   'Clone': 'Kopyala',
