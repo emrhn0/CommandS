@@ -38,6 +38,14 @@ final List<(DeviceKind, RegExp)> _rules = [
   (DeviceKind.huawei, RegExp(r'The max number of VTY users|Huawei Versatile Routing Platform|Huawei Technologies')),
   (DeviceKind.aruba, RegExp(r'ArubaOS|Aruba Networks|HPE Aruba|Aruba Instant|ProCurve')),
   (
+    DeviceKind.hpe,
+    RegExp(
+      r'^[ \t]*(?:HP|HPE) J\d{4}[A-Z] Switch\b'
+      r'|https?://networkingsupport\.hpe\.com\b',
+      multiLine: true,
+    ),
+  ),
+  (
     DeviceKind.cisco,
     RegExp(
       r'Cisco (IOS|Nexus|Systems|Adaptive Security|Catalyst|Small Business|Business|Sx\d+)'
