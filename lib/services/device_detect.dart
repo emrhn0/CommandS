@@ -53,6 +53,11 @@ final List<(DeviceKind, RegExp)> _rules = [
       // identification line that is not their own. What they print once in
       // use still gives them away, as the session's output is read.
       r'|\bIOS[- ]XE\b|\bNX-OS\b|\bWS-C\d{4}'
+      // Model numbers of Cisco's switch families, and the PID/VID/SN lines
+      // that only Cisco's `show inventory` prints.
+      r'|\bCBS\d{3}(?:-\w+)?\b|\bC9[2-6]00[A-Z]*-|\bC1000[A-Z]*-|\bS[GF]\d{3}[A-Z]*-\d{2}|\bIE-\d{4}'
+      r'|\bCisco SFP\b'
+      r'|^\s*PID: \S+\s*,?\s+VID: \S+'
       r'|^Building configuration\.\.\.'
       r'|^Current configuration ?: ?\d+ bytes'
       r"|^% Invalid input detected at '\^' marker"

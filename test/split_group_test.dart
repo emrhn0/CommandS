@@ -134,9 +134,10 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 100));
 
-    // One tab for the split and one for the new session -- not four.
+    // One tab for the split, a small one per session in it (so a session can
+    // be dragged back out), and one for the new session.
     expect(find.text('Split View'), findsNWidgets(2), reason: 'the split tab and the Split View button');
-    expect(find.text('192.0.2.71'), findsNothing);
+    expect(find.text('192.0.2.71'), findsOneWidget);
     expect(find.text('192.0.2.74'), findsOneWidget);
     expect(app.activeGroupId, isNull);
 

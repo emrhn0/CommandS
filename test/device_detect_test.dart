@@ -115,6 +115,16 @@ void main() {
     });
   });
 
+  test('a Cisco Business switch is known from show inventory', () {
+    const inventory = 'switch-01#show inventory\r\n\r\n'
+        'NAME: "1"   DESCR: "CBS350-24XS 24-Port 10G SFP+ Stackable Managed Switch"\r\n'
+        'PID: CBS350-24XS   VID: V02   SN: <SERIAL>\r\n';
+    expect(detectDevice(output: inventory), DeviceKind.cisco);
+    expect(detectDevice(output: 'PID: WS-C2960X-48FPD-L , VID: V05  , SN: <SERIAL>\r\n'), DeviceKind.cisco);
+    expect(detectDevice(output: ' DESCR: "Cisco SFP-10GBase-SR"\r\n'), DeviceKind.cisco);
+    expect(detectDevice(output: 'Model: C9200L-24P-4G\r\n'), DeviceKind.cisco);
+  });
+
   test('a Huawei interface config is not taken for a Cisco', () {
     const huawei = 'interface GigabitEthernet0/0/1\r\n port default vlan 40\r\n';
     expect(detectDevice(output: huawei), isNot(DeviceKind.cisco));

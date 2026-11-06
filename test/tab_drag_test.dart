@@ -81,6 +81,31 @@ void main() {
       expect(tabIdsInLayout(app.paneLayout), hasLength(4));
     });
 
+    test('the tab on screen dropped on its own pane splits it with its neighbour', () {
+      expect(app.canDropTabBeside('1', '1'), isTrue);
+      app.dropTabBeside('1', '1', PaneSide.right);
+      expect(tabIdsInLayoutOrdered(app.paneLayout), ['2', '1']);
+      expect(app.groups, hasLength(1));
+    });
+
+    test('a session already in the split moves to its new place', () {
+      app.dropTabBeside('2', '1', PaneSide.right);
+      app.dropTabBeside('1', '2', PaneSide.right);
+      expect(tabIdsInLayoutOrdered(app.paneLayout), ['2', '1']);
+      expect(app.groups.single.tabIds.toSet(), {'1', '2'});
+    });
+
+    test('taken out of a split, a session is a tab again and the rest stays', () {
+      app.dropTabInPreset('3', SplitPreset.threeColumns, 0);
+      expect(tabIdsInLayout(app.paneLayout), {'1', '2', '3'});
+      app.takeOutOfSplit('3');
+      expect(app.groupOf('3'), isNull);
+      expect(tabIdsInLayout(app.paneLayout), {'1', '2'});
+      app.takeOutOfSplit('2');
+      expect(app.groups, isEmpty, reason: 'one session is not a split');
+      expect(tabIdsInLayout(app.paneLayout), {'1'});
+    });
+
     test('a layout from the picker places the tab and fills the rest', () {
       app.dropTabInPreset('3', SplitPreset.sideBySide, 1);
       expect(tabIdsInLayoutOrdered(app.paneLayout), ['1', '3']);
@@ -152,6 +177,38 @@ void main() {
       await drop(tester, await lift(tester, tester.getCenter(find.text('TAB-3')), to));
       expect(app.tabs.map((t) => t.id), ['3', '1', '2']);
       expect(app.draggingTabId, isNull);
+      await cleanUp(tester);
+    });
+
+    testWidgets('the tab on screen can be dragged onto its own pane', (tester) async {
+      await pumpTabs(tester);
+      await drop(tester, await lift(tester, tester.getCenter(find.text('TAB-1')), const Offset(960, 300)));
+      expect(tabIdsInLayoutOrdered(app.paneLayout), ['2', '1']);
+      await cleanUp(tester);
+    });
+
+    testWidgets('a session of a split has its own chip; dragged to the strip, it leaves the split', (tester) async {
+      await pumpTabs(tester);
+      app.dropTabInPreset('3', SplitPreset.threeColumns, 2);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('TAB-3'), findsOneWidget, reason: 'its own chip');
+      final end = tester.getTopRight(find.byKey(const ValueKey('separate-split'))).translate(-150, 0);
+      final g = await lift(tester, tester.getCenter(find.text('TAB-3')), Offset(end.dx - 60, 18));
+      await drop(tester, g);
+      expect(app.groupOf('3'), isNull);
+      expect(tabIdsInLayout(app.paneLayout), {'1', '2'});
+      await cleanUp(tester);
+    });
+
+    testWidgets('Separate puts every session of the split back in its own tab', (tester) async {
+      await pumpTabs(tester);
+      expect(find.byKey(const ValueKey('separate-split')), findsNothing);
+      app.dropTabInPreset('3', SplitPreset.threeColumns, 2);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.byKey(const ValueKey('separate-split')));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(app.groups, isEmpty);
+      expect(find.byKey(const ValueKey('separate-split')), findsNothing);
       await cleanUp(tester);
     });
 

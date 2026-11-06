@@ -114,9 +114,27 @@ class _TabBarRow extends StatelessWidget {
             onMenu: (at) => _showGroupMenu(context, app, group, at),
           ),
         );
+        // Each session of the split too, so one can be dragged back out.
+        for (final m in members) {
+          final index = app.tabs.indexOf(m);
+          chips.add(
+            _TabChip(
+              key: ValueKey('member-${m.id}'),
+              tabIds: [m.id],
+              isGroup: false,
+              nested: true,
+              title: _tabTitle(m),
+              active: app.activeGroupId == group.id,
+              icon: _tabIcon(m),
+              status: m.controller.status,
+              onTap: () => app.activateGroup(group.id),
+              onClose: () => app.closeTab(index),
+              onMenu: (at) => _showTabMenu(context, app, m, at),
+            ),
+          );
+        }
         continue;
       }
-      final isRdp = tab.controller is RdpSessionController || tab.controller is MacRdpSessionController;
       chips.add(
         _TabChip(
           key: ValueKey('tab-${tab.id}'),
@@ -126,11 +144,7 @@ class _TabBarRow extends StatelessWidget {
           active:
               app.activeGroupId == null &&
               (visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex)),
-          icon: isRdp
-              ? Icons.desktop_windows_outlined
-              : tab.controller is SerialSessionController
-              ? Icons.cable
-              : Icons.terminal,
+          icon: _tabIcon(tab),
           status: tab.controller.status,
           onTap: () => app.setActiveTab(i),
           onClose: () => app.closeTab(i),
@@ -151,10 +165,11 @@ class _TabBarRow extends StatelessWidget {
           Expanded(
             // Behind the chips, the rest of the strip: a drop there goes last.
             child: DragTarget<_TabDrag>(
-              onAcceptWithDetails: (d) => app.moveTabs(d.data.tabIds, null),
+              onAcceptWithDetails: (d) => _moveInStrip(app, d.data, null),
               builder: (context, _, _) => ListView(scrollDirection: Axis.horizontal, children: chips),
             ),
           ),
+          if (app.activeGroupId != null) _SeparateButton(groupId: app.activeGroupId!),
           _SplitViewButton(active: app.activeGroupId != null, enabled: app.tabs.length > 1),
         ],
       ),
@@ -163,6 +178,50 @@ class _TabBarRow extends StatelessWidget {
 }
 
 String _tabTitle(OpenTab tab) => tab.controller.tabTitle ?? tab.controller.host;
+
+IconData _tabIcon(OpenTab tab) {
+  final c = tab.controller;
+  if (c is RdpSessionController || c is MacRdpSessionController) return Icons.desktop_windows_outlined;
+  if (c is SerialSessionController) return Icons.cable;
+  return Icons.terminal;
+}
+
+/// A tab dropped on the strip goes to that place. A session dragged out of a
+/// split leaves the split first; a split's own chip moves it whole.
+void _moveInStrip(AppState app, _TabDrag drag, String? beforeTabId) {
+  if (!drag.isGroup) {
+    for (final id in drag.tabIds) {
+      app.takeOutOfSplit(id);
+    }
+  }
+  app.moveTabs(drag.tabIds, beforeTabId);
+}
+
+/// Next to Split view while a split is on screen: back to separate tabs.
+class _SeparateButton extends StatelessWidget {
+  const _SeparateButton({required this.groupId});
+  final String groupId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tr('Separate into tabs'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: TextButton.icon(
+          key: const ValueKey('separate-split'),
+          onPressed: () => context.read<AppState>().ungroup(groupId),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            visualDensity: VisualDensity.compact,
+          ),
+          icon: const Icon(Icons.call_split, size: 16),
+          label: Text(tr('Separate'), style: const TextStyle(fontSize: 12)),
+        ),
+      ),
+    );
+  }
+}
 
 /// A split's dot: green only when every session in it is up.
 SessionStatus _groupStatus(List<OpenTab> members) {
@@ -340,7 +399,11 @@ class _TabChip extends StatefulWidget {
     required this.onClose,
     required this.onMenu,
     this.tooltip,
+    this.nested = false,
   });
+
+  /// A session inside a split, drawn under the split's own chip.
+  final bool nested;
 
   /// The sessions behind this chip, in tab order.
   final List<String> tabIds;
@@ -389,12 +452,21 @@ class _TabChipState extends State<_TabChip> {
   Widget _chip(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      constraints: const BoxConstraints(minWidth: 120, maxWidth: 200),
+      constraints: BoxConstraints(minWidth: widget.nested ? 90 : 120, maxWidth: widget.nested ? 170 : 200),
       margin: const EdgeInsets.only(right: 2),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: widget.active ? scheme.surface : Colors.transparent,
-        border: Border(bottom: BorderSide(color: widget.active ? scheme.primary : Colors.transparent, width: 2)),
+        color: widget.nested
+            ? scheme.primary.withValues(alpha: widget.active ? 0.08 : 0.04)
+            : widget.active
+            ? scheme.surface
+            : Colors.transparent,
+        border: Border(
+          bottom: BorderSide(
+            color: widget.active ? scheme.primary.withValues(alpha: widget.nested ? 0.5 : 1) : Colors.transparent,
+            width: 2,
+          ),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.max,
@@ -460,7 +532,7 @@ class _TabChipState extends State<_TabChip> {
       before = ids.skip(lastHere + 1).where((id) => !d.data.tabIds.contains(id)).firstOrNull;
     }
     _setDropAfter(null);
-    app.moveTabs(d.data.tabIds, before);
+    _moveInStrip(app, d.data, before);
   }
 
   @override
@@ -1147,7 +1219,7 @@ class TerminalViewport extends StatelessWidget {
   final Color background;
   final Widget child;
 
-  static const double margin = 6;
+  static const double margin = 2;
 
   /// The line height xterm itself uses: one laid-out line of the terminal's
   /// font, measured the way its painter measures it.

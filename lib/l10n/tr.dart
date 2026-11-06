@@ -114,6 +114,7 @@ const turkish = <String, String>{
   'Split View': 'Bölünmüş Görünüm',
   'Edit split view…': 'Bölünmüş görünümü düzenle…',
   'Separate into tabs': 'Ayrı sekmelere böl',
+  'Separate': 'Ayır',
   'Close all sessions': 'Tüm oturumları kapat',
   'Open a second tab to split the view': 'Görünümü bölmek için ikinci bir sekme açın',
   'Save connection…': 'Bağlantıyı kaydet…',
