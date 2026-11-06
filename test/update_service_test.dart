@@ -1,6 +1,7 @@
 import 'package:commands/app_version.dart';
 import 'package:commands/services/update_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 UpdateInfo _info(String notes) => UpdateInfo(
       version: 'v9.9.9',
@@ -14,6 +15,43 @@ UpdateInfo _info(String notes) => UpdateInfo(
     );
 
 void main() {
+  group('the automatic check, with the beta channel picked in Settings', () {
+    Map<String, dynamic> release(String tag, {bool prerelease = false}) => {
+      'tag_name': tag,
+      'prerelease': prerelease,
+      'draft': false,
+      'assets': const [],
+    };
+    late Map<String, dynamic>? latest;
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({'commands.update.channel': 'beta'});
+      UpdateService.fetchReleaseList = () async => [release('v99.0.0-beta.1', prerelease: true)];
+      UpdateService.fetchLatest = () async => latest;
+    });
+    tearDown(() {
+      UpdateService.fetchLatest = () async => null;
+      UpdateService.fetchReleaseList = () async => null;
+    });
+
+    test('offers only a newer normal release', () async {
+      latest = release('v98.0.0');
+      expect((await UpdateService.check())?.version, 'v98.0.0');
+    });
+
+    test('says nothing about a beta when no normal release is newer', () async {
+      latest = release('v0.0.1');
+      expect(await UpdateService.check(), isNull);
+    });
+
+    test('Settings still finds the beta when asked', () async {
+      latest = release('v0.0.1');
+      final found = await UpdateService.checkNow();
+      expect(found.info?.version, 'v99.0.0-beta.1');
+      expect(found.info?.channel, ReleaseChannel.beta);
+    });
+  });
+
   group('compareVersions', () {
     test('orders by each numeric part', () {
       expect(UpdateService.compareVersions('v1.1.3', 'v1.1.2'), greaterThan(0));

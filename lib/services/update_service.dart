@@ -45,21 +45,24 @@ class UpdateService {
   /// cooperate: a failed update check is never worth interrupting someone
   /// over, so every failure here is silent. A version the user chose to skip
   /// is still returned; whether to prompt about it is [isSkipped]'s question.
-  static Future<UpdateInfo?> check() async => (await checkNow()).info;
+  ///
+  /// Only this app's own channel: the normal app offers normal releases on
+  /// its own, and a beta only when asked for one from Settings. With the beta
+  /// channel picked, the hourly check used to keep offering a beta that was
+  /// already installed beside it.
+  static Future<UpdateInfo?> check() async => (await checkNow(channel: buildChannel)).info;
 
   /// [check], but distinguishing "nothing newer" from "could not find out",
   /// for the Settings page's "Check for updates", which has to tell the user
-  /// which one happened.
-  static Future<UpdateCheck> checkNow() async {
+  /// which one happened. Looks at [channel], or the one picked in Settings.
+  static Future<UpdateCheck> checkNow({ReleaseChannel? channel}) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final channel = prefs.getString('commands.update.channel') == null
-          ? buildChannel
-          : releaseChannelFromString(prefs.getString('commands.update.channel'));
-      final releases = channel == ReleaseChannel.beta ? await _fetchReleaseList() : null;
+      final picked = channel == null;
+      channel ??= await _chosenChannel();
+      final releases = channel == ReleaseChannel.beta ? await fetchReleaseList() : null;
       if (channel == ReleaseChannel.beta && releases == null) return const UpdateCheck.failed();
       final release = channel == ReleaseChannel.stable
-          ? await _fetchJson(_latestUrl)
+          ? await fetchLatest()
           : selectRelease(releases, channel);
       if (release == null) {
         return channel == ReleaseChannel.beta
@@ -75,11 +78,8 @@ class UpdateService {
       if (channel == buildChannel && compareVersions(tag, appVersion) <= 0) {
         return const UpdateCheck.upToDate();
       }
-      final currentPrefs = await SharedPreferences.getInstance();
-      final currentChannel = currentPrefs.getString('commands.update.channel') == null
-          ? buildChannel
-          : releaseChannelFromString(currentPrefs.getString('commands.update.channel'));
-      if (currentChannel != channel) return const UpdateCheck.upToDate();
+      // The choice changed while this check ran: its answer is stale.
+      if (picked && await _chosenChannel() != channel) return const UpdateCheck.upToDate();
 
       final assets = (release['assets'] as List?) ?? const [];
       final plan = await _plan(assets, tag, channel);
@@ -100,6 +100,19 @@ class UpdateService {
       return const UpdateCheck.failed();
     }
   }
+
+  static Future<ReleaseChannel> _chosenChannel() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('commands.update.channel');
+    return saved == null ? buildChannel : releaseChannelFromString(saved);
+  }
+
+  /// The latest normal release, and the list of all releases. Replaced in
+  /// tests, which must not reach GitHub.
+  @visibleForTesting
+  static Future<Map<String, dynamic>?> Function() fetchLatest = () => _fetchJson(_latestUrl);
+  @visibleForTesting
+  static Future<List<dynamic>?> Function() fetchReleaseList = _fetchReleaseList;
 
   /// GitHub's /latest endpoint excludes prereleases. Choose the newest beta
   /// from the ordinary release list, ignoring drafts and other tag formats.
