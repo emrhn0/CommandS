@@ -81,7 +81,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
     );
     return Container(
       height: kTitleBarHeight,
-      color: isDark ? AppColors.darkBg : AppColors.lightPanel,
+      color: isDark ? AppColors.darkBg : AppColors.lightBg,
       child: Stack(
         children: [
           _buttons(isMac),
