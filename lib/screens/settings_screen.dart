@@ -927,7 +927,7 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
           ],
         ),
         const SizedBox(height: 8),
-        Text(tr('Beta installs beside stable and keeps separate settings and connections.'),
+        Text(tr('A beta replaces this version, with the same connections and settings. It may have bugs; updates return you to the next normal release.'),
             style: TextStyle(fontSize: 12, color: dim)),
         const SizedBox(height: 20),
         Row(

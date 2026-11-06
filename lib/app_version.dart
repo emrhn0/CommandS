@@ -7,7 +7,8 @@ enum ReleaseChannel { stable, beta }
 const String _buildChannel = String.fromEnvironment('COMMANDS_CHANNEL', defaultValue: 'stable');
 const ReleaseChannel buildChannel = _buildChannel == 'beta' ? ReleaseChannel.beta : ReleaseChannel.stable;
 const String appName = buildChannel == ReleaseChannel.beta ? 'CommandS Beta' : 'CommandS';
-const String appDataDirName = buildChannel == ReleaseChannel.beta ? 'CommandS-Beta' : 'CommandS';
+/// The same for a beta: it replaces the normal app and keeps its data.
+const String appDataDirName = 'CommandS';
 
 ReleaseChannel releaseChannelFromString(String? value) =>
     value == 'beta' ? ReleaseChannel.beta : ReleaseChannel.stable;

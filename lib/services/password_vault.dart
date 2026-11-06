@@ -79,7 +79,7 @@ class DpapiKeyStore implements KeyStore {
 /// macOS: the login keychain, through `security`. The key goes in on stdin, as
 /// a command line can be read by other processes.
 class KeychainKeyStore implements KeyStore {
-  static const _service = appName;
+  static const _service = 'CommandS';
   static const _account = 'password-key';
 
   @override

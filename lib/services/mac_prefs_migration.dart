@@ -3,8 +3,6 @@ import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../app_version.dart';
-
 /// Carries saved connections across the 1.0.24 sandbox change on macOS.
 ///
 /// Up to 1.0.23 the release build was sandboxed, so `NSUserDefaults` — where
@@ -27,7 +25,7 @@ class MacPrefsMigration {
   static const _bundleId = 'com.commands.commands';
 
   static Future<void> run() async {
-    if (!Platform.isMacOS || buildChannel == ReleaseChannel.beta) return;
+    if (!Platform.isMacOS) return;
 
     final prefs = await SharedPreferences.getInstance();
     // Anything already here means this install has its own data — either a

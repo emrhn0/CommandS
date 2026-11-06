@@ -46,11 +46,10 @@ class UpdateService {
   /// over, so every failure here is silent. A version the user chose to skip
   /// is still returned; whether to prompt about it is [isSkipped]'s question.
   ///
-  /// Only this app's own channel: the normal app offers normal releases on
-  /// its own, and a beta only when asked for one from Settings. With the beta
-  /// channel picked, the hourly check used to keep offering a beta that was
-  /// already installed beside it.
-  static Future<UpdateInfo?> check() async => (await checkNow(channel: buildChannel)).info;
+  /// Normal releases only, for every install, a beta one included: a beta is
+  /// taken by hand (Settings, or its download), and a beta install moves on
+  /// to the next normal release when one is out.
+  static Future<UpdateInfo?> check() async => (await checkNow(channel: ReleaseChannel.stable)).info;
 
   /// [check], but distinguishing "nothing newer" from "could not find out",
   /// for the Settings page's "Check for updates", which has to tell the user
@@ -75,9 +74,8 @@ class UpdateService {
       if (!matchesChannel(release, channel)) {
         return const UpdateCheck.upToDate();
       }
-      if (channel == buildChannel && compareVersions(tag, appVersion) <= 0) {
-        return const UpdateCheck.upToDate();
-      }
+      // Never an older one, a beta behind the version installed included.
+      if (compareVersions(tag, appVersion) <= 0) return const UpdateCheck.upToDate();
       // The choice changed while this check ran: its answer is stale.
       if (picked && await _chosenChannel() != channel) return const UpdateCheck.upToDate();
 
@@ -175,7 +173,8 @@ class UpdateService {
   /// * macOS: replace the running app, or put the new one in Applications if
   ///   the running one is somewhere it cannot be replaced (see [_macTarget]).
   static Future<_Plan?> _plan(List<dynamic> assets, String tag, ReleaseChannel channel) async {
-    final prefix = channel == ReleaseChannel.beta ? 'CommandS_Beta_' : 'CommandS_';
+    // A beta ships under the same names: it is the same app.
+    const prefix = 'CommandS_';
     final version = tag.substring(1);
     _Asset? find(String ending) {
       for (final raw in assets) {
@@ -192,10 +191,6 @@ class UpdateService {
     if (Platform.isWindows) {
       final installer = find('_windows_Setup.exe');
       final portable = find('_windows_portable.zip');
-      if (channel != buildChannel && installer != null) {
-        return _Plan(UpdateMethod.windowsInstaller, installer);
-      }
-      if (channel != buildChannel) return null;
       if (installer != null && await _isInstalledCopy()) {
         return _Plan(UpdateMethod.windowsInstaller, installer);
       }
@@ -392,7 +387,7 @@ class UpdateService {
     if (unzip.exitCode != 0) return 'Could not unpack the update.';
     // The zip holds a single CommandS_<version>_windows_portable folder.
     final folders = extractTo.listSync().whereType<Directory>().toList();
-    final executable = channel == ReleaseChannel.beta ? 'beta_commands.exe' : 'commands.exe';
+    const executable = 'commands.exe';
     if (folders.length != 1 ||
         !File('${folders.single.path}$sep$executable').existsSync()) {
       return 'The update does not contain CommandS.';
@@ -460,7 +455,7 @@ Start-Process -FilePath (Join-Path $Target $Executable)
         .whereType<Directory>()
         .where((d) => d.path.endsWith('.app'))
         .toList();
-    final expectedApp = channel == ReleaseChannel.beta ? 'CommandS Beta.app' : 'CommandS.app';
+    const expectedApp = 'CommandS.app';
     if (fresh.length != 1 || !fresh.single.path.endsWith('/$expectedApp')) {
       return 'The update does not contain an app.';
     }
@@ -526,12 +521,12 @@ rm -rf "$WORK"
 
     // .../CommandS.app/Contents/MacOS/CommandS
     final bundle = File(Platform.resolvedExecutable).parent.parent.parent;
-    if (channel == buildChannel && bundle.path.endsWith('.app') &&
+    if (bundle.path.endsWith('.app') &&
         !bundle.path.contains('/AppTranslocation/') &&
         writable(bundle.parent.path)) {
       return bundle.path;
     }
-    final appBundle = channel == ReleaseChannel.beta ? 'CommandS Beta.app' : 'CommandS.app';
+    const appBundle = 'CommandS.app';
     if (writable('/Applications')) return '/Applications/$appBundle';
     final home = Platform.environment['HOME'];
     if (home != null) {
@@ -550,9 +545,7 @@ rm -rf "$WORK"
     try {
       final result = await Process.run('reg', [
         'query',
-        buildChannel == ReleaseChannel.beta
-            ? r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{D94019C4-79D2-4C0C-9C84-61035E49EA02}_is1'
-            : r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{4C6F0A1E-7B2A-4E1B-9F0C-3A6D1C2E7B90}_is1',
+        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{4C6F0A1E-7B2A-4E1B-9F0C-3A6D1C2E7B90}_is1',
         '/v',
         'InstallLocation',
       ]);

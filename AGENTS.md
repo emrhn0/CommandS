@@ -166,9 +166,9 @@ Do not "simplify" these without reading why.
 5. Installed apps list the app as "CommandS vX.Y.Z" (`AppVerName` in
    `installer.iss`).
 
-For a beta, tag `vX.Y.Z-beta.N` after validation. The same workflow publishes
-it as a GitHub prerelease, without changing the latest stable release. Beta
-builds use `beta_commands.exe` on Windows and `CommandS Beta.app` on macOS.
-Their installer, preferences and password key are separate from stable.
-Settings > Updates chooses which release channel to check. A channel switch
-installs the other app beside the current one.
+A `vX.Y.Z-beta.N` tag publishes a GitHub prerelease, without changing the
+latest release. A beta is the same app at a newer version: it installs over
+the normal one and keeps its connections, settings and password key. It is
+taken by hand (its download, or Settings > Updates with Beta picked). The
+automatic check offers normal releases only, so a beta install moves on to
+the next normal release.

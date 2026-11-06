@@ -94,15 +94,12 @@ jobs:
         shell: pwsh
         run: |
           $options = @("/DMyAppVersion=$env:VERSION")
-          if ($env:COMMANDS_CHANNEL -eq 'beta') { $options += '/DBetaBuild' }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" @options windows\installer.iss
 
       - name: Zip portable build (no-installer alternative)
         shell: bash
         run: |
-          PREFIX="CommandS"
-          if [ "$COMMANDS_CHANNEL" = beta ]; then PREFIX="CommandS_Beta"; fi
-          OUT="${PREFIX}_${VERSION}_windows_portable"
+          OUT="CommandS_${VERSION}_windows_portable"
           mkdir -p "dist2/$OUT"
           cp -r build/windows/x64/runner/Release/* "dist2/$OUT/"
           cd dist2 && 7z a "${OUT}.zip" "$OUT"
@@ -131,9 +128,6 @@ jobs:
       - name: Build Flutter macOS release
         run: |
           flutter pub get
-          if [ "$COMMANDS_CHANNEL" = beta ]; then
-            perl -pi -e 's/^PRODUCT_NAME = CommandS$/PRODUCT_NAME = CommandS Beta/; s/^PRODUCT_BUNDLE_IDENTIFIER = com\.commands\.commands$/PRODUCT_BUNDLE_IDENTIFIER = com.commands.commands.beta/' macos/Runner/Configs/AppInfo.xcconfig
-          fi
           flutter build macos --release --dart-define=COMMANDS_CHANNEL=$COMMANDS_CHANNEL --dart-define=COMMANDS_VERSION=v$VERSION
 
       - name: Zip the .app (ditto keeps the bundle structure intact)
@@ -141,9 +135,7 @@ jobs:
         run: |
           mkdir -p dist2
           APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app")
-          PREFIX="CommandS"
-          if [ "$COMMANDS_CHANNEL" = beta ]; then PREFIX="CommandS_Beta"; fi
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist2/${PREFIX}_${VERSION}_macOS.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist2/CommandS_${VERSION}_macOS.zip"
 
       - name: Attach to the draft release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -211,7 +203,7 @@ jobs:
           EXE="commands.exe"
           MIGRATION_NOTE='2. Upgrading from 1.0.23 or earlier: the app used to install as `commands.app`. Delete that one — saved connections move across by themselves on first launch.'
           if [ "$COMMANDS_CHANNEL" = beta ]; then
-            NAME="CommandS Beta"; PREFIX="CommandS_Beta"; APP="CommandS Beta.app"; EXE="beta_commands.exe"
+            NAME="CommandS Beta"
             MIGRATION_NOTE=''
           fi
           NOTES="${NAME} ${VERSION}

@@ -257,8 +257,8 @@ const turkish = <String, String>{
   'Release channel': 'Sürüm kanalı',
   'Stable': 'Kararlı',
   'Beta': 'Beta',
-  'Beta installs beside stable and keeps separate settings and connections.':
-      'Beta, kararlı sürümün yanına kurulur ve ayarları ile bağlantıları ayrı tutar.',
+  'A beta replaces this version, with the same connections and settings. It may have bugs; updates return you to the next normal release.':
+      'Beta bu sürümün yerine geçer, bağlantılar ve ayarlar aynı kalır. Hata içerebilir; sonraki normal sürüm çıkınca güncelleme sizi ona geçirir.',
   'Installed version': 'Yüklü sürüm',
   'Check for updates': 'Güncellemeleri denetle',
   'Checking for updates…': 'Güncellemeler denetleniyor…',
