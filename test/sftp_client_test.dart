@@ -4,6 +4,42 @@ import 'package:commands/services/sftp_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('listings as servers print them', () {
+    test('Linux, with a "?" link count, a Turkish month and a name with spaces', () {
+      const output = 'sftp> ls -la "/home/user1"\r\n'
+          'drwxr-xr-x    ? user1    user1        4096 Kas  9 22:31 .\r\n'
+          'drwxr-xr-x    3 0        0            4096 Oct  8  2025 ..\r\n'
+          'drwx------    2 user1    user1        4096 Nov  9 22:31 .ssh\r\n'
+          '-rw-r--r--    1 user1    user1        2840 Nov  9 22:31 my notes.txt\r\n'
+          'lrwxrwxrwx    1 user1    user1          11 Nov  9 22:31 latest -> my notes.txt\r\n';
+      final entries = OpenSshSftpClient.parseListing(output);
+      expect(entries.map((e) => e.name), ['.ssh', 'latest', 'my notes.txt']);
+      expect(entries.first.isDirectory, isTrue);
+      expect(entries.last.size, 2840);
+    });
+
+    test('day before month, as the real Windows sftp.exe printed it in a lab', () {
+      const output = 'sftp> ls -la "/home/user1"\r\n'
+          'drwxrwxrwx   1 0        0               0 09 Nov 22:35 configs\r\n'
+          '-rw-rw-rw-   1 0        0            2840 09 Nov 22:35 my notes.txt\r\n'
+          'sftp> bye\r\n';
+      final entries = OpenSshSftpClient.parseListing(output);
+      expect(entries.map((e) => e.name), ['configs', 'my notes.txt']);
+      expect(entries.last.size, 2840);
+    });
+
+    test('an empty folder is empty', () {
+      expect(OpenSshSftpClient.parseListing('sftp> ls -la "/tmp/empty"\r\n'), isEmpty);
+    });
+
+    test('a listing that cannot be read is an error, not an empty folder', () {
+      expect(
+        () => OpenSshSftpClient.parseListing('sftp> ls -la "/x"\r\nsomething unexpected\r\n'),
+        throwsA(isA<SftpException>()),
+      );
+    });
+  });
+
   test('parses names with spaces, dotfiles, and directories', () {
     final entries = OpenSshSftpClient.parseListing(
       'sftp> ls -la "/tmp"\n'

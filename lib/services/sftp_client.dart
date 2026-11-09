@@ -77,26 +77,41 @@ class OpenSshSftpClient implements SftpClient {
     return slash <= 0 ? '/' : clean.substring(0, slash);
   }
 
+  /// A long listing line: the mode, then seven columns (links, owner,
+  /// group, size and a three-part date), then the name. The columns are only
+  /// counted, not checked, as servers word them differently: a "?" for the
+  /// link count, a month in the server's language, a numeric owner.
   static final _listingLine = RegExp(
-    r'^([bcdlps-])\S{9}[+@.]?\s+\d+\s+\S+\s+\S+\s+(\d+)\s+\S+\s+\d+\s+(?:\d{4}|\d{1,2}:\d{2})\s+(.+)$',
+    r'^([bcdlps-])[rwxsStTl-]{9}[+@.]?\s+\S+\s+\S+\s+\S+\s+(\S+)\s+\S+\s+\S+\s+\S+\s(.+)$',
   );
 
+  /// Thrown when a listing came back but none of it could be read, so an
+  /// unreadable folder is not shown as an empty one.
   @visibleForTesting
   static List<SftpEntry> parseListing(String output) {
     final entries = <SftpEntry>[];
-    for (final line in const LineSplitter().convert(output)) {
-      final match = _listingLine.firstMatch(line.trimRight());
-      if (match == null) continue;
-      var name = match[3]!;
+    String? unread;
+    for (final raw in const LineSplitter().convert(output)) {
+      final line = raw.trimRight();
+      if (line.isEmpty || line.startsWith('sftp>')) continue;
+      final match = _listingLine.firstMatch(line);
+      if (match == null) {
+        unread ??= line;
+        continue;
+      }
+      var name = match[3]!.trimLeft();
       if (match[1] == 'l') name = name.split(' -> ').first;
       if (name == '.' || name == '..') continue;
       entries.add(
         SftpEntry(
           name,
           isDirectory: match[1] == 'd',
-          size: int.parse(match[2]!),
+          size: int.tryParse(match[2]!) ?? 0,
         ),
       );
+    }
+    if (entries.isEmpty && unread != null) {
+      throw SftpException('Could not read the folder listing: $unread');
     }
     entries.sort((a, b) {
       if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;

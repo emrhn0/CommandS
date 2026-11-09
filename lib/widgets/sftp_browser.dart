@@ -27,6 +27,17 @@ abstract class LocalFileBrowser {
   Future<List<LocalFileEntry>> list(String path);
 }
 
+/// The last part of a local path, as written: a name with "%" in it is a
+/// name, not URL encoding to undo, which is what broke on such folders.
+String baseName(String path) {
+  var end = path.length;
+  while (end > 0 && (path[end - 1] == '\\' || path[end - 1] == '/')) {
+    end--;
+  }
+  final cut = path.lastIndexOf(RegExp(r'[\\/]'), end - 1);
+  return path.substring(cut + 1, end);
+}
+
 class DiskFileBrowser implements LocalFileBrowser {
   @override
   String get initialPath => Platform.isWindows
@@ -37,29 +48,38 @@ class DiskFileBrowser implements LocalFileBrowser {
   String parent(String path) => Directory(path).parent.path;
 
   @override
-  String join(String path, String name) =>
-      '$path${Platform.pathSeparator}$name';
+  String join(String path, String name) {
+    final sep = Platform.pathSeparator;
+    // A drive's root already ends in one: "C:\\" + "Users", not "C:\\\\Users".
+    return path.endsWith(sep) || path.endsWith('/') ? '$path$name' : '$path$sep$name';
+  }
 
   @override
   Future<List<LocalFileEntry>> list(String path) async {
     final result = <LocalFileEntry>[];
-    await for (final entity in Directory(path).list(followLinks: false)) {
-      final type = await FileSystemEntity.type(entity.path, followLinks: false);
-      if (type != FileSystemEntityType.directory &&
-          type != FileSystemEntityType.file) {
+    // Entries this user may not open (Windows keeps a few under C:\\Users)
+    // are left out, rather than failing the whole folder.
+    final listing = Directory(path).list(followLinks: false).handleError((Object _) {});
+    await for (final entity in listing) {
+      try {
+        final type = await FileSystemEntity.type(entity.path, followLinks: false);
+        if (type != FileSystemEntityType.directory &&
+            type != FileSystemEntityType.file) {
+          continue;
+        }
+        final size = type == FileSystemEntityType.file
+            ? await File(entity.path).length()
+            : 0;
+        result.add(
+          LocalFileEntry(
+            baseName(entity.path),
+            isDirectory: type == FileSystemEntityType.directory,
+            size: size,
+          ),
+        );
+      } on FileSystemException {
         continue;
       }
-      final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
-      final size = type == FileSystemEntityType.file
-          ? await File(entity.path).length()
-          : 0;
-      result.add(
-        LocalFileEntry(
-          Uri.decodeComponent(name),
-          isDirectory: type == FileSystemEntityType.directory,
-          size: size,
-        ),
-      );
     }
     result.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {

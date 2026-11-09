@@ -6,6 +6,7 @@ import 'package:commands/widgets/sftp_window.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -45,6 +46,8 @@ void main() {
     password: 'example-secret-value',
     sshOptions: ['-o', 'Ciphers=+aes128-cbc'],
     dark: true,
+    sessionId: 'session-1',
+    language: 'tr',
   );
 
   test('a window\'s arguments survive the trip to the new engine', () {
@@ -55,6 +58,8 @@ void main() {
     expect(back.password, 'example-secret-value');
     expect(back.sshOptions, ['-o', 'Ciphers=+aes128-cbc']);
     expect(back.dark, isTrue);
+    expect(back.sessionId, 'session-1');
+    expect(back.language, 'tr');
   });
 
   test('the main window is not taken for an SFTP window', () {
@@ -64,6 +69,10 @@ void main() {
   });
 
   testWidgets('the window shows both sides, and the shrink button closes it', (tester) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('window_manager'),
+      (call) async => call.method.startsWith('is') ? false : null,
+    );
     var closed = false;
     await tester.binding.setSurfaceSize(const Size(1200, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
