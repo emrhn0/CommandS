@@ -144,6 +144,42 @@ class _McpPanel extends StatelessWidget {
           Text(tr('Use this URL directly in ChatGPT Work desktop, or point a Secure MCP Tunnel at it for hosted ChatGPT Work. Keep the URL private.'),
               style: TextStyle(fontSize: 12, color: secondary)),
         ],
+        if (server.enabled) ...[
+          const SizedBox(height: 16),
+          Text(tr('Allowed connections'), style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(
+            tr('Right-click a connection in the list to allow it. The agent sees only the anonymous name. Every command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.'),
+            style: TextStyle(fontSize: 12, color: secondary),
+          ),
+          const SizedBox(height: 8),
+          if (server.gateway case final AppMcpGateway gateway)
+            ListenableBuilder(
+              listenable: gateway,
+              builder: (context, _) {
+                final allowed = gateway.allowedConnections.toList();
+                if (allowed.isEmpty) {
+                  return Text(tr('None yet.'), style: TextStyle(fontSize: 12, color: secondary));
+                }
+                return Column(
+                  children: [
+                    for (final c in allowed)
+                      Row(
+                        children: [
+                          Expanded(child: Text(c.name, overflow: TextOverflow.ellipsis)),
+                          Text(gateway.aliasOf(c.id)!, style: TextStyle(fontSize: 12, color: secondary)),
+                          IconButton(
+                            tooltip: tr('Remove access'),
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () => gateway.setAllowed(c.id, false),
+                          ),
+                        ],
+                      ),
+                  ],
+                );
+              },
+            ),
+        ],
         if (server.error case final error?) ...[
           const SizedBox(height: 8),
           Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),

@@ -28,7 +28,7 @@ class _FakeGateway implements McpGateway {
   }
 
   @override
-  int sendCommand(String sessionId, String command) {
+  Future<int> sendCommand(String sessionId, String command) async {
     if (sessionId != 'session-01') throw ArgumentError('Unknown session');
     sent = command;
     return 5;
@@ -199,6 +199,101 @@ void main() {
     server.dispose();
   });
 
+  group('app gateway', () {
+    late AppState app;
+    late AppMcpGateway gateway;
+    late List<McpApproval> asked;
+    var answer = true;
+
+    setUp(() async {
+      PtySessionController.checkReachability = false;
+      app = AppState();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      app.connections = [
+        SavedConnection(id: 'c1', name: 'CUSTOMER-A SWITCH', host: '192.0.2.1', username: 'user1'),
+        SavedConnection(id: 'c2', name: 'CUSTOMER-B FIREWALL', host: '192.0.2.2'),
+      ];
+      asked = [];
+      answer = true;
+      gateway = AppMcpGateway(app, approve: (a) async {
+        asked.add(a);
+        return answer;
+      });
+      await gateway.load();
+    });
+    tearDown(() {
+      gateway.close();
+      for (final t in app.tabs) {
+        t.controller.dispose();
+      }
+      PtySessionController.checkReachability = true;
+    });
+
+    test('lists only allowed connections, under anonymous names', () async {
+      expect(gateway.listConnections(), isEmpty);
+      await gateway.setAllowed('c2', true);
+      final listed = gateway.listConnections();
+      expect(listed, [
+        {'id': 'DEVICE-01', 'name': 'DEVICE-01'},
+      ]);
+      expect(jsonEncode(listed), isNot(contains('CUSTOMER')));
+      expect(jsonEncode(listed), isNot(contains('192.0.2')));
+    });
+
+    test('a connection not allowed cannot be opened, by alias or real id', () async {
+      await gateway.setAllowed('c1', true);
+      expect(() => gateway.openConnection('c2'), throwsArgumentError);
+      expect(() => gateway.openConnection('c1'), throwsArgumentError, reason: 'real ids are not names it knows');
+      expect(() => gateway.openConnection('DEVICE-02'), throwsArgumentError);
+    });
+
+    test('every command waits for the user; a no sends nothing', () async {
+      await gateway.setAllowed('c1', true);
+      final session = await gateway.openConnection('DEVICE-01');
+      final controller = app.tabs.last.controller as PtySessionController;
+      final sent = <String>[];
+      controller.writeOverride = sent.add;
+
+      answer = false;
+      await expectLater(gateway.sendCommand(session, 'reload'), throwsStateError);
+      expect(sent, isEmpty);
+      expect(asked.single.connectionName, 'CUSTOMER-A SWITCH', reason: 'the real name is shown to the user only');
+      expect(asked.single.alias, 'DEVICE-01');
+
+      answer = true;
+      await gateway.sendCommand(session, 'show version');
+      expect(sent, ['show version\r']);
+    });
+
+    test('with no way to ask, nothing runs', () async {
+      final silent = AppMcpGateway(app);
+      await silent.load();
+      await silent.setAllowed('c1', true);
+      final session = await silent.openConnection('DEVICE-01');
+      await expectLater(silent.sendCommand(session, 'show version'), throwsStateError);
+      silent.close();
+    });
+
+    test('taking access away ends it for an open session', () async {
+      await gateway.setAllowed('c1', true);
+      final session = await gateway.openConnection('DEVICE-01');
+      await gateway.setAllowed('c1', false);
+      expect(() => gateway.readOutput(session, 0), throwsStateError);
+      await expectLater(gateway.sendCommand(session, 'show version'), throwsStateError);
+      expect(asked, isEmpty);
+    });
+
+    test('an alias stays with its device', () async {
+      await gateway.setAllowed('c1', true);
+      await gateway.setAllowed('c2', true);
+      await gateway.setAllowed('c1', false);
+      expect(gateway.aliasOf('c2'), 'DEVICE-02');
+      final reloaded = AppMcpGateway(app);
+      await reloaded.load();
+      expect(reloaded.aliasOf('c2'), 'DEVICE-02');
+    });
+  });
+
   test('app gateway reads output from the opened SSH tab', () async {
     PtySessionController.checkReachability = false;
     addTearDown(() => PtySessionController.checkReachability = true);
@@ -206,7 +301,9 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     app.connections = [SavedConnection(id: 'device-01', name: 'DEVICE-01', host: '192.0.2.1')];
     final gateway = AppMcpGateway(app);
-    final sessionId = await gateway.openConnection('device-01');
+    await gateway.load();
+    await gateway.setAllowed('device-01', true);
+    final sessionId = await gateway.openConnection('DEVICE-01');
     final controller = app.tabs.last.controller as PtySessionController;
     addTearDown(() {
       gateway.close();

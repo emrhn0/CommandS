@@ -80,7 +80,12 @@ remembers the setting across launches.
   ID to a private ChatGPT Work plugin. The desktop app and tunnel must be
   running for commands to reach CommandS.
 
-The tools list saved SSH connections, open one in a CommandS tab, send one
+Only SSH connections you allow one by one (right-click a connection) are
+offered, under anonymous names such as `DEVICE-01`. Every command asks you in
+CommandS before it runs; no answer within two minutes is a no. Terminal output
+is sent as it is, so it can still show device names and addresses.
+
+The tools list the allowed connections, open one in a CommandS tab, send one
 command line followed by Enter, and read terminal output. `send_command`
 returns a cursor; pass it to `read_output`, then keep using each returned
 cursor. Terminal output arrives asynchronously, so an empty read does not

@@ -11,36 +11,99 @@ import '../models/models.dart';
 import '../providers/app_state.dart';
 import 'pty_session.dart';
 
-/// Only saved SSH connections are exposed. Credentials and host addresses are
-/// deliberately absent from the tool results.
+/// What the user is asked before a command reaches a device. The real
+/// connection name is shown only here, on this computer.
+class McpApproval {
+  const McpApproval({required this.connectionName, required this.alias, required this.command});
+  final String connectionName;
+  final String alias;
+  final String command;
+}
+
+/// Only saved SSH connections the user allowed one by one are exposed, under
+/// anonymous names (`DEVICE-01`...). Credentials, hosts and real names are
+/// never in the tool results, and every command waits for the user's yes.
 abstract class McpGateway {
   List<Map<String, String>> listConnections();
   Future<String> openConnection(String connectionId);
-  int sendCommand(String sessionId, String command);
+  Future<int> sendCommand(String sessionId, String command);
   Map<String, Object?> readOutput(String sessionId, int cursor);
   void close();
 }
 
-class AppMcpGateway implements McpGateway {
-  AppMcpGateway(this.app);
+class AppMcpGateway extends ChangeNotifier implements McpGateway {
+  AppMcpGateway(this.app, {this.approve});
 
   final AppState app;
+
+  /// Asks the user about one command. No answer, or no way to ask, is a no.
+  final Future<bool> Function(McpApproval approval)? approve;
+
   final _sessions = <String, _CapturedSession>{};
+
+  /// Allowed connection ids, each with the number of its anonymous name. The
+  /// number stays with a connection, so a name the agent saw keeps meaning
+  /// the same device.
+  final Map<String, int> _allowed = {};
+  static const _allowedKey = 'commands.mcp.allowed';
+
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_allowedKey);
+    _allowed.clear();
+    if (raw != null) {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        decoded.forEach((k, v) {
+          if (k is String && v is int) _allowed[k] = v;
+        });
+      }
+    }
+    notifyListeners();
+  }
+
+  bool isAllowed(String connectionId) => _allowed.containsKey(connectionId);
+
+  /// The anonymous name an allowed connection is shown to the agent under.
+  String? aliasOf(String connectionId) {
+    final n = _allowed[connectionId];
+    return n == null ? null : 'DEVICE-${n.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> setAllowed(String connectionId, bool allowed) async {
+    if (allowed) {
+      final next = _allowed.values.fold(0, max) + 1;
+      _allowed.putIfAbsent(connectionId, () => next);
+    } else {
+      _allowed.remove(connectionId);
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_allowedKey, jsonEncode(_allowed));
+  }
+
+  /// Allowed SSH connections that still exist, by anonymous name.
+  Iterable<SavedConnection> get allowedConnections => app.connections.where(
+    (c) => c.protocol == ConnectionProtocol.ssh && isAllowed(c.id),
+  );
+
+  SavedConnection _byAlias(String alias) {
+    for (final c in allowedConnections) {
+      if (aliasOf(c.id) == alias) return c;
+    }
+    throw ArgumentError('Connection not found, or not allowed for this agent.');
+  }
 
   @override
   List<Map<String, String>> listConnections() => [
-    for (final c in app.connections)
-      if (c.protocol == ConnectionProtocol.ssh) {'id': c.id, 'name': c.name},
+    for (final c in allowedConnections) {'id': aliasOf(c.id)!, 'name': aliasOf(c.id)!},
   ];
 
   @override
   Future<String> openConnection(String connectionId) async {
-    final matches = app.connections.where(
-      (c) => c.id == connectionId && c.protocol == ConnectionProtocol.ssh,
-    );
-    if (matches.isEmpty) throw ArgumentError('Saved SSH connection not found.');
+    final connection = _byAlias(connectionId);
     final before = app.tabs.length;
-    final error = await app.openConnection(matches.first);
+    final error = await app.openConnection(connection);
     if (error != null) throw StateError(error);
     if (app.tabs.length <= before) throw StateError('Session was not opened.');
     final tab = app.tabs.last;
@@ -48,7 +111,7 @@ class AppMcpGateway implements McpGateway {
     if (controller is! PtySessionController) {
       throw StateError('Not an SSH session.');
     }
-    _sessions[tab.id] = _CapturedSession(controller);
+    _sessions[tab.id] = _CapturedSession(controller, connection.id);
     return tab.id;
   }
 
@@ -62,11 +125,15 @@ class AppMcpGateway implements McpGateway {
       _sessions.remove(id);
       throw ArgumentError('MCP session not found.');
     }
+    // Access taken away after the session was opened ends it for the agent.
+    if (!isAllowed(session.connectionId)) {
+      throw StateError('This connection is no longer allowed for this agent.');
+    }
     return session;
   }
 
   @override
-  int sendCommand(String sessionId, String command) {
+  Future<int> sendCommand(String sessionId, String command) async {
     if (command.isEmpty ||
         command.length > 4096 ||
         command.contains('\r') ||
@@ -79,8 +146,19 @@ class AppMcpGateway implements McpGateway {
         session.controller.status == SessionStatus.error) {
       throw StateError('Session is closed.');
     }
-    final cursor = session.end;
-    session.controller.sendInput('$command\r');
+    final connection = app.connections.firstWhere((c) => c.id == session.connectionId);
+    final ask = approve;
+    final yes = ask != null &&
+        await ask(McpApproval(
+          connectionName: connection.name,
+          alias: aliasOf(connection.id)!,
+          command: command,
+        ));
+    if (!yes) throw StateError('The user did not allow this command.');
+    // Checked again: the session may have closed while the user decided.
+    final current = _session(sessionId);
+    final cursor = current.end;
+    current.controller.sendInput('$command\r');
     return cursor;
   }
 
@@ -98,11 +176,12 @@ class AppMcpGateway implements McpGateway {
 }
 
 class _CapturedSession {
-  _CapturedSession(this.controller) {
+  _CapturedSession(this.controller, this.connectionId) {
     _subscription = controller.outputStream.listen(_append);
   }
 
   final PtySessionController controller;
+  final String connectionId;
   late final StreamSubscription<String> _subscription;
   String _output = '';
   int _start = 0;
@@ -290,7 +369,7 @@ class McpServer extends ChangeNotifier {
                 : '2025-11-25',
             'capabilities': {'tools': {}},
             'serverInfo': {'name': 'commands', 'version': appVersion},
-            'instructions': 'Use saved SSH connections only. Open a session, send a single command, then read output using the returned cursor. Session output is asynchronous; poll read_output until the expected prompt or result appears. Never assume a command has finished just because one read returned no text.',
+            'instructions': 'Use only the connections listed; they have anonymous names. The user approves every command in CommandS before it runs, so a command can be refused. Open a session, send a single command, then read output using the returned cursor. Session output is asynchronous; poll read_output until the expected prompt or result appears. Never assume a command has finished just because one read returned no text.',
           };
           break;
         case 'ping':
@@ -335,7 +414,7 @@ class McpServer extends ChangeNotifier {
           break;
         case 'send_command':
           value = {
-            'cursor': gateway.sendCommand(
+            'cursor': await gateway.sendCommand(
               _string(args, 'session_id'),
               _string(args, 'command'),
             ),
@@ -389,7 +468,7 @@ class McpServer extends ChangeNotifier {
   static const _tools = [
     {
       'name': 'list_connections',
-      'description': 'List saved SSH connections by ID and display name. No hostnames or credentials are returned.',
+      'description': 'List the SSH connections the user allowed for this agent, by anonymous ID. No real names, hostnames or credentials are returned.',
       'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
     },
     {
@@ -405,7 +484,7 @@ class McpServer extends ChangeNotifier {
     },
     {
       'name': 'send_command',
-      'description': 'Send one line followed by Enter to an MCP-opened SSH session. Returns the output cursor from before the send. Commands execute on the remote device with the saved connection privileges.',
+      'description': 'Send one line followed by Enter to an MCP-opened SSH session. The user is asked to allow each command first; a refusal is returned as an error. Returns the output cursor from before the send. Commands execute on the remote device with the saved connection privileges.',
       'inputSchema': {
         'type': 'object',
         'properties': {

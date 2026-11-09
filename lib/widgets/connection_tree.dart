@@ -16,6 +16,7 @@ import 'device_icon.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
 import 'threshold_draggable.dart';
+import '../services/mcp_server.dart';
 import '../l10n/strings.dart';
 
 /// A row in the flattened, virtualized tree — a folder header, a connection
@@ -1269,17 +1270,24 @@ class _ConnectionRow extends StatelessWidget {
       // meaning, so it gets the weight and the host trails behind it, dimmer.
       title: _displayName(conn),
       subtitle: conn.host,
-      menuItems: const [
-        MenuAction('connect', 'Connect', Icons.play_arrow_outlined),
-        MenuAction('edit', 'Edit…', Icons.tune, separatorBefore: true),
-        MenuAction('rename', 'Rename', Icons.edit_outlined),
-        MenuAction('clone', 'Clone', Icons.copy_outlined),
-        MenuAction('move', 'Move to folder…', Icons.drive_file_move_outlined),
-        MenuAction('delete', 'Delete', Icons.delete_outline, destructive: true, separatorBefore: true),
+      menuItems: [
+        const MenuAction('connect', 'Connect', Icons.play_arrow_outlined),
+        if (_mcpGateway(context) case final gateway? when conn.protocol == ConnectionProtocol.ssh)
+          gateway.isAllowed(conn.id)
+              ? const MenuAction('mcp', 'Remove agent access', Icons.smart_toy_outlined)
+              : const MenuAction('mcp', 'Allow agent access', Icons.smart_toy_outlined),
+        const MenuAction('edit', 'Edit…', Icons.tune, separatorBefore: true),
+        const MenuAction('rename', 'Rename', Icons.edit_outlined),
+        const MenuAction('clone', 'Clone', Icons.copy_outlined),
+        const MenuAction('move', 'Move to folder…', Icons.drive_file_move_outlined),
+        const MenuAction('delete', 'Delete', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
       onMenu: (key) async {
         if (key == 'connect') {
           await app.openConnection(conn);
+        } else if (key == 'mcp') {
+          final gateway = _mcpGateway(context);
+          if (gateway != null) await gateway.setAllowed(conn.id, !gateway.isAllowed(conn.id));
         } else if (key == 'edit') {
           await showEditConnectionDialog(context, conn);
         } else if (key == 'clone') {
@@ -1825,4 +1833,11 @@ class _ToolButtonState extends State<_ToolButton> {
       ),
     );
   }
+}
+
+/// The agent gateway, while MCP access is on; null otherwise.
+AppMcpGateway? _mcpGateway(BuildContext context) {
+  final server = Provider.of<McpServer?>(context, listen: false);
+  final gateway = server?.gateway;
+  return server != null && server.enabled && gateway is AppMcpGateway ? gateway : null;
 }

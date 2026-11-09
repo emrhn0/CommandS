@@ -10,6 +10,7 @@ import 'app_version.dart';
 import 'screens/home_screen.dart';
 import 'services/rdp_session.dart';
 import 'services/mcp_server.dart';
+import 'widgets/mcp_approval_dialog.dart';
 import 'theme/app_theme.dart';
 import 'widgets/update_dialog.dart';
 
@@ -54,6 +55,9 @@ class CommandSApp extends StatelessWidget {
   /// many routes are currently open.
   static final _rdpModalObserver = RdpModalObserver();
 
+  /// For the MCP approval dialog, which is asked for from outside any widget.
+  static final _navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
@@ -61,13 +65,18 @@ class CommandSApp extends StatelessWidget {
       child: ChangeNotifierProvider<McpServer>(
         lazy: false,
         create: (context) {
-          final server = McpServer(AppMcpGateway(context.read<AppState>()));
-          unawaited(server.restore());
+          final gateway = AppMcpGateway(
+            context.read<AppState>(),
+            approve: (approval) => askMcpApproval(_navigatorKey, approval),
+          );
+          final server = McpServer(gateway);
+          unawaited(gateway.load().then((_) => server.restore()));
           return server;
         },
         child: Consumer<AppState>(
           builder: (context, app, _) => MaterialApp(
             title: appName,
+            navigatorKey: _navigatorKey,
             debugShowCheckedModeBanner: false,
             themeMode: app.themeMode,
             theme: AppTheme.light(),
