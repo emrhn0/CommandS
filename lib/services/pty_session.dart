@@ -11,6 +11,7 @@ import '../app_version.dart';
 import 'device_detect.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
+import 'sftp_client.dart';
 
 export 'session_controller.dart' show SessionStatus;
 
@@ -98,6 +99,41 @@ class PtySessionController implements TerminalSessionController {
 
   /// Whether a saved password will follow a yes.
   bool get hasSavedPassword => _password.isNotEmpty;
+
+  /// Opens a separate SFTP channel with this tab's resolved login and SSH
+  /// compatibility options. The terminal process remains independent.
+  Future<OpenSshSftpClient> createSftpClient({String? password}) async {
+    if (_username.isEmpty) {
+      throw const SftpException('SSH login is not ready');
+    }
+    final ssh = Platform.isWindows ? findWindowsSsh() : _sshExecutable;
+    if (ssh == null) {
+      throw const SftpException('OpenSSH is required for SFTP');
+    }
+    final options = <String>[];
+    for (final (query, wanted) in [
+      ('kex', _legacyKex),
+      ('key', _legacyHostKeys),
+      ('cipher', _legacyCiphers),
+      ('mac', _legacyMacs),
+    ]) {
+      final value = await _legacyOption(ssh, query, wanted);
+      if (value == null) continue;
+      switch (query) {
+        case 'kex':
+          options.addAll(['-o', 'KexAlgorithms=$value']);
+        case 'key':
+          options.addAll(['-o', 'HostKeyAlgorithms=$value',
+            '-o', 'PubkeyAcceptedAlgorithms=$value']);
+        case 'cipher':
+          options.addAll(['-o', 'Ciphers=$value']);
+        case 'mac':
+          options.addAll(['-o', 'MACs=$value']);
+      }
+    }
+    return OpenSshSftpClient(host: host, port: port, username: _username,
+        password: password ?? _password, sshOptions: options);
+  }
 
   LoginWatcher? _login;
 
