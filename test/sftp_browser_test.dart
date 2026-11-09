@@ -1,0 +1,136 @@
+import 'package:commands/services/sftp_client.dart';
+import 'package:commands/widgets/sftp_browser.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class _FakeSftp implements SftpClient {
+  final folders = <String, List<SftpEntry>>{
+    '/home/user': [
+      const SftpEntry('archive', isDirectory: true, size: 0),
+      const SftpEntry('remote.txt', isDirectory: false, size: 12),
+    ],
+    '/home/user/archive': [
+      const SftpEntry('older.txt', isDirectory: false, size: 8),
+    ],
+  };
+  final uploads = <String>[];
+  final downloads = <String>[];
+  bool failList = false;
+  bool disposed = false;
+
+  @override
+  Future<String> home() async => '/home/user';
+  @override
+  Future<List<SftpEntry>> list(String path) async {
+    if (failList) throw const SftpException('Access denied');
+    return folders[path] ?? [];
+  }
+
+  @override
+  Future<void> upload(String localPath, String remotePath) async {
+    uploads.add('$localPath -> $remotePath');
+    folders['/home/user']!.add(
+      SftpEntry(remotePath.split('/').last, isDirectory: false, size: 8),
+    );
+  }
+
+  @override
+  Future<void> download(String remotePath, String localPath) async {
+    downloads.add('$remotePath -> $localPath');
+  }
+
+  @override
+  Future<void> mkdir(String path) async {}
+  @override
+  void dispose() => disposed = true;
+}
+
+class _FakeLocal implements LocalFileBrowser {
+  @override
+  String get initialPath => 'C:/Files';
+  @override
+  String join(String path, String name) => '$path/$name';
+  @override
+  String parent(String path) => 'C:/';
+  @override
+  Future<List<LocalFileEntry>> list(String path) async => [
+    const LocalFileEntry('local.txt', isDirectory: false, size: 8),
+    const LocalFileEntry('report.txt', isDirectory: false, size: 3),
+  ];
+}
+
+Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp) async {
+  await tester.binding.setSurfaceSize(const Size(900, 700));
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 340,
+          child: SftpBrowser(
+            createClient: (_) async => sftp,
+            localBrowser: _FakeLocal(),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  testWidgets('navigates remote folders and uploads selected local file', (
+    tester,
+  ) async {
+    final sftp = _FakeSftp();
+    await _pumpBrowser(tester, sftp);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Remote files'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')));
+    await tester.pumpAndSettle();
+    expect(find.text('older.txt'), findsOneWidget);
+    await tester.tap(find.byTooltip('Parent folder').first);
+    await tester.pumpAndSettle();
+    expect(find.text('remote.txt'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-local.txt')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('sftp-upload')));
+    await tester.pumpAndSettle();
+    expect(sftp.uploads, ['C:/Files/local.txt -> /home/user/local.txt']);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(sftp.disposed, isTrue);
+  });
+
+  testWidgets('downloads remote file and confirms replacement', (tester) async {
+    final sftp = _FakeSftp();
+    sftp.folders['/home/user']!.add(
+      const SftpEntry('report.txt', isDirectory: false, size: 3),
+    );
+    await _pumpBrowser(tester, sftp);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-report.txt')).first);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('sftp-download')));
+    await tester.pumpAndSettle();
+    expect(find.text('Replace file?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(sftp.downloads, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('sftp-download')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Replace'));
+    await tester.pumpAndSettle();
+    expect(sftp.downloads, ['/home/user/report.txt -> C:/Files/report.txt']);
+  });
+
+  testWidgets('shows SFTP errors and offers password retry', (tester) async {
+    final sftp = _FakeSftp()..failList = true;
+    await _pumpBrowser(tester, sftp);
+    expect(find.text('Access denied'), findsOneWidget);
+    expect(find.text('Use SFTP password'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}

@@ -19,6 +19,7 @@ import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
 import 'terminal_drag_select.dart';
+import 'sftp_browser.dart';
 import 'threshold_draggable.dart';
 import '../l10n/strings.dart';
 
@@ -1057,6 +1058,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
   late final TerminalClipboard _clipboard;
   final _viewKey = GlobalKey<TerminalViewState>();
   final _scroll = ScrollController();
+  bool _showSftp = false;
 
   @override
   void initState() {
@@ -1098,6 +1100,16 @@ class _TerminalPaneState extends State<_TerminalPane> {
     if (session is! PtySessionController) return terminal;
     return Column(
       children: [
+        SizedBox(height: 32, child: Row(children: [
+          const Spacer(),
+          IconButton(
+            key: const ValueKey('toggle-sftp'),
+            tooltip: tr('SFTP files'),
+            visualDensity: VisualDensity.compact,
+            icon: Icon(_showSftp ? Icons.folder_open : Icons.folder_outlined, size: 18),
+            onPressed: () => setState(() => _showSftp = !_showSftp),
+          ),
+        ])),
         ValueListenableBuilder<String?>(
           valueListenable: session.loginQuestion,
           builder: (context, question, _) => question == null
@@ -1111,7 +1123,27 @@ class _TerminalPaneState extends State<_TerminalPane> {
                   },
                 ),
         ),
-        Expanded(child: terminal),
+        Expanded(child: !_showSftp
+            ? terminal
+            : LayoutBuilder(builder: (context, constraints) {
+                final browser = SftpBrowser(
+                  key: ValueKey(session),
+                  createClient: (password) => session.createSftpClient(password: password),
+                );
+                if (constraints.maxWidth < 600) {
+                  return Column(children: [
+                    Expanded(child: browser),
+                    const Divider(height: 1),
+                    Expanded(child: terminal),
+                  ]);
+                }
+                return Row(children: [
+                  SizedBox(width: (constraints.maxWidth * 0.38).clamp(280.0, 360.0),
+                      child: browser),
+                  const VerticalDivider(width: 1),
+                  Expanded(child: terminal),
+                ]);
+              })),
       ],
     );
   }
