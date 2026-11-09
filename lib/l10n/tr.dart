@@ -249,6 +249,13 @@ const turkish = <String, String>{
       'Yalnızca CommandS’in kendi arayüzünü değiştirir; oturumlar etkilenmez.',
   'Connections': 'Bağlantılar',
   'MCP integration': 'MCP entegrasyonu',
+  'Receive beta updates': 'Beta güncellemelerini al',
+  'Betas are offered too, as they come out. A beta replaces this version, with the same connections and settings, and may have bugs.':
+      'Betalar da çıktıkça önerilir. Beta bu sürümün yerine geçer, bağlantılar ve ayarlar aynı kalır; hata içerebilir.',
+  'Expand': 'Büyüt',
+  'Shrink': 'Küçült',
+  'Close SFTP files': "SFTP dosyalarını kapat",
+  'Close SFTP': "SFTP'yi kapat",
   'Run this command?': 'Bu komut çalıştırılsın mı?',
   'The connected agent wants to run this on {name} (shown to it as {alias}).':
       'Bağlı ajan bunu {name} üzerinde çalıştırmak istiyor (ona {alias} olarak görünüyor).',

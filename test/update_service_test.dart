@@ -15,40 +15,60 @@ UpdateInfo _info(String notes) => UpdateInfo(
     );
 
 void main() {
-  group('the automatic check, with the beta channel picked in Settings', () {
-    Map<String, dynamic> release(String tag, {bool prerelease = false}) => {
-      'tag_name': tag,
-      'prerelease': prerelease,
-      'draft': false,
-      'assets': const [],
-    };
-    late Map<String, dynamic>? latest;
+  group('the check', () {
+    late List<String> tags;
+    final asked = <String>[];
 
     setUp(() {
-      SharedPreferences.setMockInitialValues({'commands.update.channel': 'beta'});
-      UpdateService.fetchReleaseList = () async => [release('v99.0.0-beta.1', prerelease: true)];
-      UpdateService.fetchLatest = () async => latest;
+      asked.clear();
+      UpdateService.fetchTags = () async => tags;
+      UpdateService.fetchRelease = (tag) async {
+        asked.add(tag);
+        return {'tag_name': tag, 'draft': false, 'assets': const []};
+      };
     });
     tearDown(() {
-      UpdateService.fetchLatest = () async => null;
-      UpdateService.fetchReleaseList = () async => null;
+      UpdateService.fetchTags = () async => null;
+      UpdateService.fetchRelease = (_) async => null;
     });
 
-    test('offers only a newer normal release', () async {
-      latest = release('v98.0.0');
+    test('without beta updates, only a newer normal release is offered', () async {
+      SharedPreferences.setMockInitialValues({});
+      tags = ['v99.0.0-beta.2', 'v98.0.0', 'v0.0.1'];
       expect((await UpdateService.check())?.version, 'v98.0.0');
-    });
-
-    test('says nothing about a beta when no normal release is newer', () async {
-      latest = release('v0.0.1');
+      tags = ['v99.0.0-beta.2', 'v0.0.1'];
       expect(await UpdateService.check(), isNull);
     });
 
-    test('Settings still finds the beta when asked', () async {
-      latest = release('v0.0.1');
-      final found = await UpdateService.checkNow();
-      expect(found.info?.version, 'v99.0.0-beta.1');
-      expect(found.info?.channel, ReleaseChannel.beta);
+    test('with beta updates on, the newest of both is offered', () async {
+      SharedPreferences.setMockInitialValues({'commands.update.channel': 'beta'});
+      tags = ['v99.0.0-beta.2', 'v99.0.0-beta.1', 'v98.0.0'];
+      final found = await UpdateService.check();
+      expect(found?.version, 'v99.0.0-beta.2');
+      expect(found?.channel, ReleaseChannel.beta);
+      tags = ['v99.0.0', 'v99.0.0-beta.2'];
+      expect((await UpdateService.check())?.version, 'v99.0.0', reason: 'the normal release that follows a beta');
+    });
+
+    test('nothing newer: the API is not asked at all', () async {
+      SharedPreferences.setMockInitialValues({'commands.update.channel': 'beta'});
+      tags = ['v0.0.1', 'v0.0.1-beta.1'];
+      expect(await UpdateService.check(), isNull);
+      expect(asked, isEmpty);
+    });
+
+    test('a feed that cannot be read is a failed check, not an update', () async {
+      UpdateService.fetchTags = () async => null;
+      expect((await UpdateService.checkNow()).failed, isTrue);
+    });
+
+    test('tags are read from the releases feed', () {
+      const feed = '<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">'
+          '<link type="text/html" rel="alternate" href="https://github.com/example/app/releases"/>'
+          '<entry><link rel="alternate" type="text/html" href="https://github.com/example/app/releases/tag/v2.0.0"/></entry>'
+          '<entry><link rel="alternate" type="text/html" href="https://github.com/example/app/releases/tag/v2.1.0-beta.1"/></entry>'
+          '</feed>';
+      expect(UpdateService.tagsFromFeed(feed), ['v2.0.0', 'v2.1.0-beta.1']);
     });
   });
 

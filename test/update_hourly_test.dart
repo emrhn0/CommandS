@@ -44,22 +44,22 @@ void main() {
 
   final prompt = find.text('Remind me later');
 
-  testWidgets('a release that comes out while the app is open is offered within the hour', (tester) async {
+  testWidgets('a release that comes out while the app is open is offered within five minutes', (tester) async {
     answer = null;
     await pumpGate(tester);
     expect(checks, 1, reason: 'the launch check');
     expect(prompt, findsNothing);
 
     answer = _release;
-    await wait(tester, const Duration(minutes: 59));
-    expect(checks, 1, reason: 'not before the hour');
+    await wait(tester, const Duration(minutes: 4));
+    expect(checks, 1, reason: 'not before five minutes');
     await wait(tester, const Duration(minutes: 2));
     expect(checks, 2);
     expect(prompt, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('"Remind me later" brings it back an hour later, not sooner', (tester) async {
+  testWidgets('"Remind me later" brings it back five minutes later, not sooner', (tester) async {
     answer = _release;
     await pumpGate(tester);
     await wait(tester, Duration.zero);
@@ -67,7 +67,7 @@ void main() {
     await tester.tap(prompt);
     await tester.pumpAndSettle();
     expect(prompt, findsNothing);
-    await wait(tester, const Duration(minutes: 59));
+    await wait(tester, const Duration(minutes: 4));
     expect(prompt, findsNothing);
     await wait(tester, const Duration(minutes: 2));
     expect(prompt, findsOneWidget);
@@ -105,7 +105,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
     answer = _release;
-    await wait(tester, const Duration(hours: 1, minutes: 1));
+    await wait(tester, const Duration(minutes: 6));
     expect(prompt, findsNothing);
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();

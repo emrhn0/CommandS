@@ -87,7 +87,7 @@ void main() {
     expect(prefs.getString('commands.themeMode'), 'dark');
   });
 
-  testWidgets('release channel choice is saved', (tester) async {
+  testWidgets('turning on beta updates is saved', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -98,9 +98,9 @@ void main() {
       child: const MaterialApp(home: SettingsScreen()),
     ));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Beta'));
+    await tester.ensureVisible(find.byKey(const ValueKey('beta-updates')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Beta'));
+    await tester.tap(find.byKey(const ValueKey('beta-updates')));
     await tester.pumpAndSettle();
 
     expect(app.updateChannel, ReleaseChannel.beta);

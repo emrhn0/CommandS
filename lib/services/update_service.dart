@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:xml/xml.dart';
 
 import '../app_version.dart';
 
@@ -18,10 +19,6 @@ import '../app_version.dart';
 class UpdateService {
   static const _owner = 'emrhn0';
   static const _repo = 'CommandS';
-  static const _latestUrl =
-      'https://api.github.com/repos/$_owner/$_repo/releases/latest';
-  static const _releasesUrl =
-      'https://api.github.com/repos/$_owner/$_repo/releases?per_page=100';
 
   /// GitHub rejects API requests without one.
   static const _userAgent = 'CommandS-Updater';
@@ -46,47 +43,44 @@ class UpdateService {
   /// over, so every failure here is silent. A version the user chose to skip
   /// is still returned; whether to prompt about it is [isSkipped]'s question.
   ///
-  /// Normal releases only, for every install, a beta one included: a beta is
-  /// taken by hand (Settings, or its download), and a beta install moves on
-  /// to the next normal release when one is out.
-  static Future<UpdateInfo?> check() async => (await checkNow(channel: ReleaseChannel.stable)).info;
+  /// Normal releases, and betas too for someone who turned on "Receive beta
+  /// updates" in Settings: whichever is newest and newer than this version.
+  static Future<UpdateInfo?> check() async => (await checkNow()).info;
 
   /// [check], but distinguishing "nothing newer" from "could not find out",
   /// for the Settings page's "Check for updates", which has to tell the user
-  /// which one happened. Looks at [channel], or the one picked in Settings.
-  static Future<UpdateCheck> checkNow({ReleaseChannel? channel}) async {
+  /// which one happened.
+  ///
+  /// The tags come from the releases feed, a plain page that the API's limit
+  /// of 60 requests an hour per network does not cover: an office of people
+  /// checking every few minutes would run through that. The API is asked only
+  /// once something newer has turned up, for its downloads.
+  static Future<UpdateCheck> checkNow() async {
     try {
-      final picked = channel == null;
-      channel ??= await _chosenChannel();
-      final releases = channel == ReleaseChannel.beta ? await fetchReleaseList() : null;
-      if (channel == ReleaseChannel.beta && releases == null) return const UpdateCheck.failed();
-      final release = channel == ReleaseChannel.stable
-          ? await fetchLatest()
-          : selectRelease(releases, channel);
-      if (release == null) {
-        return channel == ReleaseChannel.beta
-            ? const UpdateCheck.upToDate()
-            : const UpdateCheck.failed();
-      }
-
-      final tag = release['tag_name'] as String?;
-      if (tag == null || tag.isEmpty) return const UpdateCheck.failed();
-      if (!matchesChannel(release, channel)) {
-        return const UpdateCheck.upToDate();
+      final betas = await _chosenChannel() == ReleaseChannel.beta;
+      final tags = await fetchTags();
+      if (tags == null) return const UpdateCheck.failed();
+      String? newest;
+      for (final tag in tags) {
+        final stable = _stableTag.hasMatch(tag);
+        if (!stable && !(betas && _betaTag.hasMatch(tag))) continue;
+        if (newest == null || compareVersions(tag, newest) > 0) newest = tag;
       }
       // Never an older one, a beta behind the version installed included.
-      if (compareVersions(tag, appVersion) <= 0) return const UpdateCheck.upToDate();
-      // The choice changed while this check ran: its answer is stale.
-      if (picked && await _chosenChannel() != channel) return const UpdateCheck.upToDate();
+      if (newest == null || compareVersions(newest, appVersion) <= 0) return const UpdateCheck.upToDate();
 
+      final release = await fetchRelease(newest);
+      if (release == null) return const UpdateCheck.failed();
+      if (release['draft'] == true) return const UpdateCheck.upToDate();
+      final channel = _betaTag.hasMatch(newest) ? ReleaseChannel.beta : ReleaseChannel.stable;
       final assets = (release['assets'] as List?) ?? const [];
-      final plan = await _plan(assets, tag, channel);
+      final plan = await _plan(assets, newest, channel);
 
       return UpdateCheck.available(UpdateInfo(
-        version: tag,
+        version: newest,
         channel: channel,
         releaseUrl: release['html_url'] as String? ??
-            'https://github.com/$_owner/$_repo/releases/tag/$tag',
+            'https://github.com/$_owner/$_repo/releases/tag/$newest',
         notes: (release['body'] as String? ?? '').trim(),
         assetName: plan?.asset.name,
         assetUrl: plan?.asset.url,
@@ -99,18 +93,44 @@ class UpdateService {
     }
   }
 
+  static final _stableTag = RegExp(r'^v\d+\.\d+\.\d+$');
+  static final _betaTag = RegExp(r'^v\d+\.\d+\.\d+-beta\.\d+$');
+
   static Future<ReleaseChannel> _chosenChannel() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('commands.update.channel');
     return saved == null ? buildChannel : releaseChannelFromString(saved);
   }
 
-  /// The latest normal release, and the list of all releases. Replaced in
-  /// tests, which must not reach GitHub.
+  /// The tags of the latest published releases, and one release in full.
+  /// Replaced in tests, which must not reach GitHub.
   @visibleForTesting
-  static Future<Map<String, dynamic>?> Function() fetchLatest = () => _fetchJson(_latestUrl);
+  static Future<List<String>?> Function() fetchTags = _fetchFeedTags;
   @visibleForTesting
-  static Future<List<dynamic>?> Function() fetchReleaseList = _fetchReleaseList;
+  static Future<Map<String, dynamic>?> Function(String tag) fetchRelease =
+      (tag) => _fetchJson('https://api.github.com/repos/$_owner/$_repo/releases/tags/${Uri.encodeComponent(tag)}');
+
+  static Future<List<String>?> _fetchFeedTags() async {
+    final body = await _fetch(_feedUrl, accept: 'application/atom+xml');
+    if (body == null) return null;
+    return tagsFromFeed(utf8.decode(body));
+  }
+
+  static const _feedUrl = 'https://github.com/$_owner/$_repo/releases.atom';
+
+  /// The release tags in GitHub's releases feed, from each entry's link.
+  @visibleForTesting
+  static List<String> tagsFromFeed(String atom) {
+    final doc = XmlDocument.parse(atom);
+    final tags = <String>[];
+    for (final link in doc.findAllElements('link')) {
+      final href = link.getAttribute('href') ?? '';
+      final at = href.indexOf('/releases/tag/');
+      if (at < 0) continue;
+      tags.add(Uri.decodeComponent(href.substring(at + '/releases/tag/'.length)));
+    }
+    return tags;
+  }
 
   /// GitHub's /latest endpoint excludes prereleases. Choose the newest beta
   /// from the ordinary release list, ignoring drafts and other tag formats.
@@ -239,13 +259,6 @@ class UpdateService {
     if (body == null) return null;
     final decoded = jsonDecode(utf8.decode(body));
     return decoded is Map<String, dynamic> ? decoded : null;
-  }
-
-  static Future<List<dynamic>?> _fetchReleaseList() async {
-    final body = await _fetch(_releasesUrl, accept: 'application/vnd.github+json');
-    if (body == null) return null;
-    final decoded = jsonDecode(utf8.decode(body));
-    return decoded is List<dynamic> ? decoded : null;
   }
 
   /// One redirect-following GET. `dart:io`'s client is used rather than adding

@@ -16,6 +16,7 @@ import 'device_icon.dart';
 import 'folder_picker.dart';
 import 'new_connection_dialog.dart';
 import 'threshold_draggable.dart';
+import 'tool_button.dart';
 import '../services/mcp_server.dart';
 import '../l10n/strings.dart';
 
@@ -600,13 +601,13 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
                 ),
               ),
               const SizedBox(width: 6),
-              _ToolButton(
+              ToolButton(
                 icon: Icons.library_add_check_rounded,
                 tooltip: tr('Select all'),
                 onPressed: app.connections.isEmpty ? null : () => _selectAll(app),
               ),
               const SizedBox(width: 4),
-              _ToolButton(
+              ToolButton(
                 icon: Icons.create_new_folder_rounded,
                 tooltip: tr('New folder'),
                 onPressed: () => _promptName(context, 'New folder', '', (name) => app.addFolder(name)),
@@ -1053,14 +1054,14 @@ class _SelectionBar extends StatelessWidget {
             ),
           ),
           if (count < total) ...[
-            _ToolButton(icon: Icons.library_add_check_rounded, tooltip: tr('Select all'), onPressed: onSelectAll, size: 24),
+            ToolButton(icon: Icons.library_add_check_rounded, tooltip: tr('Select all'), onPressed: onSelectAll, size: 24),
             const SizedBox(width: 2),
           ],
-          _ToolButton(icon: Icons.drive_file_move_rounded, tooltip: tr('Move to folder'), onPressed: onMove, size: 24),
+          ToolButton(icon: Icons.drive_file_move_rounded, tooltip: tr('Move to folder'), onPressed: onMove, size: 24),
           const SizedBox(width: 2),
-          _ToolButton(icon: Icons.delete_rounded, tooltip: tr('Delete'), onPressed: onDelete, size: 24, danger: true),
+          ToolButton(icon: Icons.delete_rounded, tooltip: tr('Delete'), onPressed: onDelete, size: 24, danger: true),
           const SizedBox(width: 2),
-          _ToolButton(icon: Icons.close_rounded, tooltip: tr('Clear selection'), onPressed: onCancel, size: 24),
+          ToolButton(icon: Icons.close_rounded, tooltip: tr('Clear selection'), onPressed: onCancel, size: 24),
         ],
       ),
     );
@@ -1756,84 +1757,6 @@ class _OpenBadge extends StatelessWidget {
 
 /// A square tool button the height of the search field: a soft tile that
 /// lights up under the mouse.
-class _ToolButton extends StatefulWidget {
-  const _ToolButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-    this.size = 30,
-    this.danger = false,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onPressed;
-
-  /// 30 = a tile beside the search field; smaller ones sit inside a bar,
-  /// drawn flat until the mouse is over them.
-  final double size;
-
-  /// Lights up red (delete).
-  final bool danger;
-
-  @override
-  State<_ToolButton> createState() => _ToolButtonState();
-}
-
-class _ToolButtonState extends State<_ToolButton> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final enabled = widget.onPressed != null;
-    final lit = enabled && _hover;
-    final flat = widget.size < 30;
-    final tint = widget.danger ? scheme.error : scheme.primary;
-    return Tooltip(
-      message: widget.tooltip,
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              color: lit
-                  ? tint.withValues(alpha: 0.14)
-                  : flat
-                      ? Colors.transparent
-                      : scheme.onSurface.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(flat ? 6 : 8),
-              border: Border.all(
-                color: lit
-                    ? tint.withValues(alpha: 0.45)
-                    : flat
-                        ? Colors.transparent
-                        : scheme.onSurface.withValues(alpha: 0.10),
-              ),
-            ),
-            child: AnimatedScale(
-              duration: const Duration(milliseconds: 140),
-              scale: lit ? 1.08 : 1,
-              child: Icon(
-                widget.icon,
-                size: flat ? 15 : 16,
-                color: lit && widget.danger
-                    ? scheme.error
-                    : scheme.onSurface.withValues(alpha: enabled ? (lit ? 1 : 0.8) : 0.3),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// The agent gateway, while MCP access is on; null otherwise.
 AppMcpGateway? _mcpGateway(BuildContext context) {

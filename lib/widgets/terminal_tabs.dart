@@ -20,6 +20,7 @@ import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
 import 'terminal_drag_select.dart';
 import 'sftp_browser.dart';
+import 'sftp_window.dart';
 import 'threshold_draggable.dart';
 import '../l10n/strings.dart';
 
@@ -318,6 +319,10 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
       // First when the session has dropped: that is what the menu is for then.
       if (canReconnect(tab)) const MenuAction('reconnect', 'Reconnect', Icons.refresh),
       if (canSendCtrlAltDel(tab)) const MenuAction('ctrlaltdel', 'Send Ctrl+Alt+Del', Icons.keyboard),
+      if (tab.controller case final PtySessionController ssh)
+        ssh.sftpOpen.value
+            ? const MenuAction('sftp', 'Close SFTP files', Icons.folder_off_rounded)
+            : const MenuAction('sftp', 'SFTP files', Icons.folder_rounded),
       if (unsaved != null)
         MenuAction(
           'save',
@@ -336,6 +341,9 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
       reconnectTab(tab);
     case 'ctrlaltdel':
       (tab.controller as RdpSessionController).sendCtrlAltDelete();
+    case 'sftp':
+      final ssh = tab.controller as PtySessionController;
+      ssh.sftpOpen.value = !ssh.sftpOpen.value;
     case 'save':
       final conn = await showSaveQuickConnectionDialog(context, unsaved!);
       if (conn != null) app.linkTabToConnection(tab.id, conn);
@@ -1058,7 +1066,6 @@ class _TerminalPaneState extends State<_TerminalPane> {
   late final TerminalClipboard _clipboard;
   final _viewKey = GlobalKey<TerminalViewState>();
   final _scroll = ScrollController();
-  bool _showSftp = false;
 
   @override
   void initState() {
@@ -1100,16 +1107,6 @@ class _TerminalPaneState extends State<_TerminalPane> {
     if (session is! PtySessionController) return terminal;
     return Column(
       children: [
-        SizedBox(height: 32, child: Row(children: [
-          const Spacer(),
-          IconButton(
-            key: const ValueKey('toggle-sftp'),
-            tooltip: tr('SFTP files'),
-            visualDensity: VisualDensity.compact,
-            icon: Icon(_showSftp ? Icons.folder_open : Icons.folder_outlined, size: 18),
-            onPressed: () => setState(() => _showSftp = !_showSftp),
-          ),
-        ])),
         ValueListenableBuilder<String?>(
           valueListenable: session.loginQuestion,
           builder: (context, question, _) => question == null
@@ -1123,12 +1120,19 @@ class _TerminalPaneState extends State<_TerminalPane> {
                   },
                 ),
         ),
-        Expanded(child: !_showSftp
+        Expanded(child: ValueListenableBuilder<bool>(
+            valueListenable: session.sftpOpen,
+            builder: (context, open, _) => !open
             ? terminal
             : LayoutBuilder(builder: (context, constraints) {
                 final browser = SftpBrowser(
                   key: ValueKey(session),
                   createClient: (password) => session.createSftpClient(password: password),
+                  onClose: () => session.sftpOpen.value = false,
+                  onExpand: () => openSftpWindow(
+                    session,
+                    dark: Theme.of(context).brightness == Brightness.dark,
+                  ),
                 );
                 if (constraints.maxWidth < 600) {
                   return Column(children: [
@@ -1143,7 +1147,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
                   const VerticalDivider(width: 1),
                   Expanded(child: terminal),
                 ]);
-              })),
+              }))),
       ],
     );
   }

@@ -951,7 +951,6 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
     });
     final result = await UpdateService.checkNow();
     if (!mounted) return;
-    if (result.info != null && result.info!.channel != context.read<AppState>().updateChannel) return;
     setState(() {
       if (result.failed) {
         _phase = _Phase.failed;
@@ -1008,22 +1007,28 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(tr('Release channel'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
+        Row(
           children: [
-            for (final channel in ReleaseChannel.values)
-              ChoiceChip(
-                label: Text(tr(channel == ReleaseChannel.beta ? 'Beta' : 'Stable')),
-                selected: context.watch<AppState>().updateChannel == channel,
-                onSelected: (_) => _chooseChannel(channel),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tr('Receive beta updates')),
+                  const SizedBox(height: 4),
+                  Text(
+                    tr('Betas are offered too, as they come out. A beta replaces this version, with the same connections and settings, and may have bugs.'),
+                    style: TextStyle(fontSize: 12, color: dim),
+                  ),
+                ],
               ),
+            ),
+            Switch(
+              key: const ValueKey('beta-updates'),
+              value: context.watch<AppState>().updateChannel == ReleaseChannel.beta,
+              onChanged: (on) => _chooseChannel(on ? ReleaseChannel.beta : ReleaseChannel.stable),
+            ),
           ],
         ),
-        const SizedBox(height: 8),
-        Text(tr('A beta replaces this version, with the same connections and settings. It may have bugs; updates return you to the next normal release.'),
-            style: TextStyle(fontSize: 12, color: dim)),
         const SizedBox(height: 20),
         Row(
           children: [

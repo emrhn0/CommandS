@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -12,10 +13,18 @@ import 'services/rdp_session.dart';
 import 'services/mcp_server.dart';
 import 'widgets/mcp_approval_dialog.dart';
 import 'theme/app_theme.dart';
+import 'widgets/sftp_window.dart';
 import 'widgets/update_dialog.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // A second window (the SFTP file manager) runs this same entry point in its
+  // own engine, with its launch arguments telling it what to be.
+  final sftp = await _sftpWindowArguments();
+  if (sftp != null) {
+    await runSftpWindow(sftp);
+    return;
+  }
   await windowManager.ensureInitialized();
   await windowManager.waitUntilReadyToShow(
     const WindowOptions(
@@ -44,6 +53,15 @@ void main() async {
     },
   );
   runApp(const CommandSApp());
+}
+
+Future<SftpWindowArguments?> _sftpWindowArguments() async {
+  try {
+    final controller = await WindowController.fromCurrentEngine();
+    return SftpWindowArguments.decode(controller.arguments);
+  } catch (_) {
+    return null;
+  }
 }
 
 class CommandSApp extends StatelessWidget {

@@ -31,7 +31,7 @@ class UpdateGate extends StatefulWidget {
 
 class _UpdateGateState extends State<UpdateGate> {
   static const _settle = Duration(seconds: 3);
-  static const _interval = Duration(hours: 1);
+  static const _interval = Duration(minutes: 5);
 
   /// How soon to look again when the prompt could not be shown, because
   /// another dialog was open.

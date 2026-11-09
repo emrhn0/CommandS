@@ -84,7 +84,7 @@ void main() {
     final sftp = _FakeSftp();
     await _pumpBrowser(tester, sftp);
     expect(tester.takeException(), isNull);
-    expect(find.text('Remote files'), findsOneWidget);
+    expect(find.text('REMOTE FILES'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')));

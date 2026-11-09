@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "desktop_multi_window/desktop_multi_window_plugin.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +26,13 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  // A second window (SFTP) gets an engine of its own, with the same plugins.
+  // Not the RDP plugin: that window shows no remote desktops.
+  DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
+    auto* view_controller =
+        reinterpret_cast<flutter::FlutterViewController*>(controller);
+    RegisterPlugins(view_controller->engine());
+  });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   rdp_plugin_ = std::make_unique<commands::RdpPlugin>(

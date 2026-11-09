@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
+import '../theme/app_theme.dart';
+import 'tool_button.dart';
 import '../services/sftp_client.dart';
 
 typedef SftpClientFactory = Future<SftpClient> Function(String? password);
@@ -70,8 +72,19 @@ class DiskFileBrowser implements LocalFileBrowser {
 }
 
 class SftpBrowser extends StatefulWidget {
-  const SftpBrowser({super.key, required this.createClient, this.localBrowser});
+  const SftpBrowser({super.key, required this.createClient, this.localBrowser, this.onClose, this.onExpand, this.wide = false});
   final SftpClientFactory createClient;
+
+  /// Closes the panel; the terminal stays.
+  final VoidCallback? onClose;
+
+  /// Opens the file manager in a window of its own. Without it, the expand
+  /// button shows it over this window instead.
+  final VoidCallback? onExpand;
+
+  /// Side by side over the whole window, rather than a panel beside the
+  /// terminal.
+  final bool wide;
   final LocalFileBrowser? localBrowser;
 
   @override
@@ -234,7 +247,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
         : _localEntries.any((e) => e.name == name);
     if (exists && !await _confirmOverwrite(name)) return;
     if (!mounted) return;
-    final item = _Transfer(name, upload ? Icons.upload : Icons.download);
+    final item = _Transfer(name, upload ? Icons.upload_rounded : Icons.download_rounded);
     setState(() {
       _busy = true;
       _transfers.insert(0, item);
@@ -334,24 +347,42 @@ class _SftpBrowserState extends State<SftpBrowser> {
     if (password != null && mounted) await _connect(password);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surface,
-      child: Column(
-        children: [
-          _panelHeader(
-            tr('Remote files'),
-            _remotePath.isEmpty ? '/' : _remotePath,
-            up: _remotePath.isEmpty || _remotePath == '/'
-                ? null
-                : () =>
-                      _loadRemote(OpenSshSftpClient.parentRemote(_remotePath)),
-            refresh: _client == null ? null : () => _loadRemote(),
-            extra: _client == null ? null : _newFolder,
-          ),
-          Expanded(
+  bool get _canDownload =>
+      !_busy &&
+      _selectedRemote != null &&
+      _remoteEntries.any((e) => e.name == _selectedRemote && !e.isDirectory);
+
+  bool get _canUpload =>
+      !_busy &&
+      _selectedLocal != null &&
+      _localEntries.any((e) => e.name == _selectedLocal && !e.isDirectory);
+
+  /// The remote files over the whole app window, beside this computer's, as
+  /// in a file manager. The window can be resized as usual.
+  Future<void> _openWide() => showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: Colors.black26,
+    pageBuilder: (context, _, _) => _WideSftp(
+      createClient: widget.createClient,
+      localBrowser: widget.localBrowser,
+    ),
+  );
+
+  Widget _remoteSection() => Column(
+    children: [
+      _panelHeader(
+        tr('Remote files'),
+        _remotePath.isEmpty ? '/' : _remotePath,
+        up: _remotePath.isEmpty || _remotePath == '/'
+            ? null
+            : () => _loadRemote(OpenSshSftpClient.parentRemote(_remotePath)),
+        refresh: _client == null ? null : () => _loadRemote(),
+        extra: _client == null ? null : _newFolder,
+        expand: widget.wide ? null : (widget.onExpand ?? _openWide),
+        close: widget.wide ? null : widget.onClose,
+      ),
+      Expanded(
             child: _remoteLoading
                 ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
                 : _remoteError != null
@@ -366,55 +397,19 @@ class _SftpBrowserState extends State<SftpBrowser> {
                       OpenSshSftpClient.joinRemote(_remotePath, name),
                     ),
                   ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    key: const ValueKey('sftp-download'),
-                    onPressed:
-                        !_busy &&
-                            _selectedRemote != null &&
-                            _remoteEntries.any(
-                              (e) =>
-                                  e.name == _selectedRemote && !e.isDirectory,
-                            )
-                        ? () => _transfer(upload: false)
-                        : null,
-                    icon: const Icon(Icons.download, size: 16),
-                    label: Text(tr('Download')),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: FilledButton.icon(
-                    key: const ValueKey('sftp-upload'),
-                    onPressed:
-                        !_busy &&
-                            _selectedLocal != null &&
-                            _localEntries.any(
-                              (e) => e.name == _selectedLocal && !e.isDirectory,
-                            )
-                        ? () => _transfer(upload: true)
-                        : null,
-                    icon: const Icon(Icons.upload, size: 16),
-                    label: Text(tr('Upload')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          _panelHeader(
-            tr('Local files'),
-            _localPath,
-            up: () => _loadLocal(_local.parent(_localPath)),
-            refresh: () => _loadLocal(),
-          ),
-          Expanded(
+      ),
+    ],
+  );
+
+  Widget _localSection() => Column(
+    children: [
+      _panelHeader(
+        tr('Local files'),
+        _localPath,
+        up: () => _loadLocal(_local.parent(_localPath)),
+        refresh: () => _loadLocal(),
+      ),
+      Expanded(
             child: _localLoading
                 ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
                 : _localError != null
@@ -427,20 +422,41 @@ class _SftpBrowserState extends State<SftpBrowser> {
                     onSelect: (name) => setState(() => _selectedLocal = name),
                     onOpen: (name) => _loadLocal(_local.join(_localPath, name)),
                   ),
-          ),
-          const Divider(height: 1),
+      ),
+    ],
+  );
+
+  Widget _downloadButton({required bool wide}) => OutlinedButton.icon(
+    key: const ValueKey('sftp-download'),
+    style: _barButton,
+    onPressed: _canDownload ? () => _transfer(upload: false) : null,
+    icon: Icon(wide ? Icons.arrow_back_rounded : Icons.download_rounded, size: 16),
+    label: Text(tr('Download')),
+  );
+
+  Widget _uploadButton({required bool wide}) => ElevatedButton.icon(
+    key: const ValueKey('sftp-upload'),
+    style: _barButton,
+    onPressed: _canUpload ? () => _transfer(upload: true) : null,
+    icon: Icon(wide ? Icons.arrow_forward_rounded : Icons.upload_rounded, size: 16),
+    label: Text(tr('Upload')),
+  );
+
+  Widget _transfersBox() =>
           SizedBox(
             height: 98,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 5, 10, 3),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                   child: Text(
-                    tr('Transfers'),
-                    style: const TextStyle(
+                    tr('Transfers').toUpperCase(),
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
                     ),
                   ),
                 ),
@@ -462,7 +478,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
                                 height: 24,
                                 child: Row(
                                   children: [
-                                    const SizedBox(width: 10),
+                                    const SizedBox(width: 12),
                                     Icon(item.direction, size: 14),
                                     const SizedBox(width: 6),
                                     Expanded(
@@ -483,9 +499,12 @@ class _SftpBrowserState extends State<SftpBrowser> {
                                     else
                                       Icon(
                                         item.status == 'Completed'
-                                            ? Icons.check_circle_outline
-                                            : Icons.error_outline,
+                                            ? Icons.check_circle_rounded
+                                            : Icons.error_rounded,
                                         size: 13,
+                                        color: item.status == 'Completed'
+                                            ? const Color(0xFF2EB85C)
+                                            : Theme.of(context).colorScheme.error,
                                       ),
                                     const SizedBox(width: 5),
                                     Text(
@@ -502,7 +521,70 @@ class _SftpBrowserState extends State<SftpBrowser> {
                 ),
               ],
             ),
+          );
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? AppColors.darkPanel : AppColors.lightPanel;
+    if (widget.wide) {
+      // This computer on the left, the device on the right, the buttons
+      // between them pointing the way the file goes.
+      return Material(
+        color: panel,
+        child: Column(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(child: _localSection()),
+                  const VerticalDivider(width: 1),
+                  SizedBox(
+                    width: 132,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _uploadButton(wide: true),
+                          const SizedBox(height: 8),
+                          _downloadButton(wide: true),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(child: _remoteSection()),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            _transfersBox(),
+          ],
+        ),
+      );
+    }
+    return Material(
+      color: panel,
+      child: Column(
+        children: [
+          Expanded(child: _remoteSection()),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(child: _downloadButton(wide: false)),
+                const SizedBox(width: 8),
+                Expanded(child: _uploadButton(wide: false)),
+              ],
+            ),
           ),
+          const Divider(height: 1),
+          Expanded(child: _localSection()),
+          const Divider(height: 1),
+          _transfersBox(),
         ],
       ),
     );
@@ -513,7 +595,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
+        Icon(Icons.error_rounded, color: Theme.of(context).colorScheme.error),
         const SizedBox(height: 6),
         Text(
           error,
@@ -536,59 +618,47 @@ class _SftpBrowserState extends State<SftpBrowser> {
     ),
   );
 
+  /// The panel's two buttons, as compact as the rest of the panel.
+  static final _barButton = ButtonStyle(
+    minimumSize: const WidgetStatePropertyAll(Size(0, 30)),
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 10)),
+  );
+
   Widget _panelHeader(
     String title,
     String path, {
     VoidCallback? up,
     VoidCallback? refresh,
     VoidCallback? extra,
+    VoidCallback? expand,
+    VoidCallback? close,
   }) {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
+                title.toUpperCase(),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.6, color: dim),
               ),
               const Spacer(),
               if (extra != null)
-                IconButton(
-                  icon: const Icon(Icons.create_new_folder_outlined, size: 17),
-                  tooltip: tr('New remote folder'),
-                  onPressed: extra,
-                  visualDensity: VisualDensity.compact,
-                ),
-              IconButton(
-                icon: const Icon(Icons.arrow_upward, size: 16),
-                tooltip: tr('Parent folder'),
-                onPressed: up,
-                visualDensity: VisualDensity.compact,
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh, size: 16),
-                tooltip: tr('Refresh'),
-                onPressed: refresh,
-                visualDensity: VisualDensity.compact,
-              ),
+                ToolButton(icon: Icons.create_new_folder_rounded, tooltip: tr('New remote folder'), onPressed: extra, size: 26),
+              ToolButton(icon: Icons.arrow_upward_rounded, tooltip: tr('Parent folder'), onPressed: up, size: 26),
+              ToolButton(icon: Icons.refresh_rounded, tooltip: tr('Refresh'), onPressed: refresh, size: 26),
+              if (expand != null)
+                ToolButton(icon: Icons.open_in_full_rounded, tooltip: tr('Expand'), onPressed: expand, size: 26),
+              if (close != null)
+                ToolButton(icon: Icons.close_rounded, tooltip: tr('Close SFTP'), onPressed: close, size: 26),
             ],
           ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              path,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10),
-            ),
-          ),
+          const SizedBox(height: 2),
+          Text(path, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: dim)),
         ],
       ),
     );
@@ -604,39 +674,18 @@ class _SftpBrowserState extends State<SftpBrowser> {
       return Center(child: Text(tr('This folder is empty.')));
     }
     return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 4),
       itemCount: entries.length,
       itemBuilder: (context, index) {
         final (name, folder, size) = entries[index];
-        return InkWell(
+        return _FileRow(
           key: ValueKey('sftp-entry-$name'),
-          onTap: () => onSelect(name),
-          onDoubleTap: folder ? () => onOpen(name) : null,
-          child: Container(
-            height: 27,
-            color: selected == name
-                ? Theme.of(context).colorScheme.primaryContainer
-                : null,
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            child: Row(
-              children: [
-                Icon(
-                  folder ? Icons.folder : Icons.insert_drive_file_outlined,
-                  size: 16,
-                  color: folder ? Colors.amber.shade700 : null,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    name,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
-                if (!folder)
-                  Text(_size(size), style: const TextStyle(fontSize: 10)),
-              ],
-            ),
-          ),
+          name: name,
+          folder: folder,
+          size: folder ? null : _size(size),
+          selected: selected == name,
+          onSelect: () => onSelect(name),
+          onOpen: folder ? () => onOpen(name) : null,
         );
       },
     );
@@ -646,5 +695,132 @@ class _SftpBrowserState extends State<SftpBrowser> {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+}
+
+/// One file or folder, drawn like a row of the connection panel: a rounded,
+/// neutral highlight with the selection pill, and a single-colour icon.
+class _FileRow extends StatefulWidget {
+  const _FileRow({
+    super.key,
+    required this.name,
+    required this.folder,
+    required this.size,
+    required this.selected,
+    required this.onSelect,
+    required this.onOpen,
+  });
+
+  final String name;
+  final bool folder;
+  final String? size;
+  final bool selected;
+  final VoidCallback onSelect;
+  final VoidCallback? onOpen;
+
+  @override
+  State<_FileRow> createState() => _FileRowState();
+}
+
+class _FileRowState extends State<_FileRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final text = isDark ? AppColors.darkText : AppColors.lightText;
+    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    final overlay = isDark ? Colors.white : Colors.black;
+    final background = widget.selected
+        ? overlay.withValues(alpha: isDark ? 0.11 : 0.075)
+        : _hover
+        ? overlay.withValues(alpha: isDark ? 0.06 : 0.04)
+        : Colors.transparent;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onSelect,
+        onDoubleTap: widget.onOpen,
+        child: Container(
+          height: 28,
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(4)),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 14,
+                margin: const EdgeInsets.only(right: 7),
+                decoration: BoxDecoration(
+                  color: widget.selected ? text : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Icon(
+                widget.folder ? Icons.folder_rounded : Icons.description_outlined,
+                size: 16,
+                color: widget.folder ? text : dim,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12.5, color: text, fontWeight: widget.folder ? FontWeight.w500 : null),
+                ),
+              ),
+              if (widget.size != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(widget.size!, style: TextStyle(fontSize: 11, color: dim)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The file manager view: a bar with the way back, then both sides.
+class _WideSftp extends StatelessWidget {
+  const _WideSftp({required this.createClient, required this.localBrowser});
+  final SftpClientFactory createClient;
+  final LocalFileBrowser? localBrowser;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    return Material(
+      color: isDark ? AppColors.darkBg : AppColors.lightBg,
+      child: Column(
+        children: [
+          Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor))),
+            child: Row(
+              children: [
+                Icon(Icons.folder_rounded, size: 16, color: dim),
+                const SizedBox(width: 8),
+                const Text('SFTP', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                ToolButton(
+                  key: const ValueKey('sftp-shrink'),
+                  icon: Icons.close_fullscreen_rounded,
+                  tooltip: tr('Shrink'),
+                  onPressed: () => Navigator.of(context).pop(),
+                  size: 28,
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: SftpBrowser(createClient: createClient, localBrowser: localBrowser, wide: true)),
+        ],
+      ),
+    );
   }
 }

@@ -88,10 +88,10 @@ Do not "simplify" these without reading why.
     (`RdpChannel.holdSuspended`), so a menu does not turn it black. The picture
     stays in memory only.
   - Ctrl+Alt+Del goes through `IMsRdpClientNonScriptable::SendKeys`.
+    `SendRemoteAction` has no such action; its value 0 means Charms.
   - The clipboard is handed across on `WM_ACTIVATE` through
     `IMsRdpClientNonScriptable7::Clipboard` (`SyncClipboard`): in this window
     the control did not follow it on its own.
-    `SendRemoteAction` has no such action; its value 0 means Charms.
 - **Tree clicks work like Explorer.** One click selects, a double click opens.
   - Double clicks are detected from pointer-down timestamps in a `Listener`,
     not with a double-tap recognizer, which would delay every single click.
@@ -110,6 +110,14 @@ Do not "simplify" these without reading why.
   a value that cannot be opened is saved back untouched: never lose one.
   Under `flutter test` the key store is in memory, so tests cannot reach the
   real key.
+- **The SFTP file manager's own window** (`sftp_window.dart`) is a second
+  engine through `desktop_multi_window`: same process, same taskbar button.
+  It gets what it needs to connect as launch arguments, in memory only, and
+  registers the generated plugins but not the RDP one.
+- **Updates are checked every five minutes from the releases feed**
+  (`releases.atom`), not the API. Unauthenticated API calls are limited to 60
+  an hour per network, which an office checking that often would use up; the
+  API is asked only once something newer has turned up.
 - **Terminal output is batched** (about one flush per 16 ms) and decoded as one
   UTF-8 stream. Drawing every chunk made busy sessions stutter.
 - **Keyboard** behaves as in PuTTY.

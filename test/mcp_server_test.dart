@@ -336,7 +336,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('Allow MCP access'), findsOneWidget);
-    expect(find.byType(Switch), findsOneWidget);
+    expect(find.byType(Switch), findsWidgets, reason: 'MCP access, and beta updates');
     expect(server.enabled, isFalse);
   });
 }

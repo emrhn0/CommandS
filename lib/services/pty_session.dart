@@ -97,11 +97,26 @@ class PtySessionController implements TerminalSessionController {
   /// askpass helper answers them when the session has a password.
   final loginQuestion = ValueNotifier<String?>(null);
 
+  /// Whether the SFTP file panel is open beside this session's terminal.
+  final sftpOpen = ValueNotifier<bool>(false);
+
   /// Whether a saved password will follow a yes.
   bool get hasSavedPassword => _password.isNotEmpty;
 
   /// Opens a separate SFTP channel with this tab's resolved login and SSH
   /// compatibility options. The terminal process remains independent.
+  /// What another window needs to open SFTP to this session's device.
+  Future<({String host, int port, String username, String password, List<String> sshOptions})> sftpConnection() async {
+    final client = await createSftpClient();
+    return (
+      host: client.host,
+      port: client.port,
+      username: client.username,
+      password: client.password,
+      sshOptions: client.sshOptions,
+    );
+  }
+
   Future<OpenSshSftpClient> createSftpClient({String? password}) async {
     if (_username.isEmpty) {
       throw const SftpException('SSH login is not ready');
@@ -821,6 +836,7 @@ class PtySessionController implements TerminalSessionController {
   @override
   void dispose() {
     loginQuestion.dispose();
+    sftpOpen.dispose();
     _lineInput = null;
     _stopProcess();
     _statusController.close();

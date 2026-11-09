@@ -52,6 +52,7 @@ dependencies:
   # AES-GCM for remembered passwords (see services/password_vault.dart).
   pointycastle: ^4.0.0
   flutter_svg: ^2.3.2
+  desktop_multi_window: ^0.3.1
 
 dev_dependencies:
   flutter_test:
