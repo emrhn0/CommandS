@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+
 import 'providers/app_state.dart';
 import 'app_version.dart';
 import 'screens/home_screen.dart';
 import 'services/rdp_session.dart';
+import 'services/mcp_server.dart';
 import 'theme/app_theme.dart';
 import 'widgets/update_dialog.dart';
 
@@ -30,7 +33,10 @@ void main() async {
       // back; CustomTitleBar leaves room for them and draws no buttons of
       // its own there.
       if (Platform.isMacOS) {
-        await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: true);
+        await windowManager.setTitleBarStyle(
+          TitleBarStyle.hidden,
+          windowButtonVisibility: true,
+        );
       }
       await windowManager.show();
       await windowManager.focus();
@@ -52,19 +58,27 @@ class CommandSApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => AppState(),
-      child: Consumer<AppState>(
-        builder: (context, app, _) => MaterialApp(
-          title: appName,
-          debugShowCheckedModeBanner: false,
-          themeMode: app.themeMode,
-          theme: AppTheme.light(),
-          darkTheme: AppTheme.dark(),
-          // Embedded RDP sessions are windows of their own, drawn above the
-          // app; this tells them to step aside while a dialog is open. See
-          // [RdpModalObserver].
-          navigatorObservers: [_rdpModalObserver],
-          // Asks, once a launch, whether to install a newer release.
-          home: const UpdateGate(child: HomeScreen()),
+      child: ChangeNotifierProvider<McpServer>(
+        lazy: false,
+        create: (context) {
+          final server = McpServer(AppMcpGateway(context.read<AppState>()));
+          unawaited(server.restore());
+          return server;
+        },
+        child: Consumer<AppState>(
+          builder: (context, app, _) => MaterialApp(
+            title: appName,
+            debugShowCheckedModeBanner: false,
+            themeMode: app.themeMode,
+            theme: AppTheme.light(),
+            darkTheme: AppTheme.dark(),
+            // Embedded RDP sessions are windows of their own, drawn above the
+            // app; this tells them to step aside while a dialog is open. See
+            // [RdpModalObserver].
+            navigatorObservers: [_rdpModalObserver],
+            // Asks, once a launch, whether to install a newer release.
+            home: const UpdateGate(child: HomeScreen()),
+          ),
         ),
       ),
     );

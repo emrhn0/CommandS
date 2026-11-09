@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../app_version.dart';
 import '../providers/app_state.dart';
 import '../services/feedback_service.dart';
+import '../services/mcp_server.dart';
 import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
@@ -32,6 +33,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final divider = Theme.of(context).dividerColor;
+    final hasMcpServer = context.watch<McpServer?>() != null;
     return Scaffold(
       body: Column(
         children: [
@@ -60,7 +62,7 @@ class SettingsScreen extends StatelessWidget {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 760),
-                  child: const Column(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _Section(
@@ -79,6 +81,10 @@ class SettingsScreen extends StatelessWidget {
                       SizedBox(height: 22),
                       _Section(title: 'Connections', children: [_ImportExport()]),
                       SizedBox(height: 22),
+                      if (hasMcpServer) ...[
+                        const _Section(title: 'MCP integration', children: [_McpPanel()]),
+                        const SizedBox(height: 22),
+                      ],
                       _Section(title: 'Updates', children: [_UpdatesPanel()]),
                       SizedBox(height: 22),
                       _Section(title: 'Support & feedback', children: [_FeedbackPanel()]),
@@ -90,6 +96,59 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _McpPanel extends StatelessWidget {
+  const _McpPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final server = context.watch<McpServer>();
+    final secondary = Theme.of(context).textTheme.bodySmall?.color;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tr('Allow MCP access')),
+                  const SizedBox(height: 4),
+                  Text(tr('Lets a connected agent open saved SSH connections, send commands, and read terminal output.'),
+                      style: TextStyle(fontSize: 12, color: secondary)),
+                ],
+              ),
+            ),
+            Switch(
+              value: server.enabled,
+              onChanged: (value) async {
+                if (value) {
+                  await server.start();
+                } else {
+                  await server.stop();
+                }
+              },
+            ),
+          ],
+        ),
+        if (server.url case final url?) ...[
+          const SizedBox(height: 12),
+          Text(tr('MCP server URL'), style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          SelectableText(url),
+          const SizedBox(height: 8),
+          Text(tr('Use this URL directly in ChatGPT Work desktop, or point a Secure MCP Tunnel at it for hosted ChatGPT Work. Keep the URL private.'),
+              style: TextStyle(fontSize: 12, color: secondary)),
+        ],
+        if (server.error case final error?) ...[
+          const SizedBox(height: 8),
+          Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ],
+      ],
     );
   }
 }
