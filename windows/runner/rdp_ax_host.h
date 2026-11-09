@@ -134,6 +134,10 @@ class RdpAxHost : public IOleClientSite,
   // local Secure Attention Sequence swallows it.
   void SendCtrlAltDelete();
 
+  // Hands the clipboard across: this machine's to the session when the
+  // session window becomes active, the session's back when it stops being.
+  void SyncClipboard(bool to_remote);
+
   // Copies what the session window shows now, as top-down BGRA. False when it
   // is not on screen. Lets the app show a still picture while the window steps
   // aside for a menu or a dialog, rather than a black pane.

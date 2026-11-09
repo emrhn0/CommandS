@@ -207,6 +207,12 @@ LRESULT CALLBACK RdpAxHost::WndProc(HWND hwnd, UINT message, WPARAM wparam,
         host->in_place_object_->SetObjectRects(&rc, &rc);
       }
       return 0;
+    case WM_ACTIVATE:
+      // The control does not follow the clipboard on its own in a window like
+      // this one, so text and files copied on either side never arrived. It
+      // is handed over as the user moves between this machine and the session.
+      if (host != nullptr) host->SyncClipboard(LOWORD(wparam) != WA_INACTIVE);
+      break;
     case WM_SETFOCUS:
       // Keyboard input has to end up in the control's own child window, not
       // in this container -- the container has no input handling of its own,
@@ -726,6 +732,51 @@ void RdpAxHost::SendCtrlAltDelete() {
   }
   // Ctrl+Alt+End is what the session itself takes as Ctrl+Alt+Del.
   if (FAILED(hr)) PressCtrlAltEnd();
+}
+
+namespace {
+
+// IMsRdpClientNonScriptable7 and IMsRdpClipboard, as mstscax.dll's type
+// library lays them out. Neither is reachable through IDispatch.
+const IID kIID_NonScriptable7 = {
+    0x71b4a60a, 0xfe21, 0x46d8, {0xa3, 0x9b, 0x8e, 0x32, 0xba, 0x0c, 0x5e, 0xcc}};
+
+// get_Clipboard is at byte offset 552 of IMsRdpClientNonScriptable7's vtable.
+constexpr size_t kGetClipboardSlot = 552 / 8;
+static_assert(sizeof(void*) == 8, "the slot above is for 64-bit builds");
+
+struct IRdpClipboard : public IUnknown {
+  // The flag is written as a 2- or 4-byte boolean; callers pass a zeroed LONG.
+  virtual HRESULT STDMETHODCALLTYPE CanSyncLocalClipboardToRemoteSession(LONG* can) = 0;
+  virtual HRESULT STDMETHODCALLTYPE SyncLocalClipboardToRemoteSession() = 0;
+  virtual HRESULT STDMETHODCALLTYPE CanSyncRemoteClipboardToLocalSession(LONG* can) = 0;
+  virtual HRESULT STDMETHODCALLTYPE SyncRemoteClipboardToLocalSession() = 0;
+};
+
+}  // namespace
+
+void RdpAxHost::SyncClipboard(bool to_remote) {
+  if (control_ == nullptr || !connected_) return;
+  IUnknown* ns7 = nullptr;
+  if (FAILED(control_->QueryInterface(kIID_NonScriptable7, reinterpret_cast<void**>(&ns7))) ||
+      ns7 == nullptr) {
+    return;  // An older control, which follows the clipboard by itself.
+  }
+  using GetClipboard = HRESULT(STDMETHODCALLTYPE*)(IUnknown*, IRdpClipboard**);
+  auto get = reinterpret_cast<GetClipboard>((*reinterpret_cast<void***>(ns7))[kGetClipboardSlot]);
+  IRdpClipboard* clipboard = nullptr;
+  if (SUCCEEDED(get(ns7, &clipboard)) && clipboard != nullptr) {
+    LONG can = 0;
+    if (to_remote) {
+      if (SUCCEEDED(clipboard->CanSyncLocalClipboardToRemoteSession(&can)) && can != 0) {
+        clipboard->SyncLocalClipboardToRemoteSession();
+      }
+    } else if (SUCCEEDED(clipboard->CanSyncRemoteClipboardToLocalSession(&can)) && can != 0) {
+      clipboard->SyncRemoteClipboardToLocalSession();
+    }
+    clipboard->Release();
+  }
+  ns7->Release();
 }
 
 bool RdpAxHost::CaptureFrame(std::vector<uint8_t>* pixels, int* width, int* height) {

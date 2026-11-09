@@ -88,6 +88,9 @@ Do not "simplify" these without reading why.
     (`RdpChannel.holdSuspended`), so a menu does not turn it black. The picture
     stays in memory only.
   - Ctrl+Alt+Del goes through `IMsRdpClientNonScriptable::SendKeys`.
+  - The clipboard is handed across on `WM_ACTIVATE` through
+    `IMsRdpClientNonScriptable7::Clipboard` (`SyncClipboard`): in this window
+    the control did not follow it on its own.
     `SendRemoteAction` has no such action; its value 0 means Charms.
 - **Tree clicks work like Explorer.** One click selects, a double click opens.
   - Double clicks are detected from pointer-down timestamps in a `Listener`,
