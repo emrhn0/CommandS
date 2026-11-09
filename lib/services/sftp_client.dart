@@ -79,10 +79,12 @@ class OpenSshSftpClient implements SftpClient {
 
   /// A long listing line: the mode, then seven columns (links, owner,
   /// group, size and a three-part date), then the name. The columns are only
-  /// counted, not checked, as servers word them differently: a "?" for the
-  /// link count, a month in the server's language, a numeric owner.
+  /// counted, not checked, as servers and clients word them differently: a
+  /// "?" for the link count, a month in the server's language, a numeric
+  /// owner, permissions shown as "drwx******", and names printed with the
+  /// folder's whole path in front.
   static final _listingLine = RegExp(
-    r'^([bcdlps-])[rwxsStTl-]{9}[+@.]?\s+\S+\s+\S+\s+\S+\s+(\S+)\s+\S+\s+\S+\s+\S+\s(.+)$',
+    r'^([bcdlps-])\S{9}[+@.]?\s+\S+\s+\S+\s+\S+\s+(\S+)\s+\S+\s+\S+\s+\S+\s(.+)$',
   );
 
   /// Thrown when a listing came back but none of it could be read, so an
@@ -101,6 +103,10 @@ class OpenSshSftpClient implements SftpClient {
       }
       var name = match[3]!.trimLeft();
       if (match[1] == 'l') name = name.split(' -> ').first;
+      // "/home/user1/notes.txt" is "notes.txt"; a name itself has no "/".
+      final slash = name.length > 1 ? name.lastIndexOf('/', name.length - 2) : -1;
+      if (slash >= 0) name = name.substring(slash + 1);
+      if (name.endsWith('/') && name.length > 1) name = name.substring(0, name.length - 1);
       if (name == '.' || name == '..') continue;
       entries.add(
         SftpEntry(

@@ -1,6 +1,7 @@
 import 'package:commands/services/sftp_client.dart';
 import 'package:commands/widgets/sftp_browser.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeSftp implements SftpClient {
@@ -132,5 +133,55 @@ void main() {
     expect(find.text('Access denied'), findsOneWidget);
     expect(find.text('Use SFTP password'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a pasted path opens that folder', (tester) async {
+    final sftp = _FakeSftp();
+    await _pumpBrowser(tester, sftp);
+    final field = find.descendant(
+      of: find.byKey(const ValueKey('path-Remote files')),
+      matching: find.byType(TextField),
+    );
+    await tester.tap(field);
+    await tester.pump();
+    await tester.enterText(field, '/home/user/archive');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('older.txt'), findsOneWidget);
+  });
+
+  testWidgets('a letter jumps to the next name with it; arrows move; Backspace goes up', (tester) async {
+    final sftp = _FakeSftp();
+    sftp.folders['/home/user']!.addAll(const [
+      SftpEntry('data.txt', isDirectory: false, size: 1),
+      SftpEntry('docs.txt', isDirectory: false, size: 1),
+    ]);
+    await _pumpBrowser(tester, sftp);
+    bool selected(String name) {
+      final row = tester.widget(find.byKey(ValueKey('sftp-entry-$name')).first);
+      return (row as dynamic).selected as bool;
+    }
+
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')).first);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.pump();
+    expect(selected('data.txt'), isTrue);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.pump();
+    expect(selected('docs.txt'), isTrue, reason: 'the same letter again: the next one');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    expect(selected('data.txt'), isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('older.txt'), findsOneWidget, reason: 'Enter opened the folder');
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pumpAndSettle();
+    expect(find.text('remote.txt'), findsOneWidget, reason: 'Backspace went back up');
   });
 }

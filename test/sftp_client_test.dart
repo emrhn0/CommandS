@@ -28,6 +28,19 @@ void main() {
       expect(entries.last.size, 2840);
     });
 
+    test('masked permissions and whole paths, as a real server showed them', () {
+      const output = 'sftp> ls -la "/home/user1"\r\n'
+          'drwx******    ? user1    user1        4096 Oct  8 13:48 /home/user1/.\r\n'
+          'drwxr-xr-x    ? root     root         4096 Oct  8 13:40 /home/user1/..\r\n'
+          'drwx******    ? user1    user1        4096 Oct  8 13:48 /home/user1/.ssh\r\n'
+          '-rw-******    ? user1    user1         807 Oct  8 13:40 /home/user1/.profile\r\n'
+          '-rw-r--r--    ? user1    user1        2840 Nov  9 22:31 /home/user1/my notes.txt\r\n';
+      final entries = OpenSshSftpClient.parseListing(output);
+      expect(entries.map((e) => e.name), ['.ssh', '.profile', 'my notes.txt']);
+      expect(entries.first.isDirectory, isTrue);
+      expect(entries.last.size, 2840);
+    });
+
     test('an empty folder is empty', () {
       expect(OpenSshSftpClient.parseListing('sftp> ls -la "/tmp/empty"\r\n'), isEmpty);
     });

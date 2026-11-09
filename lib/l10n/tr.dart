@@ -249,6 +249,7 @@ const turkish = <String, String>{
       'Yalnızca CommandS’in kendi arayüzünü değiştirir; oturumlar etkilenmez.',
   'Connections': 'Bağlantılar',
   'MCP integration': 'MCP entegrasyonu',
+  'Type or paste a path': 'Yol yazın veya yapıştırın',
   'Receive beta updates': 'Beta güncellemelerini al',
   'Betas are offered too, as they come out. A beta replaces this version, with the same connections and settings, and may have bugs.':
       'Betalar da çıktıkça önerilir. Beta bu sürümün yerine geçer, bağlantılar ve ayarlar aynı kalır; hata içerebilir.',

@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/strings.dart';
 import '../theme/app_theme.dart';
@@ -401,6 +403,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
         extra: _client == null ? null : _newFolder,
         expand: widget.wide ? null : (widget.onExpand ?? _openWide),
         close: widget.wide ? null : widget.onClose,
+        onPath: _client == null ? null : (p) => _loadRemote(p.isEmpty ? '/' : p),
       ),
       Expanded(
             child: _remoteLoading
@@ -416,6 +419,9 @@ class _SftpBrowserState extends State<SftpBrowser> {
                     onOpen: (name) => _loadRemote(
                       OpenSshSftpClient.joinRemote(_remotePath, name),
                     ),
+                    onUp: _remotePath.isEmpty || _remotePath == '/'
+                        ? null
+                        : () => _loadRemote(OpenSshSftpClient.parentRemote(_remotePath)),
                   ),
       ),
     ],
@@ -428,6 +434,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
         _localPath,
         up: () => _loadLocal(_local.parent(_localPath)),
         refresh: () => _loadLocal(),
+        onPath: _goLocal,
       ),
       Expanded(
             child: _localLoading
@@ -441,6 +448,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
                     selected: _selectedLocal,
                     onSelect: (name) => setState(() => _selectedLocal = name),
                     onOpen: (name) => _loadLocal(_local.join(_localPath, name)),
+                    onUp: () => _loadLocal(_local.parent(_localPath)),
                   ),
       ),
     ],
@@ -652,6 +660,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
     VoidCallback? extra,
     VoidCallback? expand,
     VoidCallback? close,
+    ValueChanged<String>? onPath,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
@@ -678,7 +687,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
             ],
           ),
           const SizedBox(height: 2),
-          Text(path, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: dim)),
+          _PathField(key: ValueKey('path-$title'), path: path, onSubmit: onPath),
         ],
       ),
     );
@@ -689,26 +698,30 @@ class _SftpBrowserState extends State<SftpBrowser> {
     required String? selected,
     required ValueChanged<String> onSelect,
     required ValueChanged<String> onOpen,
+    VoidCallback? onUp,
   }) {
     if (entries.isEmpty) {
       return Center(child: Text(tr('This folder is empty.')));
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 4),
-      itemCount: entries.length,
-      itemBuilder: (context, index) {
-        final (name, folder, size) = entries[index];
-        return _FileRow(
-          key: ValueKey('sftp-entry-$name'),
-          name: name,
-          folder: folder,
-          size: folder ? null : _size(size),
-          selected: selected == name,
-          onSelect: () => onSelect(name),
-          onOpen: folder ? () => onOpen(name) : null,
-        );
-      },
+    return _FileList(
+      entries: [for (final (name, folder, size) in entries) (name, folder, folder ? null : _size(size))],
+      selected: selected,
+      onSelect: onSelect,
+      onOpen: onOpen,
+      onUp: onUp,
     );
+  }
+
+  /// A pasted path: a folder opens; a file opens its folder with it selected.
+  Future<void> _goLocal(String raw) async {
+    final path = raw.trim().replaceAll('"', '');
+    if (path.isEmpty) return;
+    if (await File(path).exists()) {
+      await _loadLocal(_local.parent(path));
+      if (mounted) setState(() => _selectedLocal = baseName(path));
+      return;
+    }
+    await _loadLocal(path);
   }
 
   String _size(int bytes) {
@@ -759,9 +772,15 @@ class _FileRowState extends State<_FileRow> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
+      // Selected the moment the button goes down, as in Explorer and the
+      // connection list; a tap recognizer would wait out the double-click.
+      child: Listener(
         behavior: HitTestBehavior.opaque,
-        onTap: widget.onSelect,
+        onPointerDown: (e) {
+          if (e.buttons == kPrimaryButton) widget.onSelect();
+        },
+        child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onDoubleTap: widget.onOpen,
         child: Container(
           height: 28,
@@ -799,6 +818,7 @@ class _FileRowState extends State<_FileRow> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -840,6 +860,211 @@ class _WideSftp extends StatelessWidget {
           ),
           Expanded(child: SftpBrowser(createClient: createClient, localBrowser: localBrowser, wide: true)),
         ],
+      ),
+    );
+  }
+}
+
+/// The folder's path, as text that can be edited: paste a path and press
+/// Enter to go there, as in a file manager's address bar.
+class _PathField extends StatefulWidget {
+  const _PathField({super.key, required this.path, required this.onSubmit});
+  final String path;
+  final ValueChanged<String>? onSubmit;
+
+  @override
+  State<_PathField> createState() => _PathFieldState();
+}
+
+class _PathFieldState extends State<_PathField> {
+  late final _controller = TextEditingController(text: widget.path);
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // Leaving the field without Enter puts the current path back.
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _controller.text = widget.path;
+      setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(_PathField old) {
+    super.didUpdateWidget(old);
+    if (old.path != widget.path && !_focus.hasFocus) _controller.text = widget.path;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    final text = isDark ? AppColors.darkText : AppColors.lightText;
+    final overlay = isDark ? Colors.white : Colors.black;
+    return SizedBox(
+      height: 24,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focus,
+        enabled: widget.onSubmit != null,
+        style: TextStyle(fontSize: 11.5, color: _focus.hasFocus ? text : dim),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: _focus.hasFocus,
+          fillColor: overlay.withValues(alpha: isDark ? 0.08 : 0.05),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4),
+            borderSide: BorderSide(color: overlay.withValues(alpha: 0.25)),
+          ),
+          hintText: tr('Type or paste a path'),
+        ),
+        onSubmitted: (value) {
+          widget.onSubmit?.call(value.trim());
+          _focus.unfocus();
+        },
+      ),
+    );
+  }
+}
+
+/// The rows of one side, with Explorer's keys: a letter jumps to the next name
+/// starting with it (typed quickly, the next with those letters), the arrows
+/// move, Enter opens a folder, Backspace goes up.
+class _FileList extends StatefulWidget {
+  const _FileList({
+    required this.entries,
+    required this.selected,
+    required this.onSelect,
+    required this.onOpen,
+    required this.onUp,
+  });
+
+  /// Name, folder, size text.
+  final List<(String, bool, String?)> entries;
+  final String? selected;
+  final ValueChanged<String> onSelect;
+  final ValueChanged<String> onOpen;
+  final VoidCallback? onUp;
+
+  @override
+  State<_FileList> createState() => _FileListState();
+}
+
+class _FileListState extends State<_FileList> {
+  final _focus = FocusNode();
+  final _scroll = ScrollController();
+  static const _rowExtent = 30.0;
+  String _typed = '';
+  DateTime _typedAt = DateTime(0);
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  int get _index => widget.entries.indexWhere((e) => e.$1 == widget.selected);
+
+  void _select(int index) {
+    if (index < 0 || index >= widget.entries.length) return;
+    widget.onSelect(widget.entries[index].$1);
+    if (!_scroll.hasClients) return;
+    final top = index * _rowExtent;
+    final view = _scroll.position.viewportDimension;
+    if (top < _scroll.offset) {
+      _scroll.jumpTo(top);
+    } else if (top + _rowExtent > _scroll.offset + view) {
+      _scroll.jumpTo((top + _rowExtent - view).clamp(0, _scroll.position.maxScrollExtent));
+    }
+  }
+
+  void _typeAhead(String char) {
+    final now = DateTime.now();
+    final again = now.difference(_typedAt) < const Duration(milliseconds: 800);
+    _typedAt = now;
+    _typed = again ? _typed + char : char;
+    final names = [for (final e in widget.entries) e.$1.toLowerCase()];
+    final n = names.length;
+    // The same letter again moves on to the next name with it, as Explorer does.
+    final cycling = _typed.split('').toSet().length == 1;
+    final prefix = cycling ? _typed[0] : _typed;
+    final start = cycling ? _index + 1 : 0;
+    for (var i = 0; i < n; i++) {
+      final at = (start + i) % n;
+      if (names[at].startsWith(prefix)) {
+        _select(at);
+        return;
+      }
+    }
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown) {
+      _select(_index < 0 ? 0 : _index + 1);
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      _select(_index < 0 ? 0 : _index - 1);
+    } else if (key == LogicalKeyboardKey.home) {
+      _select(0);
+    } else if (key == LogicalKeyboardKey.end) {
+      _select(widget.entries.length - 1);
+    } else if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      final i = _index;
+      if (i >= 0 && widget.entries[i].$2) widget.onOpen(widget.entries[i].$1);
+    } else if (key == LogicalKeyboardKey.backspace) {
+      widget.onUp?.call();
+    } else {
+      final char = event.character;
+      if (char == null || char.isEmpty || char.trim().isEmpty || char.codeUnitAt(0) < 32) {
+        return KeyEventResult.ignored;
+      }
+      if (HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isAltPressed) {
+        return KeyEventResult.ignored;
+      }
+      _typeAhead(char.toLowerCase());
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _focus,
+      onKeyEvent: _onKey,
+      child: ListView.builder(
+        controller: _scroll,
+        padding: const EdgeInsets.only(bottom: 4),
+        itemCount: widget.entries.length,
+        itemExtent: _rowExtent,
+        itemBuilder: (context, index) {
+          final (name, folder, size) = widget.entries[index];
+          return _FileRow(
+            key: ValueKey('sftp-entry-$name'),
+            name: name,
+            folder: folder,
+            size: size,
+            selected: widget.selected == name,
+            onSelect: () {
+              _focus.requestFocus();
+              widget.onSelect(name);
+            },
+            onOpen: folder ? () => widget.onOpen(name) : null,
+          );
+        },
       ),
     );
   }
