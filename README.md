@@ -66,6 +66,32 @@ WebView: built with Flutter, rendered natively.
 - Customizable terminal colors, saved per install.
 - Monochrome, sharp-edged theme — black on white in light mode, white on black in dark mode.
 
+## ChatGPT Work (MCP)
+
+In **Settings > MCP integration**, turn on MCP access and copy the displayed
+URL. CommandS listens only on `127.0.0.1:8765`; the random path in the URL is
+a secret, so keep the full URL private. The server is off by default and
+remembers the setting across launches.
+
+- **ChatGPT Work desktop:** add a local Streamable HTTP MCP server using the
+  displayed URL.
+- **Hosted ChatGPT Work:** run an [OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+  on the same computer, targeting the displayed URL, then connect its tunnel
+  ID to a private ChatGPT Work plugin. The desktop app and tunnel must be
+  running for commands to reach CommandS.
+
+The tools list saved SSH connections, open one in a CommandS tab, send one
+command line followed by Enter, and read terminal output. `send_command`
+returns a cursor; pass it to `read_output`, then keep using each returned
+cursor. Terminal output arrives asynchronously, so an empty read does not
+mean the remote command has finished. The tools do not expose stored hosts or
+credentials, and they do not support RDP or serial sessions. The connected
+agent can execute commands with the selected SSH connection's privileges.
+
+When configuring the tunnel client, set `MCP_SERVER_URL` to the displayed URL
+from a local secret store. Configure the tunnel ID and runtime key as described
+in the [tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
+
 ## Development
 
 ```

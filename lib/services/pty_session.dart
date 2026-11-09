@@ -81,8 +81,11 @@ class PtySessionController implements TerminalSessionController {
   void Function(String)? _lineInput;
 
   final _statusController = StreamController<SessionStatus>.broadcast();
+  final _outputController = StreamController<String>.broadcast(sync: true);
   @override
   Stream<SessionStatus> get statusStream => _statusController.stream;
+  /// The same decoded output shown in the terminal, for local integrations.
+  Stream<String> get outputStream => _outputController.stream;
   @override
   SessionStatus status = SessionStatus.starting;
 
@@ -200,6 +203,9 @@ class PtySessionController implements TerminalSessionController {
     if (loginQuestion.value != null && data.contains('\r')) loginQuestion.value = null;
     _write(data);
   }
+
+  /// Sends input through the same login handling as the terminal keyboard.
+  void sendInput(String data) => _onTerminalInput(data);
 
   /// Hosts and usernames end up inside a batch file, so anything that could
   /// start a second command there is rejected outright rather than escaped.
@@ -698,8 +704,15 @@ class PtySessionController implements TerminalSessionController {
     final text = _pending.toString();
     _pending.clear();
     terminal.write(text);
+    if (!_outputController.isClosed) _outputController.add(text);
     _sniffAdd(text);
     _watchLogin(text);
+  }
+
+  @visibleForTesting
+  void debugReceiveOutput(String text) {
+    _pending.write(text);
+    _flush();
   }
 
   void _attachPty(int generation, {required bool cleanUpEarly}) {
@@ -775,5 +788,6 @@ class PtySessionController implements TerminalSessionController {
     _lineInput = null;
     _stopProcess();
     _statusController.close();
+    _outputController.close();
   }
 }

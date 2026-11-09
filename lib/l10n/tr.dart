@@ -230,6 +230,13 @@ const turkish = <String, String>{
   'Applies to CommandS itself; sessions are not affected.':
       'Yalnızca CommandS’in kendi arayüzünü değiştirir; oturumlar etkilenmez.',
   'Connections': 'Bağlantılar',
+  'MCP integration': 'MCP entegrasyonu',
+  'Allow MCP access': 'MCP erişimine izin ver',
+  'Lets a connected agent open saved SSH connections, send commands, and read terminal output.':
+      'Bağlı bir ajanın kayıtlı SSH bağlantılarını açmasına, komut göndermesine ve terminal çıktısını okumasına izin verir.',
+  'MCP server URL': 'MCP sunucu adresi',
+  'Use this URL directly in ChatGPT Work desktop, or point a Secure MCP Tunnel at it for hosted ChatGPT Work. Keep the URL private.':
+      'Bu adresi ChatGPT Work masaüstünde doğrudan kullanın veya barındırılan ChatGPT Work için Secure MCP Tunnel ile bağlayın. Adresi gizli tutun.',
   'Updates': 'Güncellemeler',
   'Support & feedback': 'Destek ve Öneri',
   'Found a problem, or have an idea? Write it here. Sending is anonymous: only your message, the app version and the operating system are sent.': 'Bir sorun mu buldunuz ya da bir fikriniz mi var? Buraya yazın. Gönderim anonimdir: yalnızca mesajınız, uygulama sürümü ve işletim sistemi gönderilir.',
