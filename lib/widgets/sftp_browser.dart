@@ -27,6 +27,7 @@ abstract class LocalFileBrowser {
   String parent(String path);
   String join(String path, String name);
   Future<List<LocalFileEntry>> list(String path);
+  Future<void> mkdir(String path);
 }
 
 /// The last part of a local path, as written: a name with "%" in it is a
@@ -41,6 +42,14 @@ String baseName(String path) {
 }
 
 class DiskFileBrowser implements LocalFileBrowser {
+  @override
+  Future<void> mkdir(String path) async {
+    if (await FileSystemEntity.type(path) != FileSystemEntityType.notFound) {
+      throw FileSystemException('Folder already exists', path);
+    }
+    await Directory(path).create();
+  }
+
   @override
   String get initialPath => Platform.isWindows
       ? (Platform.environment['USERPROFILE'] ?? Directory.current.path)
@@ -340,6 +349,38 @@ class _SftpBrowserState extends State<SftpBrowser> {
     }
   }
 
+  Future<void> _newLocalFolder() async {
+    var draft = '';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(tr('New local folder')),
+        content: TextField(
+          autofocus: true,
+          decoration: InputDecoration(labelText: tr('Name')),
+          onChanged: (value) => draft = value,
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(context, draft), child: Text(tr('Create'))),
+        ],
+      ),
+    );
+    if (name == null || !mounted) return;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == '.' || trimmed == '..' || trimmed.contains(RegExp(r'[\\/]'))) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Invalid folder name'))));
+      return;
+    }
+    try {
+      await _local.mkdir(_local.join(_localPath, trimmed));
+      await _loadLocal();
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
   Future<void> _askPassword() async {
     final controller = TextEditingController();
     final password = await showDialog<String>(
@@ -434,6 +475,8 @@ class _SftpBrowserState extends State<SftpBrowser> {
         _localPath,
         up: () => _loadLocal(_local.parent(_localPath)),
         refresh: () => _loadLocal(),
+        extra: _newLocalFolder,
+        extraTooltip: tr('New local folder'),
         onPath: _goLocal,
       ),
       Expanded(
@@ -658,6 +701,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
     VoidCallback? up,
     VoidCallback? refresh,
     VoidCallback? extra,
+    String? extraTooltip,
     VoidCallback? expand,
     VoidCallback? close,
     ValueChanged<String>? onPath,
@@ -677,7 +721,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
               ),
               const Spacer(),
               if (extra != null)
-                ToolButton(icon: Icons.create_new_folder_rounded, tooltip: tr('New remote folder'), onPressed: extra, size: 26),
+                ToolButton(icon: Icons.create_new_folder_rounded, tooltip: extraTooltip ?? tr('New remote folder'), onPressed: extra, size: 26),
               ToolButton(icon: Icons.arrow_upward_rounded, tooltip: tr('Parent folder'), onPressed: up, size: 26),
               ToolButton(icon: Icons.refresh_rounded, tooltip: tr('Refresh'), onPressed: refresh, size: 26),
               if (expand != null)

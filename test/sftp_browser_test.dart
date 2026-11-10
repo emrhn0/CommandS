@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commands/services/sftp_client.dart';
 import 'package:commands/widgets/sftp_browser.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +49,11 @@ class _FakeSftp implements SftpClient {
 }
 
 class _FakeLocal implements LocalFileBrowser {
+  final created = <String>[];
+  final entries = <LocalFileEntry>[
+    const LocalFileEntry('local.txt', isDirectory: false, size: 8),
+    const LocalFileEntry('report.txt', isDirectory: false, size: 3),
+  ];
   @override
   String get initialPath => 'C:/Files';
   @override
@@ -54,13 +61,15 @@ class _FakeLocal implements LocalFileBrowser {
   @override
   String parent(String path) => 'C:/';
   @override
-  Future<List<LocalFileEntry>> list(String path) async => [
-    const LocalFileEntry('local.txt', isDirectory: false, size: 8),
-    const LocalFileEntry('report.txt', isDirectory: false, size: 3),
-  ];
+  Future<List<LocalFileEntry>> list(String path) async => List.of(entries);
+  @override
+  Future<void> mkdir(String path) async {
+    created.add(path);
+    entries.add(LocalFileEntry(baseName(path), isDirectory: true, size: 0));
+  }
 }
 
-Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp) async {
+Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp, {_FakeLocal? local}) async {
   await tester.binding.setSurfaceSize(const Size(900, 700));
   await tester.pumpWidget(
     MaterialApp(
@@ -69,7 +78,7 @@ Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp) async {
           width: 340,
           child: SftpBrowser(
             createClient: (_) async => sftp,
-            localBrowser: _FakeLocal(),
+            localBrowser: local ?? _FakeLocal(),
           ),
         ),
       ),
@@ -79,6 +88,48 @@ Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp) async {
 }
 
 void main() {
+  testWidgets('creates a local folder and refresh shows filesystem changes', (tester) async {
+    final local = _FakeLocal();
+    await _pumpBrowser(tester, _FakeSftp(), local: local);
+    await tester.tap(find.byTooltip('New local folder'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'new folder');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+    expect(local.created, ['C:/Files/new folder']);
+    expect(find.text('new folder'), findsOneWidget);
+
+    local.entries.add(const LocalFileEntry('external.txt', isDirectory: false, size: 4));
+    await tester.tap(find.byTooltip('Refresh').last);
+    await tester.pumpAndSettle();
+    expect(find.text('external.txt'), findsOneWidget);
+  });
+
+  testWidgets('rejects a local folder name with a path separator', (tester) async {
+    final local = _FakeLocal();
+    await _pumpBrowser(tester, _FakeSftp(), local: local);
+    await tester.tap(find.byTooltip('New local folder'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'nested/folder');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+    expect(local.created, isEmpty);
+    expect(find.text('Invalid folder name'), findsOneWidget);
+  });
+
+  test('disk browser creates a folder and rejects an existing name', () async {
+    final root = await Directory.systemTemp.createTemp('commands_local_folder_test_');
+    final browser = DiskFileBrowser();
+    try {
+      final path = browser.join(root.path, 'new folder');
+      await browser.mkdir(path);
+      expect((await browser.list(root.path)).map((e) => e.name), contains('new folder'));
+      await expectLater(browser.mkdir(path), throwsA(isA<FileSystemException>()));
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
   testWidgets('navigates remote folders and uploads selected local file', (
     tester,
   ) async {

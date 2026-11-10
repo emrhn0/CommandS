@@ -28,6 +28,8 @@ class _FakeSftp implements SftpClient {
 
 class _FakeLocal implements LocalFileBrowser {
   @override
+  Future<void> mkdir(String path) async {}
+  @override
   String get initialPath => 'C:/Files';
   @override
   String join(String path, String name) => '$path/$name';
