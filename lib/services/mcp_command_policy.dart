@@ -35,18 +35,35 @@ bool runsWithoutAsking(String command, DeviceKind? device) {
   final text = command.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
   if (text.isEmpty) return false;
   if (_sessionPaging.contains(text)) return true;
-  // Chaining, redirection and shell syntax are never read-only here.
-  if (RegExp(r'[;&<>`$\\]').hasMatch(text)) return false;
+  // Chaining and redirection are never read-only here. "$" and "\" are
+  // allowed: in these CLIs they only appear in filter patterns.
+  if (RegExp(r'[;&<>`]').hasMatch(text)) return false;
   final parts = text.split('|');
-  final words = parts.first.trim().split(' ');
-  final verb = words.first;
+  final verb = parts.first.trim().split(' ').first;
   final reads = verb == 'show' ||
       verb == 'display' ||
       (verb == 'get' && device == DeviceKind.fortinet);
   if (!reads) return false;
-  for (final pipe in parts.skip(1)) {
-    final filter = pipe.trim().split(' ').first;
-    if (filter.isEmpty || !_filters.any((f) => f.startsWith(filter))) return false;
+  for (var i = 1; i < parts.length; i++) {
+    final part = parts[i];
+    final word = part.trim().split(' ').first;
+    if (word.isEmpty) return false;
+    // In "include A|B|C" the bars belong to the pattern. A bar with a space
+    // beside it, or the first one, starts a new pipe, which must filter.
+    final newPipe = i == 1 || parts[i - 1].endsWith(' ') || part.startsWith(' ');
+    if (newPipe) {
+      if (!_filters.any((f) => f.startsWith(word))) return false;
+    } else if (_writers.any((w) => word.length >= 3 && w.startsWith(word))) {
+      // A pattern part that reads like a writing pipe ("...|redirect x")
+      // could be one where several pipes are allowed, so ask.
+      return false;
+    }
   }
   return true;
 }
+
+/// Pipe commands that write or send output somewhere.
+const _writers = [
+  'redirect', 'tee', 'append', 'save', 'email', 'mail', 'tftp', 'ftp',
+  'scp', 'python', 'vsh', 'copy', 'write', 'file', 'archive',
+];

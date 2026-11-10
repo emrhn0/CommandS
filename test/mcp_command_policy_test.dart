@@ -34,6 +34,24 @@ void main() {
     expect(free('display version || reboot'), isFalse);
   });
 
+  test('bars inside a filter pattern are alternatives, not new pipes', () {
+    // Cisco and Huawei read "include A|B|C" as one regular expression.
+    expect(free('show wireless client summary | include 0000.5e00.5301|0000.5e00.5302|IP Learn', DeviceKind.cisco), isTrue);
+    expect(free('show wireless client mac-address 0000.5e00.5301 detail | include Client IPv4 Address|AP Name|Connected For|VLAN', DeviceKind.cisco), isTrue);
+    expect(free('show interfaces | include ^GigabitEthernet|packets input|packets output', DeviceKind.cisco), isTrue);
+    expect(free(r'show ip interface brief | include up$|Vlan\d+', DeviceKind.cisco), isTrue);
+    expect(free('display interface brief | include GE|XGE'), isTrue);
+    expect(free('show run | include vlan | exclude name', DeviceKind.cisco), isTrue);
+    expect(free('show running-config | include 192.0.2.10', DeviceKind.cisco), isTrue);
+
+    // A spaced bar is a new pipe, and it still has to filter.
+    expect(free('show run | include x | redirect flash:x.txt', DeviceKind.cisco), isFalse);
+    expect(free('show run | include x |tee flash:x.txt', DeviceKind.cisco), isFalse);
+    // Even glued to a pattern, a writing pipe name asks.
+    expect(free('show run | include x|redirect flash:x.txt', DeviceKind.cisco), isFalse);
+    expect(free('show run | include x|app flash:x.txt', DeviceKind.cisco), isFalse);
+  });
+
   test('changes, saving and anything else ask', () {
     for (final command in [
       'system-view',
