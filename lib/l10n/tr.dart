@@ -40,6 +40,8 @@ const turkish = <String, String>{
   'File {name} already exists at the destination.': 'Hedefte {name} dosyası zaten var.',
   'Replace': 'Değiştir',
   'New remote folder': 'Yeni uzak klasör',
+  'New local folder': 'Yeni yerel klasör',
+  'Invalid folder name': 'Geçersiz klasör adı',
   'Parent folder': 'Üst klasör',
   'Refresh': 'Yenile',
   'SFTP password': 'SFTP şifresi',
