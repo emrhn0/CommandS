@@ -1,4 +1,5 @@
 import 'package:commands/services/sftp_client.dart';
+import 'package:commands/services/sftp_transfer.dart';
 import 'package:commands/widgets/sftp_browser.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,7 +61,7 @@ class _FakeLocal implements LocalFileBrowser {
   ];
 }
 
-Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp) async {
+Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp, {List<SftpTransfer>? transfers}) async {
   await tester.binding.setSurfaceSize(const Size(900, 700));
   await tester.pumpWidget(
     MaterialApp(
@@ -70,6 +71,7 @@ Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp) async {
           child: SftpBrowser(
             createClient: (_) async => sftp,
             localBrowser: _FakeLocal(),
+            transfers: transfers,
           ),
         ),
       ),
@@ -79,6 +81,21 @@ Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp) async {
 }
 
 void main() {
+  testWidgets('transfer history survives rebuilding the panel', (tester) async {
+    final sftp = _FakeSftp();
+    final history = <SftpTransfer>[];
+    await _pumpBrowser(tester, sftp, transfers: history);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-local.txt')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('sftp-upload')));
+    await tester.pumpAndSettle();
+    expect(find.text('Completed'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _pumpBrowser(tester, sftp, transfers: history);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('No transfers yet'), findsNothing);
+  });
+
   testWidgets('navigates remote folders and uploads selected local file', (
     tester,
   ) async {

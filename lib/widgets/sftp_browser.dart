@@ -8,6 +8,7 @@ import '../l10n/strings.dart';
 import '../theme/app_theme.dart';
 import 'tool_button.dart';
 import '../services/sftp_client.dart';
+import '../services/sftp_transfer.dart';
 
 typedef SftpClientFactory = Future<SftpClient> Function(String? password);
 
@@ -94,7 +95,7 @@ class DiskFileBrowser implements LocalFileBrowser {
 }
 
 class SftpBrowser extends StatefulWidget {
-  const SftpBrowser({super.key, required this.createClient, this.localBrowser, this.onClose, this.onExpand, this.wide = false});
+  const SftpBrowser({super.key, required this.createClient, this.localBrowser, this.onClose, this.onExpand, this.wide = false, this.transfers});
   final SftpClientFactory createClient;
 
   /// Closes the panel; the terminal stays.
@@ -108,17 +109,10 @@ class SftpBrowser extends StatefulWidget {
   /// terminal.
   final bool wide;
   final LocalFileBrowser? localBrowser;
+  final List<SftpTransfer>? transfers;
 
   @override
   State<SftpBrowser> createState() => _SftpBrowserState();
-}
-
-class _Transfer {
-  _Transfer(this.name, this.direction);
-  final String name;
-  final IconData direction;
-  String status = 'Transferring';
-  String? error;
 }
 
 class _SftpBrowserState extends State<SftpBrowser> {
@@ -127,7 +121,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
   String _remotePath = '';
   List<LocalFileEntry> _localEntries = [];
   List<SftpEntry> _remoteEntries = [];
-  final List<_Transfer> _transfers = [];
+  late final List<SftpTransfer> _transfers = widget.transfers ?? [];
   SftpClient? _client;
   String? _remoteError;
   String? _localError;
@@ -269,7 +263,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
         : _localEntries.any((e) => e.name == name);
     if (exists && !await _confirmOverwrite(name)) return;
     if (!mounted) return;
-    final item = _Transfer(name, upload ? Icons.upload_rounded : Icons.download_rounded);
+    final item = SftpTransfer(name, upload ? 'upload' : 'download');
     setState(() {
       _busy = true;
       _transfers.insert(0, item);
@@ -388,6 +382,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
     pageBuilder: (context, _, _) => _WideSftp(
       createClient: widget.createClient,
       localBrowser: widget.localBrowser,
+      transfers: _transfers,
     ),
   );
 
@@ -401,7 +396,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
             : () => _loadRemote(OpenSshSftpClient.parentRemote(_remotePath)),
         refresh: _client == null ? null : () => _loadRemote(),
         extra: _client == null ? null : _newFolder,
-        expand: widget.wide ? null : (widget.onExpand ?? _openWide),
+        expand: widget.wide || _busy ? null : (widget.onExpand ?? _openWide),
         close: widget.wide ? null : widget.onClose,
         onPath: _client == null ? null : (p) => _loadRemote(p.isEmpty ? '/' : p),
       ),
@@ -507,7 +502,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
                                 child: Row(
                                   children: [
                                     const SizedBox(width: 12),
-                                    Icon(item.direction, size: 14),
+                                    Icon(item.direction == 'upload' ? Icons.upload_rounded : Icons.download_rounded, size: 14),
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
@@ -826,9 +821,10 @@ class _FileRowState extends State<_FileRow> {
 
 /// The file manager view: a bar with the way back, then both sides.
 class _WideSftp extends StatelessWidget {
-  const _WideSftp({required this.createClient, required this.localBrowser});
+  const _WideSftp({required this.createClient, required this.localBrowser, required this.transfers});
   final SftpClientFactory createClient;
   final LocalFileBrowser? localBrowser;
+  final List<SftpTransfer> transfers;
 
   @override
   Widget build(BuildContext context) {
@@ -858,7 +854,7 @@ class _WideSftp extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(child: SftpBrowser(createClient: createClient, localBrowser: localBrowser, wide: true)),
+          Expanded(child: SftpBrowser(createClient: createClient, localBrowser: localBrowser, wide: true, transfers: transfers)),
         ],
       ),
     );
