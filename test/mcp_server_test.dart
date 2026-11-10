@@ -18,7 +18,7 @@ class _FakeGateway implements McpGateway {
 
   @override
   List<Map<String, String>> listConnections() => [
-    {'id': 'device-01', 'name': 'DEVICE-01'},
+    {'id': 'device-01', 'name': 'DEVICE-01', 'device_type': 'Palo Alto'},
   ];
 
   @override
@@ -39,6 +39,7 @@ class _FakeGateway implements McpGateway {
     'output': 'ok',
     'cursor': cursor + 2,
     'status': 'running',
+    'device_type': 'Palo Alto',
   };
 
   @override
@@ -92,6 +93,7 @@ void main() {
     });
     expect(initStatus, 200);
     expect(init!['result']['protocolVersion'], '2025-11-25');
+    expect(init['result']['instructions'], contains('device_type'));
 
     final (noticeStatus, notice) = await _request(url, {
       'jsonrpc': '2.0',
@@ -115,6 +117,10 @@ void main() {
         'read_output',
       ]),
     );
+    expect(
+      tools.firstWhere((t) => t['name'] == 'list_connections')['description'],
+      contains('device_type'),
+    );
 
     Future<Map<String, dynamic>> call(
       int id,
@@ -134,7 +140,7 @@ void main() {
 
     final connections = await call(3, 'list_connections', {});
     expect(connections['connections'], [
-      {'id': 'device-01', 'name': 'DEVICE-01'},
+      {'id': 'device-01', 'name': 'DEVICE-01', 'device_type': 'Palo Alto'},
     ]);
     final opened = await call(4, 'open_connection', {
       'connection_id': 'device-01',
@@ -152,6 +158,7 @@ void main() {
     });
     expect(output['output'], 'ok');
     expect(output['cursor'], 7);
+    expect(output['device_type'], 'Palo Alto');
   });
 
   test('secret path and foreign Origin cannot call tools', () async {
@@ -211,7 +218,14 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       app.connections = [
         SavedConnection(id: 'c1', name: 'CUSTOMER-A SWITCH', host: '192.0.2.1', username: 'user1'),
-        SavedConnection(id: 'c2', name: 'CUSTOMER-B FIREWALL', host: '192.0.2.2'),
+        SavedConnection(
+          id: 'c2',
+          name: 'CUSTOMER-B FIREWALL',
+          host: '192.0.2.2',
+          username: 'test-user',
+          password: 'fake-secret',
+          device: DeviceKind.paloalto,
+        ),
       ];
       asked = [];
       answer = true;
@@ -234,10 +248,14 @@ void main() {
       await gateway.setAllowed('c2', true);
       final listed = gateway.listConnections();
       expect(listed, [
-        {'id': 'DEVICE-01', 'name': 'DEVICE-01'},
+        {'id': 'DEVICE-01', 'name': 'DEVICE-01', 'device_type': 'Palo Alto'},
       ]);
       expect(jsonEncode(listed), isNot(contains('CUSTOMER')));
       expect(jsonEncode(listed), isNot(contains('192.0.2')));
+      expect(jsonEncode(listed), isNot(contains('test-user')));
+      expect(jsonEncode(listed), isNot(contains('fake-secret')));
+      await gateway.setAllowed('c1', true);
+      expect(gateway.listConnections().last['device_type'], 'Unknown');
     });
 
     test('a connection not allowed cannot be opened, by alias or real id', () async {
@@ -314,6 +332,9 @@ void main() {
     final output = gateway.readOutput(sessionId, 0);
     expect(output['output'], 'device prompt> ');
     expect(output['cursor'], 15);
+    expect(output['device_type'], 'Unknown');
+    app.connections.single.device = DeviceKind.paloalto;
+    expect(gateway.readOutput(sessionId, 15)['device_type'], 'Palo Alto');
   });
 
   testWidgets('Settings shows local MCP controls', (tester) async {

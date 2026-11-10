@@ -21,8 +21,9 @@ class McpApproval {
 }
 
 /// Only saved SSH connections the user allowed one by one are exposed, under
-/// anonymous names (`DEVICE-01`...). Credentials, hosts and real names are
-/// never in the tool results, and every command waits for the user's yes.
+/// anonymous names (`DEVICE-01`...) with their device types. Credentials,
+/// hosts and real names are never in the tool results, and every command
+/// waits for the user's yes.
 abstract class McpGateway {
   List<Map<String, String>> listConnections();
   Future<String> openConnection(String connectionId);
@@ -96,7 +97,12 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
 
   @override
   List<Map<String, String>> listConnections() => [
-    for (final c in allowedConnections) {'id': aliasOf(c.id)!, 'name': aliasOf(c.id)!},
+    for (final c in allowedConnections)
+      {
+        'id': aliasOf(c.id)!,
+        'name': aliasOf(c.id)!,
+        'device_type': c.device?.label ?? 'Unknown',
+      },
   ];
 
   @override
@@ -163,8 +169,18 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
   }
 
   @override
-  Map<String, Object?> readOutput(String sessionId, int cursor) =>
-      _session(sessionId).read(cursor);
+  Map<String, Object?> readOutput(String sessionId, int cursor) {
+    final session = _session(sessionId);
+    final index = app.connections.indexWhere(
+      (c) => c.id == session.connectionId,
+    );
+    return {
+      ...session.read(cursor),
+      'device_type': index < 0
+          ? 'Unknown'
+          : app.connections[index].device?.label ?? 'Unknown',
+    };
+  }
 
   @override
   void close() {
@@ -369,7 +385,12 @@ class McpServer extends ChangeNotifier {
                 : '2025-11-25',
             'capabilities': {'tools': {}},
             'serverInfo': {'name': 'commands', 'version': appVersion},
-            'instructions': 'Use only the connections listed; they have anonymous names. The user approves every command in CommandS before it runs, so a command can be refused. Open a session, send a single command, then read output using the returned cursor. Session output is asynchronous; poll read_output until the expected prompt or result appears. Never assume a command has finished just because one read returned no text.',
+            'instructions': 'Use only the connections listed; they have anonymous names. '
+                'Use device_type to choose device-specific commands. Unknown means inspect the banner and prompt before sending a command; do not assume a Unix shell. '
+                'The user approves every command in CommandS before it runs, so a command can be refused. '
+                'Open a session, send a single command, then read output using the returned cursor. '
+                'Session output is asynchronous; poll read_output until the expected prompt or result appears. '
+                'Never assume a command has finished just because one read returned no text.',
           };
           break;
         case 'ping':
@@ -468,7 +489,7 @@ class McpServer extends ChangeNotifier {
   static const _tools = [
     {
       'name': 'list_connections',
-      'description': 'List the SSH connections the user allowed for this agent, by anonymous ID. No real names, hostnames or credentials are returned.',
+      'description': 'List the SSH connections the user allowed for this agent, by anonymous ID and device_type. Unknown means the type has not been identified. No real names, hostnames or credentials are returned.',
       'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
     },
     {
@@ -496,7 +517,7 @@ class McpServer extends ChangeNotifier {
     },
     {
       'name': 'read_output',
-      'description': 'Read up to 8192 characters of terminal output from cursor. Use the returned cursor for the next read; output can arrive later.',
+      'description': 'Read up to 8192 characters of terminal output from cursor, including the current device_type. Use the returned cursor for the next read; output and device detection can arrive later.',
       'inputSchema': {
         'type': 'object',
         'properties': {
