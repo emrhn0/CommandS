@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 import '../app_version.dart';
@@ -23,11 +24,34 @@ class SftpCommandResult {
 abstract class SftpClient {
   Future<String> home();
   Future<List<SftpEntry>> list(String path);
-  Future<void> upload(String localPath, String remotePath);
-  Future<void> download(String remotePath, String localPath);
+  Future<void> upload(
+    String localPath,
+    String remotePath, {
+    SftpProgressCallback? onProgress,
+  });
+  Future<void> download(
+    String remotePath,
+    String localPath, {
+    SftpProgressCallback? onProgress,
+  });
   Future<void> mkdir(String path);
   void dispose();
 }
+
+class SftpProgress {
+  const SftpProgress(
+    this.bytes,
+    this.total,
+    this.bytesPerSecond, {
+    this.verifying = false,
+  });
+  final int bytes;
+  final int total;
+  final double bytesPerSecond;
+  final bool verifying;
+}
+
+typedef SftpProgressCallback = void Function(SftpProgress progress);
 
 typedef SftpCommandRunner = Future<SftpCommandResult> Function(String command);
 
@@ -104,9 +128,13 @@ class OpenSshSftpClient implements SftpClient {
       var name = match[3]!.trimLeft();
       if (match[1] == 'l') name = name.split(' -> ').first;
       // "/home/user1/notes.txt" is "notes.txt"; a name itself has no "/".
-      final slash = name.length > 1 ? name.lastIndexOf('/', name.length - 2) : -1;
+      final slash = name.length > 1
+          ? name.lastIndexOf('/', name.length - 2)
+          : -1;
       if (slash >= 0) name = name.substring(slash + 1);
-      if (name.endsWith('/') && name.length > 1) name = name.substring(0, name.length - 1);
+      if (name.endsWith('/') && name.length > 1) {
+        name = name.substring(0, name.length - 1);
+      }
       if (name == '.' || name == '..') continue;
       entries.add(
         SftpEntry(
@@ -156,17 +184,39 @@ class OpenSshSftpClient implements SftpClient {
   }
 
   @override
-  Future<void> upload(String localPath, String remotePath) async {
-    await _run('put ${quotePath(localPath)} ${quotePath(remotePath)}');
+  Future<void> upload(
+    String localPath,
+    String remotePath, {
+    SftpProgressCallback? onProgress,
+  }) async {
+    final total = await File(localPath).length();
+    await _withProgress(
+      () => _run('put ${quotePath(localPath)} ${quotePath(remotePath)}'),
+      () async => (await list(remotePath)).single.size,
+      total,
+      onProgress,
+    );
+    await _verify(File(localPath), remotePath);
   }
 
   @override
-  Future<void> download(String remotePath, String localPath) async {
+  Future<void> download(
+    String remotePath,
+    String localPath, {
+    SftpProgressCallback? onProgress,
+  }) async {
     final suffix = DateTime.now().microsecondsSinceEpoch.toString();
     final partial = File('$localPath.commands-part-$suffix');
     File? backup;
     try {
-      await _run('get ${quotePath(remotePath)} ${quotePath(partial.path)}');
+      final total = (await list(remotePath)).single.size;
+      await _withProgress(
+        () => _run('get ${quotePath(remotePath)} ${quotePath(partial.path)}'),
+        () async => await partial.exists() ? partial.length() : 0,
+        total,
+        onProgress,
+      );
+      await _verify(partial, remotePath);
       final destination = File(localPath);
       if (await destination.exists()) {
         backup = await destination.rename('$localPath.commands-backup-$suffix');
@@ -186,6 +236,73 @@ class OpenSshSftpClient implements SftpClient {
       }
     } finally {
       if (await partial.exists()) await partial.delete();
+    }
+  }
+
+  Future<void> _withProgress(
+    Future<dynamic> Function() transfer,
+    Future<int> Function() transferred,
+    int total,
+    SftpProgressCallback? onProgress,
+  ) async {
+    final watch = Stopwatch()..start();
+    onProgress?.call(SftpProgress(0, total, 0));
+    var polling = false;
+    var finished = false;
+    final timer = onProgress == null
+        ? null
+        : Timer.periodic(const Duration(milliseconds: 300), (_) async {
+            if (polling) return;
+            polling = true;
+            try {
+              final bytes = (await transferred()).clamp(0, total);
+              if (finished) return;
+              onProgress(
+                SftpProgress(
+                  bytes,
+                  total,
+                  bytes /
+                      (watch.elapsedMilliseconds / 1000).clamp(
+                        0.001,
+                        double.infinity,
+                      ),
+                ),
+              );
+            } catch (_) {
+              // A partial file may not exist yet; the next sample can succeed.
+            } finally {
+              polling = false;
+            }
+          });
+    try {
+      await transfer();
+    } finally {
+      finished = true;
+      timer?.cancel();
+    }
+    onProgress?.call(
+      SftpProgress(
+        total,
+        total,
+        total /
+            (watch.elapsedMilliseconds / 1000).clamp(0.001, double.infinity),
+        verifying: true,
+      ),
+    );
+  }
+
+  Future<void> _verify(File local, String remotePath) async {
+    final dir = await Directory.systemTemp.createTemp('commands_sftp_verify_');
+    try {
+      final copy = File('${dir.path}${Platform.pathSeparator}check');
+      await _run('get ${quotePath(remotePath)} ${quotePath(copy.path)}');
+      final sourceHash = await sha256.bind(local.openRead()).first;
+      final remoteHash = await sha256.bind(copy.openRead()).first;
+      if (sourceHash != remoteHash) {
+        throw const SftpException('SHA-256 verification failed');
+      }
+    } finally {
+      await dir.delete(recursive: true);
     }
   }
 

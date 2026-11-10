@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('listings as servers print them', () {
     test('Linux, with a "?" link count, a Turkish month and a name with spaces', () {
-      const output = 'sftp> ls -la "/home/user1"\r\n'
+      const output =
+          'sftp> ls -la "/home/user1"\r\n'
           'drwxr-xr-x    ? user1    user1        4096 Kas  9 22:31 .\r\n'
           'drwxr-xr-x    3 0        0            4096 Oct  8  2025 ..\r\n'
           'drwx------    2 user1    user1        4096 Nov  9 22:31 .ssh\r\n'
@@ -18,18 +19,23 @@ void main() {
       expect(entries.last.size, 2840);
     });
 
-    test('day before month, as the real Windows sftp.exe printed it in a lab', () {
-      const output = 'sftp> ls -la "/home/user1"\r\n'
-          'drwxrwxrwx   1 0        0               0 09 Nov 22:35 configs\r\n'
-          '-rw-rw-rw-   1 0        0            2840 09 Nov 22:35 my notes.txt\r\n'
-          'sftp> bye\r\n';
-      final entries = OpenSshSftpClient.parseListing(output);
-      expect(entries.map((e) => e.name), ['configs', 'my notes.txt']);
-      expect(entries.last.size, 2840);
-    });
+    test(
+      'day before month, as the real Windows sftp.exe printed it in a lab',
+      () {
+        const output =
+            'sftp> ls -la "/home/user1"\r\n'
+            'drwxrwxrwx   1 0        0               0 09 Nov 22:35 configs\r\n'
+            '-rw-rw-rw-   1 0        0            2840 09 Nov 22:35 my notes.txt\r\n'
+            'sftp> bye\r\n';
+        final entries = OpenSshSftpClient.parseListing(output);
+        expect(entries.map((e) => e.name), ['configs', 'my notes.txt']);
+        expect(entries.last.size, 2840);
+      },
+    );
 
     test('masked permissions and whole paths, as a real server showed them', () {
-      const output = 'sftp> ls -la "/home/user1"\r\n'
+      const output =
+          'sftp> ls -la "/home/user1"\r\n'
           'drwx******    ? user1    user1        4096 Oct  8 13:48 /home/user1/.\r\n'
           'drwxr-xr-x    ? root     root         4096 Oct  8 13:40 /home/user1/..\r\n'
           'drwx******    ? user1    user1        4096 Oct  8 13:48 /home/user1/.ssh\r\n'
@@ -42,12 +48,17 @@ void main() {
     });
 
     test('an empty folder is empty', () {
-      expect(OpenSshSftpClient.parseListing('sftp> ls -la "/tmp/empty"\r\n'), isEmpty);
+      expect(
+        OpenSshSftpClient.parseListing('sftp> ls -la "/tmp/empty"\r\n'),
+        isEmpty,
+      );
     });
 
     test('a listing that cannot be read is an error, not an empty folder', () {
       expect(
-        () => OpenSshSftpClient.parseListing('sftp> ls -la "/x"\r\nsomething unexpected\r\n'),
+        () => OpenSshSftpClient.parseListing(
+          'sftp> ls -la "/x"\r\nsomething unexpected\r\n',
+        ),
         throwsA(isA<SftpException>()),
       );
     });
@@ -110,6 +121,98 @@ void main() {
     client.dispose();
   });
 
+  test('upload reports progress and rejects a mismatched SHA-256', () async {
+    final temp = await Directory.systemTemp.createTemp('commands_sftp_hash_');
+    final source = File('${temp.path}${Platform.pathSeparator}source.txt');
+    await source.writeAsString('original bytes');
+    final progress = <SftpProgress>[];
+    final client = OpenSshSftpClient(
+      host: '192.0.2.1',
+      port: 22,
+      username: 'user',
+      password: '',
+      runner: (command) async {
+        if (command.startsWith('put ')) {
+          return const SftpCommandResult('', '', 0);
+        }
+        if (command.startsWith('get ')) {
+          final encoded = RegExp(r'^get ".*" "(.*)"$').firstMatch(command)![1]!;
+          await File(encoded.replaceAll(r'\\', r'\'))
+              .writeAsString('changed bytes');
+          return const SftpCommandResult('', '', 0);
+        }
+        throw StateError('Unexpected command: $command');
+      },
+    );
+    try {
+      await expectLater(
+        client.upload(
+          source.path,
+          '/remote/source.txt',
+          onProgress: progress.add,
+        ),
+        throwsA(
+          isA<SftpException>().having(
+            (e) => e.message,
+            'message',
+            'SHA-256 verification failed',
+          ),
+        ),
+      );
+      expect(progress.first.bytes, 0);
+      expect(progress.last.verifying, isTrue);
+      expect(progress.last.total, await source.length());
+    } finally {
+      client.dispose();
+      await temp.delete(recursive: true);
+    }
+  });
+
+  test('download mismatch preserves the existing destination', () async {
+    final temp = await Directory.systemTemp.createTemp('commands_sftp_hash_');
+    final destination = File(
+      '${temp.path}${Platform.pathSeparator}destination.txt',
+    );
+    await destination.writeAsString('keep this');
+    var reads = 0;
+    final client = OpenSshSftpClient(
+      host: '192.0.2.1',
+      port: 22,
+      username: 'user',
+      password: '',
+      runner: (command) async {
+        if (command.startsWith('ls -la ')) {
+          return const SftpCommandResult(
+            '-rw-r--r-- 1 user group 5 Nov 9 15:21 source.txt\n',
+            '',
+            0,
+          );
+        }
+        if (command.startsWith('get ')) {
+          final encoded = RegExp(r'^get ".*" "(.*)"$').firstMatch(command)![1]!;
+          await File(encoded.replaceAll(r'\\', r'\'))
+              .writeAsString(reads++ == 0 ? 'first' : 'other');
+          return const SftpCommandResult('', '', 0);
+        }
+        throw StateError('Unexpected command: $command');
+      },
+    );
+    try {
+      await expectLater(
+        client.download('/remote/source.txt', destination.path),
+        throwsA(isA<SftpException>()),
+      );
+      expect(await destination.readAsString(), 'keep this');
+      expect(
+        temp.listSync().where((e) => e.path.contains('.commands-part-')),
+        isEmpty,
+      );
+    } finally {
+      client.dispose();
+      await temp.delete(recursive: true);
+    }
+  });
+
   test(
     'runs list, upload, download, and mkdir against local OpenSSH SFTP server',
     () async {
@@ -127,27 +230,37 @@ void main() {
       );
       try {
         final remoteDir = temp.path.replaceAll(r'\', '/');
+        final uploadProgress = <SftpProgress>[];
+        final downloadProgress = <SftpProgress>[];
         await File(temp.path + r'\source.txt').writeAsString('sample transfer');
         await client.mkdir('$remoteDir/folder');
         await client.upload(
           temp.path + r'\source.txt',
           '$remoteDir/folder/copied.txt',
+          onProgress: uploadProgress.add,
         );
-      await client.upload(
-        temp.path + r'\source.txt',
-        '$remoteDir/folder/report [1].txt',
-      );
+        expect(uploadProgress.last.verifying, isTrue);
+        await client.upload(
+          temp.path + r'\source.txt',
+          '$remoteDir/folder/report [1].txt',
+        );
         final entries = await client.list('$remoteDir/folder');
         expect(entries.map((e) => e.name), contains('copied.txt'));
-      expect(entries.map((e) => e.name), contains('report [1].txt'));
+        expect(entries.map((e) => e.name), contains('report [1].txt'));
         final downloaded = File(temp.path + r'\downloaded.txt');
         await downloaded.writeAsString('old version');
-        await client.download('$remoteDir/folder/copied.txt', downloaded.path);
+        await client.download('$remoteDir/folder/copied.txt', downloaded.path,
+            onProgress: downloadProgress.add);
+        expect(downloadProgress.last.verifying, isTrue);
         expect(await downloaded.readAsString(), 'sample transfer');
-      await client.download('$remoteDir/folder/report [1].txt',
-          temp.path + r'\bracket.txt');
-      expect(await File(temp.path + r'\bracket.txt').readAsString(),
-          'sample transfer');
+        await client.download(
+          '$remoteDir/folder/report [1].txt',
+          temp.path + r'\bracket.txt',
+        );
+        expect(
+          await File(temp.path + r'\bracket.txt').readAsString(),
+          'sample transfer',
+        );
         expect(
           temp.listSync().where((e) => e.path.contains('.commands-backup-')),
           isEmpty,

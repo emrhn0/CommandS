@@ -34,6 +34,8 @@ const turkish = <String, String>{
   'Transferring': 'Aktarılıyor',
   'Completed': 'Tamamlandı',
   'Failed': 'Başarısız',
+  'Verified': 'Doğrulandı',
+  'Verifying SHA-256': 'SHA-256 doğrulanıyor',
   'Replace file?': 'Dosya değiştirilsin mi?',
   'File {name} already exists at the destination.': 'Hedefte {name} dosyası zaten var.',
   'Replace': 'Değiştir',
