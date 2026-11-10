@@ -1128,6 +1128,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
                 final browser = SftpBrowser(
                   key: ValueKey(session),
                   createClient: (password) => session.createSftpClient(password: password),
+                  transfers: session.sftpTransfers,
                   onClose: () => session.sftpOpen.value = false,
                   onExpand: () => openSftpWindow(
                     session,

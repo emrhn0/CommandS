@@ -9,6 +9,7 @@ import '../l10n/strings.dart';
 import '../theme/app_theme.dart';
 import '../services/pty_session.dart';
 import '../services/sftp_client.dart';
+import '../services/sftp_transfer.dart';
 import 'sftp_browser.dart';
 import 'custom_title_bar.dart';
 import 'tool_button.dart';
@@ -31,6 +32,7 @@ class SftpWindowArguments {
     required this.dark,
     this.sessionId = '',
     this.language = 'en',
+    this.transfers = const [],
   });
 
   static const type = 'sftp';
@@ -48,6 +50,7 @@ class SftpWindowArguments {
   final String password;
   final List<String> sshOptions;
   final bool dark;
+  final List<SftpTransfer> transfers;
 
   String encode() => jsonEncode({
     'type': type,
@@ -60,6 +63,7 @@ class SftpWindowArguments {
     'dark': dark,
     'sessionId': sessionId,
     'language': language,
+    'transfers': [for (final transfer in transfers) transfer.toJson()],
   });
 
   /// Null for anything that is not an SFTP window's arguments, the main
@@ -79,6 +83,7 @@ class SftpWindowArguments {
         dark: json['dark'] as bool? ?? false,
         sessionId: json['sessionId'] as String? ?? '',
         language: json['language'] as String? ?? 'en',
+        transfers: SftpTransfer.decodeList(json['transfers']),
       );
     } catch (_) {
       return null;
@@ -99,8 +104,13 @@ Future<void> _listen() async {
   _listening = true;
   await _channel.setMethodCallHandler((call) async {
     if (call.method == 'shrink') {
-      final session = _windowSessions.remove(call.arguments as String? ?? '');
+      final data = call.arguments;
+      final id = data is Map ? data['sessionId'] as String? ?? '' : data as String? ?? '';
+      final session = _windowSessions.remove(id);
       try {
+        if (session != null && data is Map && data['transfers'] is List) {
+          SftpTransfer.restore(session.sftpTransfers, data['transfers']);
+        }
         session?.sftpOpen.value = true;
       } catch (_) {
         // The tab was closed meanwhile.
@@ -131,6 +141,7 @@ Future<void> openSftpWindow(PtySessionController session, {required bool dark}) 
         dark: dark,
         sessionId: id,
         language: currentLanguage.name,
+        transfers: List.of(session.sftpTransfers),
       ).encode(),
     ),
   );
@@ -169,11 +180,13 @@ Future<void> runSftpWindow(SftpWindowArguments args) async {
 }
 
 class SftpWindowApp extends StatelessWidget {
-  const SftpWindowApp({super.key, required this.args, required this.createClient, this.localBrowser, this.onShrink});
+  SftpWindowApp({super.key, required this.args, required this.createClient, this.localBrowser, this.onShrink})
+      : transfers = List.of(args.transfers);
 
   final SftpWindowArguments args;
   final SftpClientFactory createClient;
   final LocalFileBrowser? localBrowser;
+  final List<SftpTransfer> transfers;
 
   /// Closes this window; the session's panel in the main window stays.
   final VoidCallback? onShrink;
@@ -181,7 +194,10 @@ class SftpWindowApp extends StatelessWidget {
   /// Back to the panel beside the terminal: tells the main window, then goes.
   Future<void> _shrink() async {
     try {
-      await _channel.invokeMethod('shrink', args.sessionId);
+      await _channel.invokeMethod('shrink', {
+        'sessionId': args.sessionId,
+        'transfers': [for (final transfer in transfers) transfer.toJson()],
+      });
     } catch (_) {}
     await windowManager.close();
   }
@@ -212,7 +228,7 @@ class SftpWindowApp extends StatelessWidget {
               ],
             ),
             const Divider(height: 1),
-            Expanded(child: SftpBrowser(createClient: createClient, localBrowser: localBrowser, wide: true)),
+            Expanded(child: SftpBrowser(createClient: createClient, localBrowser: localBrowser, wide: true, transfers: transfers)),
           ],
         ),
       ),

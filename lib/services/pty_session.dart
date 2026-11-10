@@ -12,6 +12,7 @@ import 'device_detect.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
 import 'sftp_client.dart';
+import 'sftp_transfer.dart';
 
 export 'session_controller.dart' show SessionStatus;
 
@@ -99,6 +100,9 @@ class PtySessionController implements TerminalSessionController {
 
   /// Whether the SFTP file panel is open beside this session's terminal.
   final sftpOpen = ValueNotifier<bool>(false);
+
+  /// Transfer entries belong to this SSH session, not to a panel rebuild.
+  final sftpTransfers = <SftpTransfer>[];
 
   /// Whether a saved password will follow a yes.
   bool get hasSavedPassword => _password.isNotEmpty;

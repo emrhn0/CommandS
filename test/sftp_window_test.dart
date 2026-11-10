@@ -1,6 +1,7 @@
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/services/pty_session.dart';
 import 'package:commands/services/sftp_client.dart';
+import 'package:commands/services/sftp_transfer.dart';
 import 'package:commands/widgets/sftp_browser.dart';
 import 'package:commands/widgets/sftp_window.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
@@ -66,6 +67,44 @@ void main() {
     expect(SftpWindowArguments.decode(''), isNull);
     expect(SftpWindowArguments.decode('{"type":"other"}'), isNull);
     expect(SftpWindowArguments.decode('not json'), isNull);
+  });
+
+  test('transfer history crosses the window argument boundary', () {
+    final withHistory = SftpWindowArguments(
+      title: 'DEVICE-01', host: '192.0.2.10', port: 22,
+      username: 'user1', password: '', sshOptions: const [], dark: false,
+      transfers: [SftpTransfer('report.txt', 'upload', status: 'Completed')],
+    );
+    final decoded = SftpWindowArguments.decode(withHistory.encode())!;
+    expect(decoded.transfers.single.name, 'report.txt');
+    expect(decoded.transfers.single.direction, 'upload');
+    expect(decoded.transfers.single.status, 'Completed');
+    final panelHistory = <SftpTransfer>[];
+    SftpTransfer.restore(panelHistory, [
+      <Object?, Object?>{
+        'name': 'report.txt', 'direction': 'upload',
+        'status': 'Completed',
+      },
+    ]);
+    expect(panelHistory.single.name, 'report.txt');
+  });
+
+  testWidgets('a window shows the existing session history', (tester) async {
+    final withHistory = SftpWindowArguments(
+      title: 'DEVICE-01', host: '192.0.2.10', port: 22,
+      username: 'user1', password: '', sshOptions: const [], dark: false,
+      transfers: [SftpTransfer('report.txt', 'download', status: 'Completed')],
+    );
+    await tester.binding.setSurfaceSize(const Size(1200, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(SftpWindowApp(
+      args: withHistory, createClient: (_) async => _FakeSftp(),
+      localBrowser: _FakeLocal(), onShrink: () {},
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('report.txt'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('No transfers yet'), findsNothing);
   });
 
   testWidgets('the window shows both sides, and the shrink button closes it', (tester) async {
