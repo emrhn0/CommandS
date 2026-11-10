@@ -103,6 +103,21 @@ class SettingsScreen extends StatelessWidget {
 class _McpPanel extends StatelessWidget {
   const _McpPanel();
 
+  Future<void> _confirmNewUrl(BuildContext context, McpServer server) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(tr('Create a new address?')),
+        content: Text(tr('The current address stops working at once. Agents connected with it lose access until you give them the new one.')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(tr('New address'))),
+        ],
+      ),
+    );
+    if (ok == true) await server.regenerateUrl();
+  }
+
   @override
   Widget build(BuildContext context) {
     final server = context.watch<McpServer>();
@@ -139,7 +154,17 @@ class _McpPanel extends StatelessWidget {
           const SizedBox(height: 12),
           Text(tr('MCP server URL'), style: const TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          SelectableText(url),
+          Row(
+            children: [
+              Expanded(child: SelectableText(url)),
+              TextButton.icon(
+                key: const ValueKey('mcp-new-url'),
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: Text(tr('New address')),
+                onPressed: () => _confirmNewUrl(context, server),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           Text(tr('Use this URL directly in ChatGPT Work desktop, or point a Secure MCP Tunnel at it for hosted ChatGPT Work. Keep the URL private.'),
               style: TextStyle(fontSize: 12, color: secondary)),

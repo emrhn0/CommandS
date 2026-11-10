@@ -304,6 +304,18 @@ class McpServer extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  /// Gives the server a new secret path. The old address stops working at
+  /// once and sessions opened through it are let go; the tabs stay open.
+  Future<void> regenerateUrl() async {
+    await _starting;
+    final prefs = await SharedPreferences.getInstance();
+    if (_disposed) return;
+    _token = _newToken();
+    gateway.close();
+    await prefs.setString(_tokenKey, _token!);
+    if (!_disposed) notifyListeners();
+  }
+
   static String _newToken() {
     final random = Random.secure();
     return List<int>.generate(

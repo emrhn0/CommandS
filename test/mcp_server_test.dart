@@ -13,6 +13,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:commands/services/mcp_server.dart';
 
+class _ClosingGateway extends _FakeGateway {
+  int closed = 0;
+
+  @override
+  void close() => closed++;
+}
+
 class _FakeGateway implements McpGateway {
   String? sent;
 
@@ -179,6 +186,30 @@ void main() {
       origin: 'https://example.invalid',
     );
     expect(badOrigin, 403);
+  });
+
+  test('a new address locks out the old one and survives a restart', () async {
+    final gateway = _ClosingGateway();
+    final server = McpServer(gateway, port: 0);
+    await server.start();
+    final oldUrl = server.url!;
+    final body = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'};
+    expect((await _request(oldUrl, body)).$1, 200);
+
+    await server.regenerateUrl();
+    final newUrl = server.url!;
+    expect(newUrl, isNot(oldUrl));
+    expect(Uri.parse(newUrl).pathSegments.last, hasLength(64));
+    expect(gateway.closed, 1, reason: 'sessions opened with the old address end');
+    expect((await _request(oldUrl, body)).$1, 403);
+    expect((await _request(newUrl, body)).$1, 200);
+    server.dispose();
+
+    final restored = McpServer(_FakeGateway(), port: 0);
+    await restored.restore();
+    expect(Uri.parse(restored.url!).path, Uri.parse(newUrl).path);
+    await restored.stop();
+    restored.dispose();
   });
 
   test('opt-in and secret survive an app restart', () async {
@@ -360,5 +391,44 @@ void main() {
     expect(find.text('Allow MCP access'), findsOneWidget);
     expect(find.byType(Switch), findsWidgets, reason: 'MCP access, and beta updates');
     expect(server.enabled, isFalse);
+  });
+
+  testWidgets('Settings makes a new MCP address after asking', (tester) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('window_manager'),
+      (call) async => call.method.startsWith('is') ? false : null,
+    );
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final app = AppState();
+    final server = McpServer(_FakeGateway(), port: 0);
+    addTearDown(server.dispose);
+    await tester.runAsync(() => server.start(testToken: 'd' * 32));
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AppState>.value(value: app),
+        ChangeNotifierProvider<McpServer>.value(value: server),
+      ],
+      child: const MaterialApp(home: SettingsScreen()),
+    ));
+    await tester.pumpAndSettle();
+    final before = server.url!;
+    expect(find.text(before), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mcp-new-url')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(server.url, before, reason: 'cancel keeps the address');
+
+    await tester.tap(find.byKey(const ValueKey('mcp-new-url')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'New address'));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+    expect(server.url, isNot(before));
+    expect(find.text(server.url!), findsOneWidget);
+    await tester.runAsync(server.stop);
   });
 }

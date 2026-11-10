@@ -281,6 +281,10 @@ const turkish = <String, String>{
   'Lets a connected agent open saved SSH connections, send commands, and read terminal output.':
       'Bağlı bir ajanın kayıtlı SSH bağlantılarını açmasına, komut göndermesine ve terminal çıktısını okumasına izin verir.',
   'MCP server URL': 'MCP sunucu adresi',
+  'New address': 'Yeni adres',
+  'Create a new address?': 'Yeni adres oluşturulsun mu?',
+  'The current address stops working at once. Agents connected with it lose access until you give them the new one.':
+      'Mevcut adres hemen çalışmaz olur. Bu adresle bağlanan ajanlar, yeni adresi verene kadar erişemez.',
   'Use this URL directly in ChatGPT Work desktop, or point a Secure MCP Tunnel at it for hosted ChatGPT Work. Keep the URL private.':
       'Bu adresi ChatGPT Work masaüstünde doğrudan kullanın veya barındırılan ChatGPT Work için Secure MCP Tunnel ile bağlayın. Adresi gizli tutun.',
   'Updates': 'Güncellemeler',
