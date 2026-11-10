@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 
@@ -13,6 +14,7 @@ import '../services/rdp_session.dart';
 import '../services/serial_session.dart';
 import '../services/session_controller.dart';
 import '../services/terminal_appearance.dart';
+import '../theme/app_theme.dart';
 import 'context_menu.dart';
 import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
@@ -1105,6 +1107,26 @@ class _TerminalPaneState extends State<_TerminalPane> {
     );
     final session = widget.controller;
     if (session is! PtySessionController) return terminal;
+    final terminalWithOffer = Stack(children: [
+      Positioned.fill(child: terminal),
+      Positioned(
+        left: 12,
+        right: 12,
+        bottom: 18,
+        child: Center(child: ValueListenableBuilder<String?>(
+          valueListenable: session.sudoPrompt,
+          builder: (context, prompt, _) => prompt == null
+              ? const SizedBox.shrink()
+              : _SudoPasswordOffer(
+                  onFill: () {
+                    session.fillSudoPassword();
+                    _focusNode.requestFocus();
+                  },
+                  onDismiss: session.dismissSudoPrompt,
+                ),
+        )),
+      ),
+    ]);
     return Column(
       children: [
         ValueListenableBuilder<String?>(
@@ -1123,7 +1145,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
         Expanded(child: ValueListenableBuilder<bool>(
             valueListenable: session.sftpOpen,
             builder: (context, open, _) => !open
-            ? terminal
+            ? terminalWithOffer
             : LayoutBuilder(builder: (context, constraints) {
                 final browser = SftpBrowser(
                   key: ValueKey(session),
@@ -1138,14 +1160,14 @@ class _TerminalPaneState extends State<_TerminalPane> {
                   return Column(children: [
                     Expanded(child: browser),
                     const Divider(height: 1),
-                    Expanded(child: terminal),
+                    Expanded(child: terminalWithOffer),
                   ]);
                 }
                 return Row(children: [
                   SizedBox(width: (constraints.maxWidth * 0.38).clamp(280.0, 360.0),
                       child: browser),
                   const VerticalDivider(width: 1),
-                  Expanded(child: terminal),
+                  Expanded(child: terminalWithOffer),
                 ]);
               }))),
       ],
@@ -1181,7 +1203,20 @@ class _TerminalPaneState extends State<_TerminalPane> {
       // PuTTY's keys: Ctrl+A/V/C go to the session, Shift+Insert pastes,
       // Ctrl+Insert copies (TerminalClipboard).
       shortcuts: TerminalClipboard.shortcuts,
-      onKeyEvent: _clipboard.handleKey,
+      onKeyEvent: (node, event) {
+        final session = widget.controller;
+        final keyboard = HardwareKeyboard.instance;
+        if (session is PtySessionController &&
+            session.sudoPrompt.value != null &&
+            event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.keyY &&
+            keyboard.isControlPressed && keyboard.isShiftPressed &&
+            !keyboard.isAltPressed) {
+          session.fillSudoPassword();
+          return KeyEventResult.handled;
+        }
+        return _clipboard.handleKey(node, event);
+      },
       // PuTTY: right-click pastes, selecting copies (TerminalClipboard).
       onSecondaryTapDown: (_, _) {
         _clipboard.paste();
@@ -1191,6 +1226,76 @@ class _TerminalPaneState extends State<_TerminalPane> {
       theme: TerminalThemes.withColors(
         background: app.terminalBackground,
         foreground: app.terminalForeground,
+      ),
+    );
+  }
+}
+
+class _SudoPasswordOffer extends StatelessWidget {
+  const _SudoPasswordOffer({required this.onFill, required this.onDismiss});
+  final VoidCallback onFill;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final background = dark ? AppColors.darkPanelAlt : AppColors.lightPanel;
+    final foreground = dark ? AppColors.darkText : AppColors.lightText;
+    final muted = dark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    final border = dark ? AppColors.darkBorder : AppColors.lightBorder;
+    return Material(
+      color: background,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kControlRadius),
+        side: BorderSide(color: border),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 325),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Icon(Icons.key_outlined, size: 14, color: muted),
+              const SizedBox(width: 6),
+              Expanded(child: Text(tr('Saved password for sudo'),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: foreground))),
+              Text('Ctrl+Shift+Y', style: TextStyle(fontSize: 10, color: muted)),
+            ]),
+            const SizedBox(height: 7),
+            Row(children: [
+              Expanded(child: InkWell(
+                key: const ValueKey('sudo-fill-button'),
+                onTap: onFill,
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  height: 25,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: foreground,
+                      borderRadius: BorderRadius.circular(4)),
+                  child: Text(tr('Fill'), style: TextStyle(fontSize: 11,
+                      fontWeight: FontWeight.w600, color: background)),
+                ),
+              )),
+              const SizedBox(width: 6),
+              Expanded(child: InkWell(
+                key: const ValueKey('sudo-cancel-button'),
+                onTap: onDismiss,
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  height: 25,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: border),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(tr('Cancel'), style: TextStyle(fontSize: 11,
+                      color: foreground)),
+                ),
+              )),
+            ]),
+          ]),
+        ),
       ),
     );
   }

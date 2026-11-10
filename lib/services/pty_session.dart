@@ -11,6 +11,7 @@ import '../app_version.dart';
 import 'device_detect.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
+import 'sudo_prompt_watcher.dart';
 import 'sftp_client.dart';
 
 export 'session_controller.dart' show SessionStatus;
@@ -97,11 +98,43 @@ class PtySessionController implements TerminalSessionController {
   /// askpass helper answers them when the session has a password.
   final loginQuestion = ValueNotifier<String?>(null);
 
+  /// Offered only while a recognized sudo password prompt is visible.
+  final sudoPrompt = ValueNotifier<String?>(null);
+  final _sudoWatcher = SudoPromptWatcher();
+  Timer? _sudoExpiry;
+  static const _sudoOfferLifetime = Duration(seconds: 90);
+
   /// Whether the SFTP file panel is open beside this session's terminal.
   final sftpOpen = ValueNotifier<bool>(false);
 
   /// Whether a saved password will follow a yes.
   bool get hasSavedPassword => _password.isNotEmpty;
+
+  void _watchSudo(String text) {
+    if (_password.isEmpty) return;
+    final prompt = _sudoWatcher.feed(text);
+    if (prompt == sudoPrompt.value) return;
+    _sudoExpiry?.cancel();
+    sudoPrompt.value = prompt;
+    if (prompt != null) {
+      _sudoExpiry = Timer(_sudoOfferLifetime, dismissSudoPrompt);
+    }
+  }
+
+  /// Sends one saved password only after the user accepts the live offer.
+  bool fillSudoPassword() {
+    if (sudoPrompt.value == null || _password.isEmpty || status != SessionStatus.running) return false;
+    dismissSudoPrompt();
+    _write('$_password\r');
+    return true;
+  }
+
+  void dismissSudoPrompt() {
+    _sudoWatcher.dismiss();
+    _sudoExpiry?.cancel();
+    _sudoExpiry = null;
+    if (sudoPrompt.value != null) sudoPrompt.value = null;
+  }
 
   /// Opens a separate SFTP channel with this tab's resolved login and SSH
   /// compatibility options. The terminal process remains independent.
@@ -240,6 +273,7 @@ class PtySessionController implements TerminalSessionController {
   }
 
   void _setStatus(SessionStatus s) {
+    if (s != SessionStatus.running) dismissSudoPrompt();
     status = s;
     if (!_statusController.isClosed) _statusController.add(s);
   }
@@ -252,6 +286,7 @@ class PtySessionController implements TerminalSessionController {
     }
     // Answered by hand in the terminal: the bar has nothing left to ask.
     if (loginQuestion.value != null && data.contains('\r')) loginQuestion.value = null;
+    if (sudoPrompt.value != null && data.isNotEmpty) dismissSudoPrompt();
     _write(data);
   }
 
@@ -758,6 +793,7 @@ class PtySessionController implements TerminalSessionController {
     if (!_outputController.isClosed) _outputController.add(text);
     _sniffAdd(text);
     _watchLogin(text);
+    _watchSudo(text);
   }
 
   @visibleForTesting
@@ -815,6 +851,8 @@ class PtySessionController implements TerminalSessionController {
     _sniffStop();
     _flushTimer?.cancel();
     _flush();
+    dismissSudoPrompt();
+    _sudoWatcher.reset();
     try {
       _pty?.kill();
     } catch (_) {}
@@ -839,6 +877,7 @@ class PtySessionController implements TerminalSessionController {
     sftpOpen.dispose();
     _lineInput = null;
     _stopProcess();
+    sudoPrompt.dispose();
     _statusController.close();
     _outputController.close();
   }

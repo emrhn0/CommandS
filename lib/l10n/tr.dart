@@ -24,6 +24,8 @@ const turkish = <String, String>{
   'Try again': 'Tekrar dene',
   'Unknown error.': 'Bilinmeyen hata.',
   'Something went wrong.': 'Bir şeyler ters gitti.',
+  'Saved password for sudo': 'Sudo için kayıtlı şifre',
+  'Fill': 'Doldur',
   'SFTP files': 'SFTP dosyaları',
   'Remote files': 'Uzak dosyalar',
   'Local files': 'Yerel dosyalar',
