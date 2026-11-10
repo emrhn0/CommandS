@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../app_version.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import 'mcp_command_policy.dart';
 import 'pty_session.dart';
 
 /// What the user is asked before a command reaches a device. The real
@@ -22,8 +23,9 @@ class McpApproval {
 
 /// Only saved SSH connections the user allowed one by one are exposed, under
 /// anonymous names (`DEVICE-01`...) with their device types. Credentials,
-/// hosts and real names are never in the tool results, and every command
-/// waits for the user's yes.
+/// hosts and real names are never in the tool results. On network devices,
+/// show and display commands run at once; every other command waits for the
+/// user's yes (see mcp_command_policy.dart).
 abstract class McpGateway {
   List<Map<String, String>> listConnections();
   Future<String> openConnection(String connectionId);
@@ -154,7 +156,8 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
     }
     final connection = app.connections.firstWhere((c) => c.id == session.connectionId);
     final ask = approve;
-    final yes = ask != null &&
+    final yes = runsWithoutAsking(command, connection.device) ||
+        ask != null &&
         await ask(McpApproval(
           connectionName: connection.name,
           alias: aliasOf(connection.id)!,
@@ -399,7 +402,7 @@ class McpServer extends ChangeNotifier {
             'serverInfo': {'name': 'commands', 'version': appVersion},
             'instructions': 'Use only the connections listed; they have anonymous names. '
                 'Use device_type to choose device-specific commands. Unknown means inspect the banner and prompt before sending a command; do not assume a Unix shell. '
-                'The user approves every command in CommandS before it runs, so a command can be refused. '
+                'On network devices, show and display commands (and turning off paging for the session) run at once. Every other command, such as configuration changes or saving, is approved by the user in CommandS first and can be refused. '
                 'Open a session, send a single command, then read output using the returned cursor. '
                 'Session output is asynchronous; poll read_output until the expected prompt or result appears. '
                 'Never assume a command has finished just because one read returned no text.',
@@ -517,7 +520,7 @@ class McpServer extends ChangeNotifier {
     },
     {
       'name': 'send_command',
-      'description': 'Send one line followed by Enter to an MCP-opened SSH session. The user is asked to allow each command first; a refusal is returned as an error. Returns the output cursor from before the send. Commands execute on the remote device with the saved connection privileges.',
+      'description': 'Send one line followed by Enter to an MCP-opened SSH session. On network devices, show and display commands run at once; for any other command the user is asked first, and a refusal is returned as an error. Returns the output cursor from before the send. Commands execute on the remote device with the saved connection privileges.',
       'inputSchema': {
         'type': 'object',
         'properties': {

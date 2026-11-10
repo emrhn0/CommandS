@@ -271,8 +271,8 @@ const turkish = <String, String>{
   'Do not run': 'Çalıştırma',
   'Run': 'Çalıştır',
   'Allowed connections': 'İzin verilen bağlantılar',
-  'Right-click a connection in the list to allow it. The agent sees only the anonymous name. Every command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.':
-      'İzin vermek için listede bağlantıya sağ tıklayın. Ajan yalnızca anonim adı görür. Her komut önce size sorulur. Terminal çıktısı olduğu gibi gönderilir, bu yüzden cihaz adları ve adresler yine de görünebilir.',
+  'Right-click a connection in the list to allow it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.':
+      'İzin vermek için listede bağlantıya sağ tıklayın. Ajan yalnızca anonim adı görür. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce size sorulur. Terminal çıktısı olduğu gibi gönderilir, bu yüzden cihaz adları ve adresler yine de görünebilir.',
   'None yet.': 'Henüz yok.',
   'Remove access': 'Erişimi kaldır',
   'Allow agent access': 'Ajan erişimine izin ver',

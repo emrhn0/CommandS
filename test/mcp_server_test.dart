@@ -315,6 +315,24 @@ void main() {
       expect(sent, ['show version\r']);
     });
 
+    test('on a network device, show runs at once and a change still asks', () async {
+      await gateway.setAllowed('c2', true);
+      final session = await gateway.openConnection('DEVICE-01');
+      final controller = app.tabs.last.controller as PtySessionController;
+      final sent = <String>[];
+      controller.writeOverride = sent.add;
+
+      answer = false;
+      await gateway.sendCommand(session, 'set cli pager off');
+      await gateway.sendCommand(session, 'show system info | match sw-version');
+      expect(sent, ['set cli pager off\r', 'show system info | match sw-version\r']);
+      expect(asked, isEmpty);
+
+      await expectLater(gateway.sendCommand(session, 'configure'), throwsStateError);
+      expect(asked.single.command, 'configure');
+      expect(sent, hasLength(2), reason: 'a refused change sends nothing');
+    });
+
     test('with no way to ask, nothing runs', () async {
       final silent = AppMcpGateway(app);
       await silent.load();

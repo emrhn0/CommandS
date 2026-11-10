@@ -174,7 +174,7 @@ class _McpPanel extends StatelessWidget {
           Text(tr('Allowed connections'), style: const TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
-            tr('Right-click a connection in the list to allow it. The agent sees only the anonymous name. Every command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.'),
+            tr('Right-click a connection in the list to allow it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.'),
             style: TextStyle(fontSize: 12, color: secondary),
           ),
           const SizedBox(height: 8),
