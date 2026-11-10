@@ -129,11 +129,16 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   SavedConnection? _build() {
     final host = _host.text.trim();
     if (host.isEmpty) return null;
+    final enteredName = _name.text.trim();
+    final autoName = _protocol == ConnectionProtocol.ssh &&
+        (enteredName.isEmpty ||
+            (widget.existing?.autoNamePending == true && enteredName == widget.existing!.name));
     final port = int.tryParse(_port.text.trim()) ?? (_protocol == ConnectionProtocol.rdp ? 3389 : 22);
     return SavedConnection(
       // Keeping the id means an edit updates the entry instead of cloning it.
       id: widget.existing?.id,
-      name: _name.text.trim().isEmpty ? host : _name.text.trim(),
+      name: autoName || enteredName.isEmpty ? host : enteredName,
+      autoNamePending: autoName,
       host: host,
       port: port,
       username: _username.text.trim(),
@@ -262,7 +267,9 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             label: 'Name',
             child: TextField(
               controller: _name,
-              decoration: InputDecoration(hintText: tr('Defaults to the host')),
+              decoration: InputDecoration(
+                hintText: tr(rdp ? 'Defaults to the host' : 'Hostname after first SSH connection, otherwise host'),
+              ),
             ),
           ),
           Row(
