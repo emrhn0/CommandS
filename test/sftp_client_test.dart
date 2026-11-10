@@ -159,9 +159,75 @@ void main() {
           ),
         ),
       );
-      expect(progress.first.bytes, 0);
+      expect(progress.where((p) => !p.verifying), isEmpty);
       expect(progress.last.verifying, isTrue);
       expect(progress.last.total, await source.length());
+    } finally {
+      client.dispose();
+      await temp.delete(recursive: true);
+    }
+  });
+
+  test('upload does not log in again to poll the remote size', () async {
+    final temp = await Directory.systemTemp.createTemp('commands_sftp_poll_');
+    final source = File('${temp.path}${Platform.pathSeparator}source.txt');
+    await source.writeAsString('same bytes');
+    final commands = <String>[];
+    final client = OpenSshSftpClient(
+      host: '192.0.2.1',
+      port: 22,
+      username: 'user',
+      password: '',
+      runner: (command) async {
+        commands.add(command.split(' ').first);
+        if (command.startsWith('put ')) {
+          // Long enough for several progress samples.
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+          return const SftpCommandResult('', '', 0);
+        }
+        if (command.startsWith('get ')) {
+          final encoded = RegExp(r'^get ".*" "(.*)"$').firstMatch(command)![1]!;
+          await File(encoded.replaceAll(r'\\', r'\')).writeAsString('same bytes');
+          return const SftpCommandResult('', '', 0);
+        }
+        return const SftpCommandResult('', '', 0);
+      },
+    );
+    try {
+      await client.upload(source.path, '/remote/source.txt', onProgress: (_) {});
+      expect(commands, ['put', 'get']);
+    } finally {
+      client.dispose();
+      await temp.delete(recursive: true);
+    }
+  });
+
+  test('download goes ahead when the server cannot list a single file', () async {
+    final temp = await Directory.systemTemp.createTemp('commands_sftp_nolist_');
+    final destination = File('${temp.path}${Platform.pathSeparator}destination.txt');
+    final progress = <SftpProgress>[];
+    final client = OpenSshSftpClient(
+      host: '192.0.2.1',
+      port: 22,
+      username: 'user',
+      password: '',
+      runner: (command) async {
+        if (command.startsWith('ls -la ')) {
+          return const SftpCommandResult('', 'Can\'t ls: not a directory', 1);
+        }
+        if (command.startsWith('get ')) {
+          final encoded = RegExp(r'^get ".*" "(.*)"$').firstMatch(command)![1]!;
+          await File(encoded.replaceAll(r'\\', r'\')).writeAsString('content');
+          return const SftpCommandResult('', '', 0);
+        }
+        throw StateError('Unexpected command: $command');
+      },
+    );
+    try {
+      await client.download('/remote/source.txt', destination.path, onProgress: progress.add);
+      expect(await destination.readAsString(), 'content');
+      expect(progress.first.total, 0);
+      expect(progress.last.verifying, isTrue);
     } finally {
       client.dispose();
       await temp.delete(recursive: true);

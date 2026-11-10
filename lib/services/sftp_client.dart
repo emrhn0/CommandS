@@ -190,9 +190,12 @@ class OpenSshSftpClient implements SftpClient {
     SftpProgressCallback? onProgress,
   }) async {
     final total = await File(localPath).length();
+    // Every SFTP call is a new SSH login, so the remote size is not polled
+    // while uploading: that would log in to the device several times a
+    // second. The row shows a spinner until verification starts.
     await _withProgress(
       () => _run('put ${quotePath(localPath)} ${quotePath(remotePath)}'),
-      () async => (await list(remotePath)).single.size,
+      null,
       total,
       onProgress,
     );
@@ -209,7 +212,15 @@ class OpenSshSftpClient implements SftpClient {
     final partial = File('$localPath.commands-part-$suffix');
     File? backup;
     try {
-      final total = (await list(remotePath)).single.size;
+      // The size is only for the percentage. Some servers cannot list a
+      // single file; the download still goes ahead without it.
+      var total = 0;
+      try {
+        final entries = await list(remotePath);
+        if (entries.length == 1) total = entries.single.size;
+      } on SftpException {
+        // Unknown size: progress shows bytes and speed only.
+      }
       await _withProgress(
         () => _run('get ${quotePath(remotePath)} ${quotePath(partial.path)}'),
         () async => await partial.exists() ? partial.length() : 0,
@@ -241,21 +252,22 @@ class OpenSshSftpClient implements SftpClient {
 
   Future<void> _withProgress(
     Future<dynamic> Function() transfer,
-    Future<int> Function() transferred,
+    Future<int> Function()? transferred,
     int total,
     SftpProgressCallback? onProgress,
   ) async {
     final watch = Stopwatch()..start();
-    onProgress?.call(SftpProgress(0, total, 0));
+    if (transferred != null) onProgress?.call(SftpProgress(0, total, 0));
     var polling = false;
     var finished = false;
-    final timer = onProgress == null
+    final timer = onProgress == null || transferred == null
         ? null
         : Timer.periodic(const Duration(milliseconds: 300), (_) async {
             if (polling) return;
             polling = true;
             try {
-              final bytes = (await transferred()).clamp(0, total);
+              final read = await transferred();
+              final bytes = total > 0 ? read.clamp(0, total) : read;
               if (finished) return;
               onProgress(
                 SftpProgress(

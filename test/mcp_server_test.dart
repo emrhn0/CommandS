@@ -255,7 +255,8 @@ void main() {
       expect(jsonEncode(listed), isNot(contains('test-user')));
       expect(jsonEncode(listed), isNot(contains('fake-secret')));
       await gateway.setAllowed('c1', true);
-      expect(gateway.listConnections().last['device_type'], 'Unknown');
+      final unknown = gateway.listConnections().firstWhere((c) => c['id'] == gateway.aliasOf('c1'));
+      expect(unknown['device_type'], 'Unknown');
     });
 
     test('a connection not allowed cannot be opened, by alias or real id', () async {
