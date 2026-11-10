@@ -70,6 +70,10 @@ class SavedConnection {
   /// [device] was picked by hand, so detection leaves it alone.
   bool deviceManual;
 
+  /// Name was left blank, so the first SSH session may replace [host] with
+  /// the hostname shown by the remote prompt.
+  bool autoNamePending;
+
   SavedConnection({
     String? id,
     required this.name,
@@ -85,6 +89,7 @@ class SavedConnection {
     this.rdpWallpaper = false,
     this.device,
     this.deviceManual = false,
+    this.autoNamePending = false,
   }) : id = id ?? _uuid.v4();
 
   Map<String, dynamic> toJson() => {
@@ -102,6 +107,7 @@ class SavedConnection {
         'rdpWallpaper': rdpWallpaper,
         if (device != null) 'device': device!.name,
         if (deviceManual) 'deviceManual': true,
+        if (autoNamePending) 'autoNamePending': true,
       };
 
   factory SavedConnection.fromJson(Map<String, dynamic> json) => SavedConnection(
@@ -122,6 +128,7 @@ class SavedConnection {
         rdpWallpaper: json['rdpWallpaper'] as bool? ?? false,
         device: DeviceKind.byName(json['device'] as String?),
         deviceManual: json['deviceManual'] as bool? ?? false,
+        autoNamePending: json['autoNamePending'] as bool? ?? false,
       );
 
   String get label => '$name - $host';

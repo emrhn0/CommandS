@@ -117,6 +117,7 @@ const turkish = <String, String>{
   'Credentials': 'Kimlik bilgileri',
   'Remote desktop': 'Uzak masaüstü',
   'Defaults to the host': 'Boş bırakılırsa sunucu adresi',
+  'Hostname after first SSH connection, otherwise host': 'İlk SSH bağlantısında cihaz adı; yoksa sunucu adresi',
   'Ask on connect': 'Bağlanırken sor',
   'Show password': 'Şifreyi göster',
   'Hide password': 'Şifreyi gizle',
