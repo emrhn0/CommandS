@@ -63,7 +63,9 @@ class DiskFileBrowser implements LocalFileBrowser {
   String join(String path, String name) {
     final sep = Platform.pathSeparator;
     // A drive's root already ends in one: "C:\\" + "Users", not "C:\\\\Users".
-    return path.endsWith(sep) || path.endsWith('/') ? '$path$name' : '$path$sep$name';
+    return path.endsWith(sep) || path.endsWith('/')
+        ? '$path$name'
+        : '$path$sep$name';
   }
 
   @override
@@ -71,10 +73,15 @@ class DiskFileBrowser implements LocalFileBrowser {
     final result = <LocalFileEntry>[];
     // Entries this user may not open (Windows keeps a few under C:\\Users)
     // are left out, rather than failing the whole folder.
-    final listing = Directory(path).list(followLinks: false).handleError((Object _) {});
+    final listing = Directory(path)
+        .list(followLinks: false)
+        .handleError((Object _) {});
     await for (final entity in listing) {
       try {
-        final type = await FileSystemEntity.type(entity.path, followLinks: false);
+        final type = await FileSystemEntity.type(
+          entity.path,
+          followLinks: false,
+        );
         if (type != FileSystemEntityType.directory &&
             type != FileSystemEntityType.file) {
           continue;
@@ -278,20 +285,32 @@ class _SftpBrowserState extends State<SftpBrowser> {
       _transfers.insert(0, item);
     });
     try {
+      void updateProgress(SftpProgress progress) {
+        if (!mounted) return;
+        setState(() {
+          item.progress = progress;
+          item.status = progress.verifying
+              ? 'Verifying SHA-256'
+              : 'Transferring';
+        });
+      }
+
       if (upload) {
         await client.upload(
           _local.join(_localPath, name),
           OpenSshSftpClient.joinRemote(_remotePath, name),
+          onProgress: updateProgress,
         );
         await _loadRemote();
       } else {
         await client.download(
           OpenSshSftpClient.joinRemote(_remotePath, name),
           _local.join(_localPath, name),
+          onProgress: updateProgress,
         );
         await _loadLocal();
       }
-      item.status = 'Completed';
+      item.status = 'Verified';
     } catch (error) {
       item.status = 'Failed';
       item.error = '$error';
@@ -439,26 +458,30 @@ class _SftpBrowserState extends State<SftpBrowser> {
         extra: _client == null ? null : _newFolder,
         expand: widget.wide || _busy ? null : (widget.onExpand ?? _openWide),
         close: widget.wide ? null : widget.onClose,
-        onPath: _client == null ? null : (p) => _loadRemote(p.isEmpty ? '/' : p),
+        onPath: _client == null
+            ? null
+            : (p) => _loadRemote(p.isEmpty ? '/' : p),
       ),
       Expanded(
-            child: _remoteLoading
-                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-                : _remoteError != null
-                ? _errorView(_remoteError!, remote: true)
-                : _fileList(
-                    _remoteEntries
-                        .map((e) => (e.name, e.isDirectory, e.size))
-                        .toList(),
-                    selected: _selectedRemote,
-                    onSelect: (name) => setState(() => _selectedRemote = name),
-                    onOpen: (name) => _loadRemote(
-                      OpenSshSftpClient.joinRemote(_remotePath, name),
-                    ),
-                    onUp: _remotePath.isEmpty || _remotePath == '/'
-                        ? null
-                        : () => _loadRemote(OpenSshSftpClient.parentRemote(_remotePath)),
-                  ),
+        child: _remoteLoading
+            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+            : _remoteError != null
+            ? _errorView(_remoteError!, remote: true)
+            : _fileList(
+                _remoteEntries
+                    .map((e) => (e.name, e.isDirectory, e.size))
+                    .toList(),
+                selected: _selectedRemote,
+                onSelect: (name) => setState(() => _selectedRemote = name),
+                onOpen: (name) => _loadRemote(
+                  OpenSshSftpClient.joinRemote(_remotePath, name),
+                ),
+                onUp: _remotePath.isEmpty || _remotePath == '/'
+                    ? null
+                    : () => _loadRemote(
+                        OpenSshSftpClient.parentRemote(_remotePath),
+                      ),
+              ),
       ),
     ],
   );
@@ -475,19 +498,19 @@ class _SftpBrowserState extends State<SftpBrowser> {
         onPath: _goLocal,
       ),
       Expanded(
-            child: _localLoading
-                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-                : _localError != null
-                ? _errorView(_localError!, remote: false)
-                : _fileList(
-                    _localEntries
-                        .map((e) => (e.name, e.isDirectory, e.size))
-                        .toList(),
-                    selected: _selectedLocal,
-                    onSelect: (name) => setState(() => _selectedLocal = name),
-                    onOpen: (name) => _loadLocal(_local.join(_localPath, name)),
-                    onUp: () => _loadLocal(_local.parent(_localPath)),
-                  ),
+        child: _localLoading
+            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+            : _localError != null
+            ? _errorView(_localError!, remote: false)
+            : _fileList(
+                _localEntries
+                    .map((e) => (e.name, e.isDirectory, e.size))
+                    .toList(),
+                selected: _selectedLocal,
+                onSelect: (name) => setState(() => _selectedLocal = name),
+                onOpen: (name) => _loadLocal(_local.join(_localPath, name)),
+                onUp: () => _loadLocal(_local.parent(_localPath)),
+              ),
       ),
     ],
   );
@@ -496,7 +519,10 @@ class _SftpBrowserState extends State<SftpBrowser> {
     key: const ValueKey('sftp-download'),
     style: _barButton,
     onPressed: _canDownload ? () => _transfer(upload: false) : null,
-    icon: Icon(wide ? Icons.arrow_back_rounded : Icons.download_rounded, size: 16),
+    icon: Icon(
+      wide ? Icons.arrow_back_rounded : Icons.download_rounded,
+      size: 16,
+    ),
     label: Text(tr('Download')),
   );
 
@@ -504,90 +530,101 @@ class _SftpBrowserState extends State<SftpBrowser> {
     key: const ValueKey('sftp-upload'),
     style: _barButton,
     onPressed: _canUpload ? () => _transfer(upload: true) : null,
-    icon: Icon(wide ? Icons.arrow_forward_rounded : Icons.upload_rounded, size: 16),
+    icon: Icon(
+      wide ? Icons.arrow_forward_rounded : Icons.upload_rounded,
+      size: 16,
+    ),
     label: Text(tr('Upload')),
   );
 
-  Widget _transfersBox() =>
-          SizedBox(
-            height: 98,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                  child: Text(
-                    tr('Transfers').toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.6,
-                      color: Theme.of(context).textTheme.bodySmall?.color,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: _transfers.isEmpty
-                      ? Center(
-                          child: Text(
-                            tr('No transfers yet'),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: _transfers.length,
-                          itemBuilder: (context, index) {
-                            final item = _transfers[index];
-                            return Tooltip(
-                              message: item.error ?? tr(item.status),
-                              child: SizedBox(
-                                height: 24,
-                                child: Row(
-                                  children: [
-                                    const SizedBox(width: 12),
-                                    Icon(item.direction == 'upload' ? Icons.upload_rounded : Icons.download_rounded, size: 14),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        item.name,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                    ),
-                                    if (item.status == 'Transferring')
-                                      const SizedBox(
-                                        width: 12,
-                                        height: 12,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    else
-                                      Icon(
-                                        item.status == 'Completed'
-                                            ? Icons.check_circle_rounded
-                                            : Icons.error_rounded,
-                                        size: 13,
-                                        color: item.status == 'Completed'
-                                            ? const Color(0xFF2EB85C)
-                                            : Theme.of(context).colorScheme.error,
-                                      ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      tr(item.status),
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                    const SizedBox(width: 10),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
+  Widget _transfersBox() => SizedBox(
+    height: 98,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Text(
+            tr('Transfers').toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.6,
+              color: Theme.of(context).textTheme.bodySmall?.color,
             ),
-          );
+          ),
+        ),
+        Expanded(
+          child: _transfers.isEmpty
+              ? Center(
+                  child: Text(
+                    tr('No transfers yet'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _transfers.length,
+                  itemBuilder: (context, index) {
+                    final item = _transfers[index];
+                    return Tooltip(
+                      message: item.error ?? tr(item.status),
+                      child: SizedBox(
+                        height: 24,
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 12),
+                            Icon(
+                              item.direction == 'upload'
+                                  ? Icons.upload_rounded
+                                  : Icons.download_rounded,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                item.name,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ),
+                            if (item.status == 'Transferring' ||
+                                item.status == 'Verifying SHA-256')
+                              const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            else
+                              Icon(
+                                item.status == 'Verified'
+                                    ? Icons.check_circle_rounded
+                                    : Icons.error_rounded,
+                                size: 13,
+                                color: item.status == 'Verified'
+                                    ? const Color(0xFF2EB85C)
+                                    : Theme.of(context).colorScheme.error,
+                              ),
+                            const SizedBox(width: 5),
+                            Text(
+                              item.status == 'Transferring' &&
+                                      item.progress != null
+                                  ? '${item.progress!.total == 0 ? _size(item.progress!.bytes) : '${(100 * item.progress!.bytes / item.progress!.total).clamp(0, 100).floor()}%'} · ${_size(item.progress!.bytesPerSecond.round())}/s'
+                                  : tr(item.status),
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -712,7 +749,12 @@ class _SftpBrowserState extends State<SftpBrowser> {
             children: [
               Text(
                 title.toUpperCase(),
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.6, color: dim),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.6,
+                  color: dim,
+                ),
               ),
               const Spacer(),
               if (extra != null)
@@ -720,13 +762,27 @@ class _SftpBrowserState extends State<SftpBrowser> {
               ToolButton(icon: Icons.arrow_upward_rounded, tooltip: tr('Parent folder'), onPressed: up, size: 26),
               ToolButton(icon: Icons.refresh_rounded, tooltip: tr('Refresh'), onPressed: refresh, size: 26),
               if (expand != null)
-                ToolButton(icon: Icons.open_in_full_rounded, tooltip: tr('Expand'), onPressed: expand, size: 26),
+                ToolButton(
+                  icon: Icons.open_in_full_rounded,
+                  tooltip: tr('Expand'),
+                  onPressed: expand,
+                  size: 26,
+                ),
               if (close != null)
-                ToolButton(icon: Icons.close_rounded, tooltip: tr('Close SFTP'), onPressed: close, size: 26),
+                ToolButton(
+                  icon: Icons.close_rounded,
+                  tooltip: tr('Close SFTP'),
+                  onPressed: close,
+                  size: 26,
+                ),
             ],
           ),
           const SizedBox(height: 2),
-          _PathField(key: ValueKey('path-$title'), path: path, onSubmit: onPath),
+          _PathField(
+            key: ValueKey('path-$title'),
+            path: path,
+            onSubmit: onPath,
+          ),
         ],
       ),
     );
@@ -743,7 +799,10 @@ class _SftpBrowserState extends State<SftpBrowser> {
       return Center(child: Text(tr('This folder is empty.')));
     }
     return _FileList(
-      entries: [for (final (name, folder, size) in entries) (name, folder, folder ? null : _size(size))],
+      entries: [
+        for (final (name, folder, size) in entries)
+          (name, folder, folder ? null : _size(size)),
+      ],
       selected: selected,
       onSelect: onSelect,
       onOpen: onOpen,
@@ -819,45 +878,57 @@ class _FileRowState extends State<_FileRow> {
           if (e.buttons == kPrimaryButton) widget.onSelect();
         },
         child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onDoubleTap: widget.onOpen,
-        child: Container(
-          height: 28,
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(4)),
-          child: Row(
-            children: [
-              Container(
-                width: 3,
-                height: 14,
-                margin: const EdgeInsets.only(right: 7),
-                decoration: BoxDecoration(
-                  color: widget.selected ? text : Colors.transparent,
-                  borderRadius: BorderRadius.circular(2),
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: widget.onOpen,
+          child: Container(
+            height: 28,
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 14,
+                  margin: const EdgeInsets.only(right: 7),
+                  decoration: BoxDecoration(
+                    color: widget.selected ? text : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              Icon(
-                widget.folder ? Icons.folder_rounded : Icons.description_outlined,
-                size: 16,
-                color: widget.folder ? text : dim,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  widget.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12.5, color: text, fontWeight: widget.folder ? FontWeight.w500 : null),
+                Icon(
+                  widget.folder
+                      ? Icons.folder_rounded
+                      : Icons.description_outlined,
+                  size: 16,
+                  color: widget.folder ? text : dim,
                 ),
-              ),
-              if (widget.size != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Text(widget.size!, style: TextStyle(fontSize: 11, color: dim)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: text,
+                      fontWeight: widget.folder ? FontWeight.w500 : null,
+                    ),
+                  ),
                 ),
-            ],
+                if (widget.size != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      widget.size!,
+                      style: TextStyle(fontSize: 11, color: dim),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -881,12 +952,19 @@ class _WideSftp extends StatelessWidget {
           Container(
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor))),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Theme.of(context).dividerColor),
+              ),
+            ),
             child: Row(
               children: [
                 Icon(Icons.folder_rounded, size: 16, color: dim),
                 const SizedBox(width: 8),
-                const Text('SFTP', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text(
+                  'SFTP',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
                 const Spacer(),
                 ToolButton(
                   key: const ValueKey('sftp-shrink'),
@@ -933,7 +1011,9 @@ class _PathFieldState extends State<_PathField> {
   @override
   void didUpdateWidget(_PathField old) {
     super.didUpdateWidget(old);
-    if (old.path != widget.path && !_focus.hasFocus) _controller.text = widget.path;
+    if (old.path != widget.path && !_focus.hasFocus) {
+      _controller.text = widget.path;
+    }
   }
 
   @override
@@ -960,7 +1040,10 @@ class _PathFieldState extends State<_PathField> {
           isDense: true,
           filled: _focus.hasFocus,
           fillColor: overlay.withValues(alpha: isDark ? 0.08 : 0.05),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: 5,
+          ),
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
           disabledBorder: InputBorder.none,
@@ -1027,7 +1110,9 @@ class _FileListState extends State<_FileList> {
     if (top < _scroll.offset) {
       _scroll.jumpTo(top);
     } else if (top + _rowExtent > _scroll.offset + view) {
-      _scroll.jumpTo((top + _rowExtent - view).clamp(0, _scroll.position.maxScrollExtent));
+      _scroll.jumpTo(
+        (top + _rowExtent - view).clamp(0, _scroll.position.maxScrollExtent),
+      );
     }
   }
 
@@ -1052,7 +1137,9 @@ class _FileListState extends State<_FileList> {
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.arrowDown) {
       _select(_index < 0 ? 0 : _index + 1);
@@ -1062,17 +1149,22 @@ class _FileListState extends State<_FileList> {
       _select(0);
     } else if (key == LogicalKeyboardKey.end) {
       _select(widget.entries.length - 1);
-    } else if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+    } else if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
       final i = _index;
       if (i >= 0 && widget.entries[i].$2) widget.onOpen(widget.entries[i].$1);
     } else if (key == LogicalKeyboardKey.backspace) {
       widget.onUp?.call();
     } else {
       final char = event.character;
-      if (char == null || char.isEmpty || char.trim().isEmpty || char.codeUnitAt(0) < 32) {
+      if (char == null ||
+          char.isEmpty ||
+          char.trim().isEmpty ||
+          char.codeUnitAt(0) < 32) {
         return KeyEventResult.ignored;
       }
-      if (HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isAltPressed) {
+      if (HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isAltPressed) {
         return KeyEventResult.ignored;
       }
       _typeAhead(char.toLowerCase());

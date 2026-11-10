@@ -31,7 +31,14 @@ class _FakeSftp implements SftpClient {
   }
 
   @override
-  Future<void> upload(String localPath, String remotePath) async {
+  Future<void> upload(
+    String localPath,
+    String remotePath, {
+    SftpProgressCallback? onProgress,
+  }) async {
+    onProgress?.call(const SftpProgress(4, 8, 2048));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    onProgress?.call(const SftpProgress(8, 8, 2048, verifying: true));
     uploads.add('$localPath -> $remotePath');
     folders['/home/user']!.add(
       SftpEntry(remotePath.split('/').last, isDirectory: false, size: 8),
@@ -39,7 +46,14 @@ class _FakeSftp implements SftpClient {
   }
 
   @override
-  Future<void> download(String remotePath, String localPath) async {
+  Future<void> download(
+    String remotePath,
+    String localPath, {
+    SftpProgressCallback? onProgress,
+  }) async {
+    onProgress?.call(const SftpProgress(6, 12, 1024));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    onProgress?.call(const SftpProgress(12, 12, 1024, verifying: true));
     downloads.add('$remotePath -> $localPath');
   }
 
@@ -98,10 +112,10 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('sftp-upload')));
     await tester.pumpAndSettle();
-    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Verified'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await _pumpBrowser(tester, sftp, transfers: history);
-    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Verified'), findsOneWidget);
     expect(find.text('No transfers yet'), findsNothing);
   });
 
@@ -166,9 +180,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('sftp-entry-local.txt')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('sftp-upload')));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('50% · 2.0 KB/s'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(sftp.uploads, ['C:/Files/local.txt -> /home/user/local.txt']);
-    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Verified'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     expect(sftp.disposed, isTrue);
@@ -218,38 +234,55 @@ void main() {
     expect(find.text('older.txt'), findsOneWidget);
   });
 
-  testWidgets('a letter jumps to the next name with it; arrows move; Backspace goes up', (tester) async {
-    final sftp = _FakeSftp();
-    sftp.folders['/home/user']!.addAll(const [
-      SftpEntry('data.txt', isDirectory: false, size: 1),
-      SftpEntry('docs.txt', isDirectory: false, size: 1),
-    ]);
-    await _pumpBrowser(tester, sftp);
-    bool selected(String name) {
-      final row = tester.widget(find.byKey(ValueKey('sftp-entry-$name')).first);
-      return (row as dynamic).selected as bool;
-    }
+  testWidgets(
+    'a letter jumps to the next name with it; arrows move; Backspace goes up',
+    (tester) async {
+      final sftp = _FakeSftp();
+      sftp.folders['/home/user']!.addAll(const [
+        SftpEntry('data.txt', isDirectory: false, size: 1),
+        SftpEntry('docs.txt', isDirectory: false, size: 1),
+      ]);
+      await _pumpBrowser(tester, sftp);
+      bool selected(String name) {
+        final row = tester.widget(
+          find.byKey(ValueKey('sftp-entry-$name')).first,
+        );
+        return (row as dynamic).selected as bool;
+      }
 
-    await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')).first);
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
-    await tester.pump();
-    expect(selected('data.txt'), isTrue);
-    await tester.pump(const Duration(seconds: 1));
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
-    await tester.pump();
-    expect(selected('docs.txt'), isTrue, reason: 'the same letter again: the next one');
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pump();
-    expect(selected('data.txt'), isTrue);
+      await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')).first);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+      await tester.pump();
+      expect(selected('data.txt'), isTrue);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+      await tester.pump();
+      expect(
+        selected('docs.txt'),
+        isTrue,
+        reason: 'the same letter again: the next one',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(selected('data.txt'), isTrue);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.home);
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(find.text('older.txt'), findsOneWidget, reason: 'Enter opened the folder');
-    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
-    await tester.pumpAndSettle();
-    expect(find.text('remote.txt'), findsOneWidget, reason: 'Backspace went back up');
-  });
+      await tester.sendKeyEvent(LogicalKeyboardKey.home);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('older.txt'),
+        findsOneWidget,
+        reason: 'Enter opened the folder',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('remote.txt'),
+        findsOneWidget,
+        reason: 'Backspace went back up',
+      );
+    },
+  );
 }

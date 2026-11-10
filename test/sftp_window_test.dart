@@ -16,11 +16,21 @@ class _FakeSftp implements SftpClient {
   @override
   Future<String> home() async => '/home/user1';
   @override
-  Future<List<SftpEntry>> list(String path) async => const [SftpEntry('notes.txt', isDirectory: false, size: 10)];
+  Future<List<SftpEntry>> list(String path) async => const [
+    SftpEntry('notes.txt', isDirectory: false, size: 10),
+  ];
   @override
-  Future<void> upload(String localPath, String remotePath) async {}
+  Future<void> upload(
+    String localPath,
+    String remotePath, {
+    SftpProgressCallback? onProgress,
+  }) async {}
   @override
-  Future<void> download(String remotePath, String localPath) async {}
+  Future<void> download(
+    String remotePath,
+    String localPath, {
+    SftpProgressCallback? onProgress,
+  }) async {}
   @override
   Future<void> mkdir(String path) async {}
   @override
@@ -37,7 +47,9 @@ class _FakeLocal implements LocalFileBrowser {
   @override
   String parent(String path) => 'C:/';
   @override
-  Future<List<LocalFileEntry>> list(String path) async => const [LocalFileEntry('local.txt', isDirectory: false, size: 8)];
+  Future<List<LocalFileEntry>> list(String path) async => const [
+    LocalFileEntry('local.txt', isDirectory: false, size: 8),
+  ];
 }
 
 void main() {
@@ -89,6 +101,11 @@ void main() {
       },
     ]);
     expect(panelHistory.single.name, 'report.txt');
+    // A verified transfer stays verified across windows.
+    SftpTransfer.restore(panelHistory, [
+      <Object?, Object?>{'name': 'report.txt', 'direction': 'upload', 'status': 'Verified'},
+    ]);
+    expect(panelHistory.single.status, 'Verified');
   });
 
   testWidgets('a window shows the existing session history', (tester) async {
@@ -117,12 +134,14 @@ void main() {
     var closed = false;
     await tester.binding.setSurfaceSize(const Size(1200, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(SftpWindowApp(
-      args: args,
-      createClient: (_) async => _FakeSftp(),
-      localBrowser: _FakeLocal(),
-      onShrink: () => closed = true,
-    ));
+    await tester.pumpWidget(
+      SftpWindowApp(
+        args: args,
+        createClient: (_) async => _FakeSftp(),
+        localBrowser: _FakeLocal(),
+        onShrink: () => closed = true,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('SFTP · DEVICE-01'), findsOneWidget);
     expect(find.text('LOCAL FILES'), findsOneWidget);
@@ -133,38 +152,48 @@ void main() {
     expect(closed, isTrue);
   });
 
-  testWidgets('SFTP opens from the tab\'s menu, with no bar above the terminal', (tester) async {
-    PtySessionController.checkReachability = false;
-    addTearDown(() => PtySessionController.checkReachability = true);
-    SharedPreferences.setMockInitialValues({});
-    final app = AppState();
-    await tester.pump();
-    final c = PtySessionController(host: '192.0.2.10', port: 22, username: 'user1', tabTitle: 'DEVICE-01');
-    c.writeOverride = (_) {};
-    app.tabs.add(OpenTab(id: 'a', controller: c));
-    app.setActiveTab(0);
-    await tester.binding.setSurfaceSize(const Size(1000, 600));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(ChangeNotifierProvider.value(
-      value: app,
-      child: const MaterialApp(home: Scaffold(body: TerminalTabsArea())),
-    ));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const ValueKey('toggle-sftp')), findsNothing);
-
-    await tester.tap(find.text('DEVICE-01'), buttons: kSecondaryButton);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('SFTP files'));
-    // The panel starts connecting, with a spinner that never settles here.
-    for (var i = 0; i < 5; i++) {
+  testWidgets(
+    'SFTP opens from the tab\'s menu, with no bar above the terminal',
+    (tester) async {
+      PtySessionController.checkReachability = false;
+      addTearDown(() => PtySessionController.checkReachability = true);
+      SharedPreferences.setMockInitialValues({});
+      final app = AppState();
+      await tester.pump();
+      final c = PtySessionController(
+        host: '192.0.2.10',
+        port: 22,
+        username: 'user1',
+        tabTitle: 'DEVICE-01',
+      );
+      c.writeOverride = (_) {};
+      app.tabs.add(OpenTab(id: 'a', controller: c));
+      app.setActiveTab(0);
+      await tester.binding.setSurfaceSize(const Size(1000, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: app,
+          child: const MaterialApp(home: Scaffold(body: TerminalTabsArea())),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(c.sftpOpen.value, isTrue);
+      expect(find.byKey(const ValueKey('toggle-sftp')), findsNothing);
 
-    c.sftpOpen.value = false;
-    await tester.pumpWidget(const SizedBox());
-    c.writeOverride = null;
-    c.dispose();
-    await tester.pump(const Duration(seconds: 1));
-  });
+      await tester.tap(find.text('DEVICE-01'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SFTP files'));
+      // The panel starts connecting, with a spinner that never settles here.
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(c.sftpOpen.value, isTrue);
+
+      c.sftpOpen.value = false;
+      await tester.pumpWidget(const SizedBox());
+      c.writeOverride = null;
+      c.dispose();
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
 }

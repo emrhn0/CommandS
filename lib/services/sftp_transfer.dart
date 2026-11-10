@@ -1,3 +1,5 @@
+import 'sftp_client.dart';
+
 /// A transfer entry lives for the lifetime of its SSH session, even when the
 /// file browser is rebuilt or moved to its own window.
 class SftpTransfer {
@@ -13,6 +15,9 @@ class SftpTransfer {
   String status;
   String? error;
 
+  /// Live progress while transferring; not carried between windows.
+  SftpProgress? progress;
+
   Map<String, dynamic> toJson() => {
     'name': name,
     'direction': direction,
@@ -23,7 +28,7 @@ class SftpTransfer {
   factory SftpTransfer.fromJson(Map<String, dynamic> json) => SftpTransfer(
     json['name'] as String? ?? '',
     json['direction'] == 'download' ? 'download' : 'upload',
-    status: json['status'] == 'Completed' || json['status'] == 'Failed'
+    status: const {'Completed', 'Verified', 'Failed'}.contains(json['status'])
         ? json['status'] as String
         : 'Transferring',
     error: json['error'] as String?,
