@@ -63,6 +63,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   ConnectionProtocol _protocol = ConnectionProtocol.ssh;
   bool _rdpClipboard = true;
   bool _rdpWallpaper = false;
+  bool _recordSessionByDefault = false;
 
   /// Picked in the Device menu; null is "Automatic".
   DeviceKind? _pickedDevice;
@@ -87,6 +88,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       _protocol = existing.protocol;
       _rdpClipboard = existing.rdpClipboard;
       _rdpWallpaper = existing.rdpWallpaper;
+      _recordSessionByDefault = existing.recordSessionByDefault;
       if (existing.deviceManual) {
         _pickedDevice = existing.device;
       } else {
@@ -99,6 +101,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
         _host.text = prefill.host;
         _port.text = '${prefill.port}';
         _protocol = prefill.protocol;
+        _recordSessionByDefault = prefill.recordSessionByDefault;
       }
     }
   }
@@ -152,6 +155,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       domain: _domain.text.trim().isEmpty ? null : _domain.text.trim(),
       rdpClipboard: _rdpClipboard,
       rdpWallpaper: _rdpWallpaper,
+      recordSessionByDefault: _protocol == ConnectionProtocol.ssh && _recordSessionByDefault,
       device: _pickedDevice ?? _detectedDevice,
       deviceManual: _pickedDevice != null,
     );
@@ -327,6 +331,24 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             ],
           ),
           if (rdp) _passwordField(),
+          if (!rdp) ...[
+            const _Section('Other'),
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => setState(() => _recordSessionByDefault = !_recordSessionByDefault),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: _recordSessionByDefault,
+                    onChanged: (v) => setState(() => _recordSessionByDefault = v ?? false),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text(tr('Record session automatically'), style: const TextStyle(fontSize: 13))),
+                ],
+              ),
+            ),
+          ],
           if (rdp) ...[
             const _Section('Remote desktop'),
             Row(

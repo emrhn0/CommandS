@@ -27,6 +27,8 @@ const turkish = <String, String>{
   'Saved password for sudo': 'Sudo için kayıtlı şifre',
   'Fill': 'Doldur',
   'Session logs': 'Oturum kayıtları',
+  'Other': 'Diğer',
+  'Record session automatically': 'Oturumu otomatik kaydet',
   'SSH output is saved as UTF-8 under <host>/<YYYY-MM-DD>/<HH-mm-ss>.log.':
       'SSH çıktısı UTF-8 olarak <host>/<YYYY-MM-DD>/<HH-mm-ss>.log altında saklanır.',
   'Choose log folder': 'Kayıt klasörü seç',

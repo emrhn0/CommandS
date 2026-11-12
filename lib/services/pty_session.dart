@@ -51,6 +51,7 @@ class PtySessionController implements TerminalSessionController {
     String username = '',
     String password = '',
     this.tabTitle,
+    this.recordByDefault = false,
     @visibleForTesting bool startImmediately = true,
   }) : _username = username,
        _password = password {
@@ -65,6 +66,7 @@ class PtySessionController implements TerminalSessionController {
   @override
   final String host;
   final int port;
+  final bool recordByDefault;
   @override
   String? tabTitle;
 
@@ -116,6 +118,9 @@ class PtySessionController implements TerminalSessionController {
   SessionLogRecorder? _recorder;
   Future<String>? _startingRecording;
   bool _disposed = false;
+  bool _autoRecordingPending = false;
+  final _autoRecordingBuffer = StringBuffer();
+  static const _autoRecordingBufferLimit = 4 * 1024 * 1024;
 
   Future<String> startRecording(String directory) {
     final pending = _startingRecording;
@@ -351,9 +356,41 @@ class PtySessionController implements TerminalSessionController {
   void _setStatus(SessionStatus s) {
     if (s != SessionStatus.running) dismissSudoPrompt();
     status = s;
-    if (s != SessionStatus.running) _endRecording();
+    if (s != SessionStatus.running) {
+      _autoRecordingPending = false;
+      _autoRecordingBuffer.clear();
+      _endRecording();
+    }
+    if (s == SessionStatus.running && recordByDefault) {
+      _autoRecordingBuffer.clear();
+      _autoRecordingPending = true;
+      unawaited(_startDefaultRecording(_generation));
+    }
     if (!_statusController.isClosed) _statusController.add(s);
   }
+
+  Future<void> _startDefaultRecording(int generation) async {
+    try {
+      final directory = await SessionLogSettings.directory();
+      if (_disposed || generation != _generation || status != SessionStatus.running || !_autoRecordingPending) return;
+      await startRecording(directory);
+      if (_autoRecordingPending && generation == _generation) {
+        final earlyOutput = _autoRecordingBuffer.toString();
+        _autoRecordingBuffer.clear();
+        _recorder?.write(earlyOutput);
+        _autoRecordingPending = false;
+      }
+    } catch (error) {
+      if (!_disposed && generation == _generation && status == SessionStatus.running && _autoRecordingPending) {
+        _autoRecordingPending = false;
+        _autoRecordingBuffer.clear();
+        recordingError.value = error.toString();
+      }
+    }
+  }
+
+  @visibleForTesting
+  void debugSetStatus(SessionStatus value) => _setStatus(value);
 
   void _onTerminalInput(String data) {
     final line = _lineInput;
@@ -867,7 +904,18 @@ class PtySessionController implements TerminalSessionController {
     final text = _pending.toString();
     _pending.clear();
     terminal.write(text);
-    _recorder?.write(text);
+    if (_autoRecordingPending) {
+      if (_autoRecordingBuffer.length + text.length > _autoRecordingBufferLimit) {
+        _autoRecordingPending = false;
+        _autoRecordingBuffer.clear();
+        recordingError.value = 'Initial session output exceeded the recording buffer';
+        _endRecording();
+      } else {
+        _autoRecordingBuffer.write(text);
+      }
+    } else {
+      _recorder?.write(text);
+    }
     if (!_outputController.isClosed) _outputController.add(text);
     _sniffAdd(text);
     _watchLogin(text);
@@ -929,6 +977,8 @@ class PtySessionController implements TerminalSessionController {
     _sniffStop();
     _flushTimer?.cancel();
     _flush();
+    _autoRecordingPending = false;
+    _autoRecordingBuffer.clear();
     _endRecording();
     dismissSudoPrompt();
     _sudoWatcher.reset();

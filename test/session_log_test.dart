@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:commands/providers/app_state.dart';
+import 'package:commands/models/models.dart';
 import 'package:commands/screens/settings_screen.dart';
 import 'package:commands/services/pane_layout.dart';
 import 'package:commands/services/pty_session.dart';
 import 'package:commands/services/session_log.dart';
+import 'package:commands/services/storage_service.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +31,96 @@ void main() {
     final selected = '${root.path}${Platform.pathSeparator}selected';
     await SessionLogSettings.setDirectory(selected);
     expect(await SessionLogSettings.directory(), selected);
+  });
+
+  test('connection recording default survives JSON, XML and CSV', () {
+    final oldSave = SavedConnection.fromJson({
+      'id': 'old',
+      'name': 'DEVICE-01',
+      'host': '192.0.2.10',
+    });
+    expect(oldSave.recordSessionByDefault, isFalse);
+    final connection = SavedConnection(
+      name: 'DEVICE-01',
+      host: '192.0.2.10',
+      recordSessionByDefault: true,
+    );
+    expect(
+      SavedConnection.fromJson(connection.toJson()).recordSessionByDefault,
+      isTrue,
+    );
+    final storage = StorageService();
+    final xml = storage.exportXml(folders: [], connections: [connection]);
+    expect(
+      storage.parseXml(xml).connections.single.recordSessionByDefault,
+      isTrue,
+    );
+    final csv = storage.exportCsv(folders: [], connections: [connection]);
+    expect(
+      storage.parseCsv(csv).connections.single.recordSessionByDefault,
+      isTrue,
+    );
+  });
+
+  test('enabled SSH starts a log when the session begins', () async {
+    final session = PtySessionController(
+      host: '192.0.2.10',
+      port: 22,
+      recordByDefault: true,
+      startImmediately: false,
+    );
+    session.debugSetStatus(SessionStatus.running);
+    session.debugReceiveOutput('first banner line\n');
+    for (var i = 0; i < 50 && session.recordingPath.value == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    final path = session.recordingPath.value;
+    expect(path, isNotNull);
+    session.debugReceiveOutput('ready\n');
+    await session.stopRecording();
+    expect(await File(path!).readAsString(), 'first banner line\nready\n');
+    session.dispose();
+
+    final disabled = PtySessionController(
+      host: '192.0.2.11',
+      port: 22,
+      startImmediately: false,
+    );
+    disabled.debugSetStatus(SessionStatus.running);
+    expect(disabled.recordingPath.value, isNull);
+    disabled.dispose();
+  });
+
+  test(
+    'saved SSH connection passes its recording default to the session',
+    () async {
+      PtySessionController.checkReachability = false;
+      final app = AppState();
+      final connection = SavedConnection(
+        name: 'DEVICE-01',
+        host: '192.0.2.10',
+        recordSessionByDefault: true,
+      );
+      await app.openConnection(connection);
+      final session = app.tabs.single.controller as PtySessionController;
+      expect(session.recordByDefault, isTrue);
+      session.dispose();
+    },
+  );
+
+  test('closing before auto recording starts is not a failure', () async {
+    final session = PtySessionController(
+      host: '192.0.2.10',
+      port: 22,
+      recordByDefault: true,
+      startImmediately: false,
+    );
+    session.debugSetStatus(SessionStatus.running);
+    session.debugSetStatus(SessionStatus.closed);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(session.recordingPath.value, isNull);
+    expect(session.recordingError.value, isNull);
+    session.dispose();
   });
 
   test('UTF-8 output uses host/date/time and never overwrites a second log', () async {
