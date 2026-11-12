@@ -21,10 +21,13 @@ const double kTitleBarHeight = 32;
 /// the OS there, and a Windows-shaped close button on the wrong side of a
 /// Mac window is worse than no button.
 class CustomTitleBar extends StatefulWidget {
-  const CustomTitleBar({super.key, this.title, this.actions = const []});
+  const CustomTitleBar({super.key, this.title, this.leading, this.actions = const []});
 
   /// What the bar says in its middle; the app's name by default.
   final String? title;
+
+  /// An optional button at the start of the bar, outside the drag area.
+  final Widget? leading;
 
   /// Buttons of the window's own, before the minimise button.
   final List<Widget> actions;
@@ -100,6 +103,10 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
   Widget _buttons(bool isMac) {
     return Row(
         children: [
+          if (widget.leading != null) ...[
+            if (isMac) const SizedBox(width: 78),
+            widget.leading!,
+          ],
           const Expanded(
             child: DragToMoveArea(child: SizedBox(height: double.infinity)),
           ),

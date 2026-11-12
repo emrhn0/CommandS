@@ -20,6 +20,8 @@ const turkish = <String, String>{
   'Optional': 'İsteğe bağlı',
   'Connect': 'Bağlan',
   'Settings': 'Ayarlar',
+  'Hide Sidebar': 'Kenar çubuğunu gizle',
+  'Show Sidebar': 'Kenar çubuğunu göster',
   'Back': 'Geri',
   'Try again': 'Tekrar dene',
   'Unknown error.': 'Bilinmeyen hata.',
