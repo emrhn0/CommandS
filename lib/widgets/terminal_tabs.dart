@@ -27,7 +27,9 @@ import 'threshold_draggable.dart';
 import '../l10n/strings.dart';
 
 class TerminalTabsArea extends StatelessWidget {
-  const TerminalTabsArea({super.key});
+  const TerminalTabsArea({super.key, this.sidebarVisible = true});
+
+  final bool sidebarVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +53,9 @@ class TerminalTabsArea extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              tr('Pick a saved connection on the left, use quick connect,\nor start a new one.'),
+              sidebarVisible
+                  ? tr('Pick a saved connection on the left, use quick connect,\nor start a new one.')
+                  : tr('Show the sidebar to pick a saved connection,\nor start a new one.'),
               textAlign: TextAlign.center,
               style: TextStyle(color: dim, fontSize: 12),
             ),

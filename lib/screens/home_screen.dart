@@ -109,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (_sidebarVisible) const _SidebarResizer(),
                 // Sessions take whatever the panel leaves: terminals re-wrap
                 // and RDP sessions resize to the new pane.
-                const Expanded(child: TerminalTabsArea()),
+                Expanded(child: TerminalTabsArea(sidebarVisible: _sidebarVisible)),
               ],
             ),
           ),

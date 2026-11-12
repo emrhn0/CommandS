@@ -137,6 +137,8 @@ const turkish = <String, String>{
   'No active session': 'Açık oturum yok',
   'Pick a saved connection on the left, use quick connect,\nor start a new one.':
       'Soldan kayıtlı bir bağlantı seçin, hızlı bağlantıyı kullanın\nya da yeni bir bağlantı oluşturun.',
+  'Show the sidebar to pick a saved connection,\nor start a new one.':
+      'Kayıtlı bir bağlantı seçmek için kenar çubuğunu açın\nya da yeni bir bağlantı oluşturun.',
   'Split view': 'Bölünmüş görünüm',
   'Split View': 'Bölünmüş Görünüm',
   'Edit split view…': 'Bölünmüş görünümü düzenle…',
