@@ -12,8 +12,15 @@ import '../widgets/update_dialog.dart';
 import 'settings_screen.dart';
 import '../l10n/strings.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _sidebarVisible = true;
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +28,25 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          const CustomTitleBar(),
+          CustomTitleBar(
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Tooltip(
+                message: tr(_sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'),
+                child: IconButton(
+                  key: const Key('sidebar-toggle'),
+                  onPressed: () => setState(() => _sidebarVisible = !_sidebarVisible),
+                  icon: Icon(_sidebarVisible ? Icons.menu_open : Icons.menu, size: 18),
+                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ),
           Expanded(
             child: Row(
               children: [
-                SizedBox(
+                if (_sidebarVisible) SizedBox(
                   width: width,
                   child: Column(
                     children: [
@@ -85,10 +106,10 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const _SidebarResizer(),
+                if (_sidebarVisible) const _SidebarResizer(),
                 // Sessions take whatever the panel leaves: terminals re-wrap
                 // and RDP sessions resize to the new pane.
-                const Expanded(child: TerminalTabsArea()),
+                Expanded(child: TerminalTabsArea(sidebarVisible: _sidebarVisible)),
               ],
             ),
           ),

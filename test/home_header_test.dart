@@ -2,6 +2,7 @@ import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/home_screen.dart';
 import 'package:commands/services/update_service.dart';
 import 'package:commands/theme/app_theme.dart';
+import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,5 +54,44 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(find.text('CONNECTION'), findsOneWidget);
+  });
+
+  testWidgets('title bar toggles sidebar without losing its width', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    UpdateService.available.value = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('window_manager'),
+      (call) async => call.method == 'isMaximized' ? false : null,
+    );
+    tester.view.physicalSize = const Size(900, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late AppState app;
+    await tester.pumpWidget(ChangeNotifierProvider(
+      create: (_) => app = AppState(),
+      child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+    ));
+    await tester.pumpAndSettle();
+    app.setSidebarWidth(300);
+    await tester.pump();
+
+    final toggle = find.byKey(const Key('sidebar-toggle'));
+    final terminal = find.byType(TerminalTabsArea);
+    final initialWidth = tester.getSize(terminal).width;
+    expect(find.byKey(const Key('sidebar-new-connection')), findsOneWidget);
+
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(find.byKey(const Key('sidebar-new-connection')), findsNothing);
+    expect(find.text('Show the sidebar to pick a saved connection,\nor start a new one.'), findsOneWidget);
+    expect(tester.getSize(terminal).width, greaterThan(initialWidth + 250));
+    expect(app.sidebarWidth, 300);
+
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(find.byKey(const Key('sidebar-new-connection')), findsOneWidget);
+    expect(tester.getSize(terminal).width, initialWidth);
+    expect(tester.takeException(), isNull);
   });
 }
