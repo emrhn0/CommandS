@@ -63,6 +63,46 @@ void main() {
     }
   }
 
+  testWidgets('connection cards and terminal size control align at desktop width', (tester) async {
+    tester.view.physicalSize = const Size(900, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_app(const SettingsScreen(), dark: false));
+    await tester.pumpAndSettle();
+
+    final importCard = find.byKey(const Key('settings-import-card'));
+    final exportCard = find.byKey(const Key('settings-export-card'));
+    await tester.ensureVisible(exportCard);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(importCard).dy, tester.getTopLeft(exportCard).dy);
+    expect(tester.getSize(importCard).height, tester.getSize(exportCard).height);
+    expect(
+      tester.getBottomLeft(find.widgetWithText(OutlinedButton, 'Import…')).dy,
+      tester.getBottomLeft(find.widgetWithText(OutlinedButton, 'Export…')).dy,
+    );
+
+    await tester.ensureVisible(find.text('Size'));
+    await tester.pumpAndSettle();
+    expect((tester.getCenter(find.text('Size')).dy - tester.getCenter(find.text('13 pt')).dy).abs(), lessThan(2));
+    expect((tester.getCenter(find.text('Size')).dy - tester.getCenter(find.byType(Slider)).dy).abs(), lessThan(2));
+  });
+
+  testWidgets('connection cards stack in a narrow settings window', (tester) async {
+    tester.view.physicalSize = const Size(640, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_app(const SettingsScreen(), dark: false));
+    await tester.pumpAndSettle();
+
+    final importCard = find.byKey(const Key('settings-import-card'));
+    final exportCard = find.byKey(const Key('settings-export-card'));
+    await tester.ensureVisible(exportCard);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(importCard).dx, tester.getTopLeft(exportCard).dx);
+    expect(tester.getTopLeft(exportCard).dy, greaterThan(tester.getBottomLeft(importCard).dy));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('choosing a theme on the Settings page applies and is remembered', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;

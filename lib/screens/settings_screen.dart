@@ -640,17 +640,22 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
             ),
             SizedBox(
               width: 280,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(tr('Size: {n} pt', {'n': size.round()}), style: TextStyle(fontSize: 12, color: dim)),
-                  Slider(
-                    value: size.clamp(9, 24),
-                    min: 9,
-                    max: 24,
-                    divisions: 15,
-                    label: '${size.round()} pt',
-                    onChanged: (v) => app.setTerminalFont(size: v),
+                  Text(tr('Size'), style: TextStyle(fontSize: 12, color: dim)),
+                  Expanded(
+                    child: Slider(
+                      value: size.clamp(9, 24),
+                      min: 9,
+                      max: 24,
+                      divisions: 15,
+                      label: '${size.round()} pt',
+                      onChanged: (v) => app.setTerminalFont(size: v),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 38,
+                    child: Text('${size.round()} pt', style: TextStyle(fontSize: 12, color: dim)),
                   ),
                 ],
               ),
@@ -923,34 +928,40 @@ class _ImportExport extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tileWidth = constraints.maxWidth >= 560
-            ? (constraints.maxWidth - 14) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 14,
-          runSpacing: 14,
-          children: [
-            SizedBox(
-              width: tileWidth,
-              child: _ActionTile(
-                icon: Icons.file_download_outlined,
-                title: 'Import connections',
-                description: 'From an export file (JSON, XML or CSV).',
-                action: 'Import…',
-                onPressed: () => showImportDialog(context),
-              ),
-            ),
-            SizedBox(
-              width: tileWidth,
-              child: _ActionTile(
-                icon: Icons.file_upload_outlined,
-                title: 'Export connections',
-                description: 'Save some or all of your connections as JSON, XML or CSV.',
-                action: 'Export…',
-                onPressed: () => showExportDialog(context),
-              ),
-            ),
-          ],
+        final sideBySide = constraints.maxWidth >= 560;
+        final importTile = _ActionTile(
+          key: const Key('settings-import-card'),
+          icon: Icons.file_download_outlined,
+          title: 'Import connections',
+          description: 'From an export file (JSON, XML or CSV).',
+          action: 'Import…',
+          fillHeight: sideBySide,
+          onPressed: () => showImportDialog(context),
+        );
+        final exportTile = _ActionTile(
+          key: const Key('settings-export-card'),
+          icon: Icons.file_upload_outlined,
+          title: 'Export connections',
+          description: 'Save some or all of your connections as JSON, XML or CSV.',
+          action: 'Export…',
+          fillHeight: sideBySide,
+          onPressed: () => showExportDialog(context),
+        );
+        if (!sideBySide) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [importTile, const SizedBox(height: 14), exportTile],
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: importTile),
+              const SizedBox(width: 14),
+              Expanded(child: exportTile),
+            ],
+          ),
         );
       },
     );
@@ -959,10 +970,12 @@ class _ImportExport extends StatelessWidget {
 
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
+    super.key,
     required this.icon,
     required this.title,
     required this.description,
     required this.action,
+    required this.fillHeight,
     required this.onPressed,
   });
 
@@ -970,6 +983,7 @@ class _ActionTile extends StatelessWidget {
   final String title;
   final String description;
   final String action;
+  final bool fillHeight;
   final VoidCallback onPressed;
 
   @override
@@ -998,6 +1012,7 @@ class _ActionTile extends StatelessWidget {
             tr(description),
             style: TextStyle(fontSize: 12, height: 1.45, color: theme.textTheme.bodySmall?.color),
           ),
+          if (fillHeight) const Spacer(),
           const SizedBox(height: 14),
           OutlinedButton(onPressed: onPressed, child: Text(tr(action))),
         ],
