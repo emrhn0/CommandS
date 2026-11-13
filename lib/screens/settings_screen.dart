@@ -646,7 +646,7 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
                 width: 280,
                 child: Row(
                   children: [
-                    Text(tr('Size'), style: TextStyle(fontSize: 12, color: dim)),
+                    Text(tr('Size'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
                     Expanded(
                       child: Slider(
                         value: size.clamp(9, 24),
