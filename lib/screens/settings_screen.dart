@@ -599,68 +599,73 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
           ),
         ),
         const SizedBox(height: 18),
-        Wrap(
-          spacing: 24,
-          runSpacing: 14,
-          crossAxisAlignment: WrapCrossAlignment.end,
-          children: [
-            SizedBox(
-              width: 280,
-              child: DropdownButtonFormField<String>(
-                initialValue: _typingFont ? _other : family,
-                isExpanded: true,
-                borderRadius: BorderRadius.circular(6),
-                decoration: InputDecoration(labelText: tr('Font'), isDense: true),
-                items: [
-                  for (final f in options)
-                    DropdownMenuItem(
-                      value: f,
-                      child: Text(
-                        f == defaultTerminalFont ? tr('{font} (default)', {'font': f}) : f,
-                        style: TextStyle(fontFamily: f, fontFamilyFallback: const ['Consolas', 'Menlo']),
+        LayoutBuilder(
+          builder: (context, constraints) => Wrap(
+            // Start Size at the same x as the Text swatches in the row below.
+            spacing: constraints.maxWidth >= 2 * 280 + 24
+                ? (constraints.maxWidth + 24) / 2 - 280
+                : 24,
+            runSpacing: 14,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            children: [
+              SizedBox(
+                width: 280,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _typingFont ? _other : family,
+                  isExpanded: true,
+                  borderRadius: BorderRadius.circular(6),
+                  decoration: InputDecoration(labelText: tr('Font'), isDense: true),
+                  items: [
+                    for (final f in options)
+                      DropdownMenuItem(
+                        value: f,
+                        child: Text(
+                          f == defaultTerminalFont ? tr('{font} (default)', {'font': f}) : f,
+                          style: TextStyle(fontFamily: f, fontFamilyFallback: const ['Consolas', 'Menlo']),
+                        ),
+                      ),
+                    DropdownMenuItem(value: _other, child: Text(tr('Other font by name…'))),
+                  ],
+                  onChanged: (v) {
+                    if (v == _other) {
+                      setState(() {
+                        _typingFont = true;
+                        _fontName.text = '';
+                      });
+                    } else if (v != null) {
+                      setState(() => _typingFont = false);
+                      app.setTerminalFont(
+                        family: v == defaultTerminalFont ? null : v,
+                        resetFamily: v == defaultTerminalFont,
+                      );
+                    }
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 280,
+                child: Row(
+                  children: [
+                    Text(tr('Size'), style: TextStyle(fontSize: 12, color: dim)),
+                    Expanded(
+                      child: Slider(
+                        value: size.clamp(9, 24),
+                        min: 9,
+                        max: 24,
+                        divisions: 15,
+                        label: '${size.round()} pt',
+                        onChanged: (v) => app.setTerminalFont(size: v),
                       ),
                     ),
-                  DropdownMenuItem(value: _other, child: Text(tr('Other font by name…'))),
-                ],
-                onChanged: (v) {
-                  if (v == _other) {
-                    setState(() {
-                      _typingFont = true;
-                      _fontName.text = '';
-                    });
-                  } else if (v != null) {
-                    setState(() => _typingFont = false);
-                    app.setTerminalFont(
-                      family: v == defaultTerminalFont ? null : v,
-                      resetFamily: v == defaultTerminalFont,
-                    );
-                  }
-                },
-              ),
-            ),
-            SizedBox(
-              width: 280,
-              child: Row(
-                children: [
-                  Text(tr('Size'), style: TextStyle(fontSize: 12, color: dim)),
-                  Expanded(
-                    child: Slider(
-                      value: size.clamp(9, 24),
-                      min: 9,
-                      max: 24,
-                      divisions: 15,
-                      label: '${size.round()} pt',
-                      onChanged: (v) => app.setTerminalFont(size: v),
+                    SizedBox(
+                      width: 38,
+                      child: Text('${size.round()} pt', style: TextStyle(fontSize: 12, color: dim)),
                     ),
-                  ),
-                  SizedBox(
-                    width: 38,
-                    child: Text('${size.round()} pt', style: TextStyle(fontSize: 12, color: dim)),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         if (_typingFont) ...[
           const SizedBox(height: 12),

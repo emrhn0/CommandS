@@ -85,6 +85,7 @@ void main() {
     await tester.pumpAndSettle();
     expect((tester.getCenter(find.text('Size')).dy - tester.getCenter(find.text('13 pt')).dy).abs(), lessThan(2));
     expect((tester.getCenter(find.text('Size')).dy - tester.getCenter(find.byType(Slider)).dy).abs(), lessThan(2));
+    expect(tester.getTopLeft(find.text('Size')).dx, closeTo(tester.getTopLeft(find.text('Text')).dx, 1));
   });
 
   testWidgets('connection cards stack in a narrow settings window', (tester) async {
