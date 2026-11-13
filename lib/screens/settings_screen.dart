@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../app_version.dart';
 import '../providers/app_state.dart';
 import '../services/feedback_service.dart';
 import '../services/mcp_server.dart';
+import '../services/session_log.dart';
 import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
@@ -81,6 +83,8 @@ class SettingsScreen extends StatelessWidget {
                       SizedBox(height: 22),
                       _Section(title: 'Connections', children: [_ImportExport()]),
                       SizedBox(height: 22),
+                      _Section(title: 'Session logs', children: [_SessionLogSettings()]),
+                      SizedBox(height: 22),
                       if (hasMcpServer) ...[
                         const _Section(title: 'MCP integration', children: [_McpPanel()]),
                         const SizedBox(height: 22),
@@ -96,6 +100,76 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SessionLogSettings extends StatefulWidget {
+  const _SessionLogSettings();
+
+  @override
+  State<_SessionLogSettings> createState() => _SessionLogSettingsState();
+}
+
+class _SessionLogSettingsState extends State<_SessionLogSettings> {
+  String? _directory;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final directory = await SessionLogSettings.directory();
+      if (mounted) setState(() => _directory = directory);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    }
+  }
+
+  Future<void> _choose() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final selected = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: tr('Choose log folder'),
+        initialDirectory: _directory,
+      );
+      if (selected == null) return;
+      await SessionLogSettings.setDirectory(selected);
+      if (mounted) setState(() { _directory = selected; _error = null; });
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dim = Theme.of(context).textTheme.bodySmall?.color;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(tr('SSH output is saved as UTF-8 under <host>/<YYYY-MM-DD>/<HH-mm-ss>.log.'),
+            style: TextStyle(fontSize: 12, color: dim)),
+        const SizedBox(height: 10),
+        SelectableText(_directory ?? tr('Loading…'), style: const TextStyle(fontSize: 12)),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _choose,
+          icon: const Icon(Icons.folder_open_outlined, size: 16),
+          label: Text(tr('Choose log folder')),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+        ],
+      ],
     );
   }
 }

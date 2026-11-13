@@ -181,6 +181,7 @@ class StorageService {
             if (c.domain != null) 'domain': c.domain!,
             'rdpClipboard': '${c.rdpClipboard}',
             'rdpWallpaper': '${c.rdpWallpaper}',
+            'recordSessionByDefault': '${c.recordSessionByDefault}',
           });
         }
       });
@@ -211,6 +212,7 @@ class StorageService {
         domain: e.getAttribute('domain'),
         rdpClipboard: e.getAttribute('rdpClipboard') != 'false',
         rdpWallpaper: e.getAttribute('rdpWallpaper') == 'true',
+        recordSessionByDefault: e.getAttribute('recordSessionByDefault') == 'true',
       );
     }).toList();
     return ParsedImport(folders: folders, connections: connections);
@@ -235,6 +237,7 @@ class StorageService {
     'username',
     'password',
     'domain',
+    'recordSessionByDefault',
   ];
 
   String exportCsv({
@@ -265,6 +268,7 @@ class StorageService {
         c.username,
         c.rememberPassword ? c.password : '',
         c.domain ?? '',
+        '${c.recordSessionByDefault}',
       ].map(_csvField).join(','));
     }
     return buf.toString();
@@ -366,6 +370,7 @@ class StorageService {
     final iUser = colIndex(['username', 'user', 'kullanıcı adı', 'kullanici adi', 'credentialusername']);
     final iPass = colIndex(['password', 'parola', 'şifre', 'sifre', 'credentialpassword']);
     final iDomain = colIndex(['domain', 'credentialdomain']);
+    final iRecordSession = colIndex(['recordsessionbydefault']);
 
     if (iHost == -1) {
       throw const FormatException(
@@ -433,6 +438,7 @@ class StorageService {
           folderId: folderById.containsKey(parent) ? parent : null,
           protocol: protocol,
           domain: field(fields, iDomain).trim().isEmpty ? null : field(fields, iDomain).trim(),
+          recordSessionByDefault: field(fields, iRecordSession).trim().toLowerCase() == 'true',
         ));
       }
       return ParsedImport(folders: folders, connections: connections);
@@ -477,6 +483,7 @@ class StorageService {
         folderId: ensureFolderPath(field(fields, iFolder)),
         protocol: protocol,
         domain: field(fields, iDomain).trim().isEmpty ? null : field(fields, iDomain).trim(),
+        recordSessionByDefault: field(fields, iRecordSession).trim().toLowerCase() == 'true',
       ));
     }
     return ParsedImport(folders: folders, connections: connections);

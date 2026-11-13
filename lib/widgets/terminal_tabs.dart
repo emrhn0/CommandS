@@ -13,6 +13,7 @@ import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
 import '../services/serial_session.dart';
 import '../services/session_controller.dart';
+import '../services/session_log.dart';
 import '../services/terminal_appearance.dart';
 import '../theme/app_theme.dart';
 import 'context_menu.dart';
@@ -167,7 +168,15 @@ class _TabBarRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final chips = _chips(context);
-    return SizedBox(
+    final activeIds = app.paneLayout == null
+        ? {app.tabs[app.activeTabIndex.clamp(0, app.tabs.length - 1)].id}
+        : tabIdsInLayout(app.paneLayout);
+    final sshSessions = [
+      for (final tab in app.tabs)
+        if (activeIds.contains(tab.id) && tab.controller is PtySessionController)
+          tab.controller as PtySessionController,
+    ];
+    return LayoutBuilder(builder: (context, constraints) => SizedBox(
       height: 36,
       child: Row(
         children: [
@@ -179,9 +188,171 @@ class _TabBarRow extends StatelessWidget {
             ),
           ),
           if (app.activeGroupId != null) _SeparateButton(groupId: app.activeGroupId!),
-          _SplitViewButton(active: app.activeGroupId != null, enabled: app.tabs.length > 1),
+          if (sshSessions.isNotEmpty)
+            _SessionLogButton(sessions: sshSessions, compact: constraints.maxWidth < 1100),
+          _SplitViewButton(active: app.activeGroupId != null,
+              enabled: app.tabs.length > 1, compact: constraints.maxWidth < 1100),
         ],
       ),
+    ));
+  }
+}
+
+class _SessionLogButton extends StatefulWidget {
+  const _SessionLogButton({required this.sessions, required this.compact});
+
+  final List<PtySessionController> sessions;
+  final bool compact;
+
+  @override
+  State<_SessionLogButton> createState() => _SessionLogButtonState();
+}
+
+class _SessionLogButtonState extends State<_SessionLogButton> {
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final session in widget.sessions) {
+      session.recordingError.addListener(_onRecordingError);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_SessionLogButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    for (final session in oldWidget.sessions) {
+      session.recordingError.removeListener(_onRecordingError);
+    }
+    for (final session in widget.sessions) {
+      session.recordingError.addListener(_onRecordingError);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final session in widget.sessions) {
+      session.recordingError.removeListener(_onRecordingError);
+    }
+    super.dispose();
+  }
+
+  void _onRecordingError() {
+    final errors = widget.sessions.map((s) => s.recordingError.value).whereType<String>();
+    if (errors.isEmpty) return;
+    final error = errors.first;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(tr('Session recording stopped: {error}', {'error': error})),
+        ));
+      }
+    });
+  }
+
+  Future<void> _toggle(PtySessionController session) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final current = session.recordingPath.value;
+      if (current != null) {
+        await session.stopRecording();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(tr('Session log saved to {path}', {'path': current})),
+          ));
+        }
+      } else {
+        final directory = await SessionLogSettings.directory();
+        await session.startRecording(directory);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(tr('Could not record session: {error}', {'error': error.toString()})),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pressed() async {
+    if (_busy) return;
+    if (widget.sessions.length == 1) {
+      await _toggle(widget.sessions.single);
+      return;
+    }
+    final box = context.findRenderObject()! as RenderBox;
+    final anchor = box.localToGlobal(Offset.zero);
+    final selected = await showMenu<PtySessionController>(
+      context: context,
+      position: RelativeRect.fromLTRB(anchor.dx, anchor.dy + box.size.height, 0, 0),
+      items: [
+        for (final session in widget.sessions)
+          PopupMenuItem(
+            value: session,
+            child: Row(children: [
+              Icon(Icons.circle, size: 9,
+                  color: session.recordingPath.value == null ? Theme.of(context).disabledColor : Colors.red),
+              const SizedBox(width: 8),
+              Flexible(child: Text(
+                '${session.tabTitle ?? session.host} — ${tr(session.recordingPath.value == null ? 'Record session' : 'Stop recording')}',
+              )),
+            ]),
+          ),
+      ],
+    );
+    if (selected != null && mounted) await _toggle(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        for (final session in widget.sessions) ...[session.recordingPath, session.recordingError],
+      ]),
+      builder: (context, _) {
+        final active = widget.sessions.any((s) => s.recordingPath.value != null);
+        final failed = widget.sessions.any((s) => s.recordingError.value != null);
+        final single = widget.sessions.length == 1;
+        final enabled = !_busy && widget.sessions.any((s) => s.status == SessionStatus.running || s.recordingPath.value != null);
+        final label = single ? tr(active ? 'Stop recording' : 'Record session') : tr('Session logs');
+        final icon = Stack(clipBehavior: Clip.none, children: [
+          Icon(failed ? Icons.error_outline : Icons.description_outlined, size: 16,
+              color: failed ? Theme.of(context).colorScheme.error : null),
+          if (active)
+            const Positioned(
+              right: -4, top: -3,
+              child: Icon(Icons.circle, size: 8, color: Colors.red),
+            ),
+        ]);
+        return Tooltip(
+          message: failed ? tr('Session recording failed') : active ? tr('Session recording is on') : tr('Record SSH session'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: widget.compact
+                ? IconButton(
+                    key: const ValueKey('session-log-button'),
+                    onPressed: enabled ? _pressed : null,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 28),
+                    icon: icon,
+                  )
+                : TextButton.icon(
+                    key: const ValueKey('session-log-button'),
+                    onPressed: enabled ? _pressed : null,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: icon,
+                    label: Text(label, style: const TextStyle(fontSize: 12)),
+                  ),
+          ),
+        );
+      },
     );
   }
 }
@@ -365,9 +536,10 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
 /// Opens Split view. Highlighted while the tab area is split, so it is also
 /// where to look to undo one.
 class _SplitViewButton extends StatelessWidget {
-  const _SplitViewButton({required this.active, required this.enabled});
+  const _SplitViewButton({required this.active, required this.enabled, required this.compact});
   final bool active;
   final bool enabled;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -376,16 +548,26 @@ class _SplitViewButton extends StatelessWidget {
       message: enabled ? tr('Split View') : tr('Open a second tab to split the view'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: TextButton.icon(
-          onPressed: enabled ? () => showSplitViewDialog(context) : null,
-          style: TextButton.styleFrom(
-            backgroundColor: active ? theme.colorScheme.primary.withValues(alpha: 0.10) : null,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            visualDensity: VisualDensity.compact,
-          ),
-          icon: const Icon(Icons.vertical_split_outlined, size: 16),
-          label: Text(tr('Split View'), style: const TextStyle(fontSize: 12)),
-        ),
+        child: compact
+            ? IconButton(
+                onPressed: enabled ? () => showSplitViewDialog(context) : null,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 28),
+                style: IconButton.styleFrom(
+                  backgroundColor: active ? theme.colorScheme.primary.withValues(alpha: 0.10) : null,
+                ),
+                icon: const Icon(Icons.vertical_split_outlined, size: 16),
+              )
+            : TextButton.icon(
+                onPressed: enabled ? () => showSplitViewDialog(context) : null,
+                style: TextButton.styleFrom(
+                  backgroundColor: active ? theme.colorScheme.primary.withValues(alpha: 0.10) : null,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.vertical_split_outlined, size: 16),
+                label: Text(tr('Split View'), style: const TextStyle(fontSize: 12)),
+              ),
       ),
     );
   }

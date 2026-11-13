@@ -63,6 +63,7 @@ class SavedConnection {
   String? domain; // RDP only
   bool rdpClipboard; // RDP only — redirect local clipboard to/from the session
   bool rdpWallpaper; // RDP only — show remote desktop wallpaper (off = faster)
+  bool recordSessionByDefault; // SSH only
 
   /// The kind of device, for its logo. Null until it is known.
   DeviceKind? device;
@@ -87,6 +88,7 @@ class SavedConnection {
     this.domain,
     this.rdpClipboard = true,
     this.rdpWallpaper = false,
+    this.recordSessionByDefault = false,
     this.device,
     this.deviceManual = false,
     this.autoNamePending = false,
@@ -105,6 +107,7 @@ class SavedConnection {
         'domain': domain,
         'rdpClipboard': rdpClipboard,
         'rdpWallpaper': rdpWallpaper,
+        if (recordSessionByDefault) 'recordSessionByDefault': true,
         if (device != null) 'device': device!.name,
         if (deviceManual) 'deviceManual': true,
         if (autoNamePending) 'autoNamePending': true,
@@ -126,6 +129,7 @@ class SavedConnection {
         domain: json['domain'] as String?,
         rdpClipboard: json['rdpClipboard'] as bool? ?? true,
         rdpWallpaper: json['rdpWallpaper'] as bool? ?? false,
+        recordSessionByDefault: json['recordSessionByDefault'] as bool? ?? false,
         device: DeviceKind.byName(json['device'] as String?),
         deviceManual: json['deviceManual'] as bool? ?? false,
         autoNamePending: json['autoNamePending'] as bool? ?? false,

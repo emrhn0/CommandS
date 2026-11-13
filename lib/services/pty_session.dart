@@ -11,6 +11,7 @@ import '../app_version.dart';
 import 'device_detect.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
+import 'session_log.dart';
 import 'sudo_prompt_watcher.dart';
 import 'sftp_client.dart';
 import 'sftp_transfer.dart';
@@ -50,6 +51,8 @@ class PtySessionController implements TerminalSessionController {
     String username = '',
     String password = '',
     this.tabTitle,
+    this.recordByDefault = false,
+    @visibleForTesting bool startImmediately = true,
   }) : _username = username,
        _password = password {
     terminal = Terminal(maxLines: 10000);
@@ -57,12 +60,13 @@ class PtySessionController implements TerminalSessionController {
     terminal.onResize = (w, h, pw, ph) {
       _pty?.resize(h, w);
     };
-    _start();
+    if (startImmediately) _start();
   }
 
   @override
   final String host;
   final int port;
+  final bool recordByDefault;
   @override
   String? tabTitle;
 
@@ -107,6 +111,79 @@ class PtySessionController implements TerminalSessionController {
 
   /// Whether the SFTP file panel is open beside this session's terminal.
   final sftpOpen = ValueNotifier<bool>(false);
+
+  /// The current output-only log. Null means recording is off.
+  final recordingPath = ValueNotifier<String?>(null);
+  final recordingError = ValueNotifier<String?>(null);
+  SessionLogRecorder? _recorder;
+  Future<String>? _startingRecording;
+  bool _disposed = false;
+  bool _autoRecordingPending = false;
+  final _autoRecordingBuffer = StringBuffer();
+  static const _autoRecordingBufferLimit = 4 * 1024 * 1024;
+
+  Future<String> startRecording(String directory) {
+    final pending = _startingRecording;
+    if (pending != null) return pending;
+    final active = _recorder;
+    if (active != null) return Future.value(active.path);
+    if (_disposed || status != SessionStatus.running) {
+      return Future.error(StateError('SSH session is not running'));
+    }
+    return _startingRecording = _startRecording(directory);
+  }
+
+  Future<String> _startRecording(String directory) async {
+    try {
+      late final SessionLogRecorder recorder;
+      recorder = await SessionLogRecorder.start(
+        root: directory,
+        host: host,
+        onError: (error) => _recordingFailed(recorder, error),
+      );
+      if (_disposed || status != SessionStatus.running) {
+        await recorder.close();
+        throw StateError('SSH session is no longer running');
+      }
+      recordingError.value = null;
+      _recorder = recorder;
+      recordingPath.value = recorder.path;
+      return recorder.path;
+    } finally {
+      _startingRecording = null;
+    }
+  }
+
+  void _recordingFailed(SessionLogRecorder recorder, Object error) {
+    if (!identical(_recorder, recorder)) return;
+    _recorder = null;
+    if (!_disposed) {
+      recordingPath.value = null;
+      recordingError.value = error.toString();
+    }
+    unawaited(recorder.close().catchError((Object _) {}));
+  }
+
+  Future<void> stopRecording() async {
+    final pending = _startingRecording;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {
+        return;
+      }
+    }
+    final recorder = _recorder;
+    _recorder = null;
+    if (!_disposed && recordingPath.value != null) recordingPath.value = null;
+    await recorder?.close();
+  }
+
+  void _endRecording() {
+    unawaited(stopRecording().catchError((Object error) {
+      if (!_disposed) recordingError.value = error.toString();
+    }));
+  }
 
   /// Transfer entries belong to this SSH session, not to a panel rebuild.
   final sftpTransfers = <SftpTransfer>[];
@@ -279,8 +356,41 @@ class PtySessionController implements TerminalSessionController {
   void _setStatus(SessionStatus s) {
     if (s != SessionStatus.running) dismissSudoPrompt();
     status = s;
+    if (s != SessionStatus.running) {
+      _autoRecordingPending = false;
+      _autoRecordingBuffer.clear();
+      _endRecording();
+    }
+    if (s == SessionStatus.running && recordByDefault) {
+      _autoRecordingBuffer.clear();
+      _autoRecordingPending = true;
+      unawaited(_startDefaultRecording(_generation));
+    }
     if (!_statusController.isClosed) _statusController.add(s);
   }
+
+  Future<void> _startDefaultRecording(int generation) async {
+    try {
+      final directory = await SessionLogSettings.directory();
+      if (_disposed || generation != _generation || status != SessionStatus.running || !_autoRecordingPending) return;
+      await startRecording(directory);
+      if (_autoRecordingPending && generation == _generation) {
+        final earlyOutput = _autoRecordingBuffer.toString();
+        _autoRecordingBuffer.clear();
+        _recorder?.write(earlyOutput);
+        _autoRecordingPending = false;
+      }
+    } catch (error) {
+      if (!_disposed && generation == _generation && status == SessionStatus.running && _autoRecordingPending) {
+        _autoRecordingPending = false;
+        _autoRecordingBuffer.clear();
+        recordingError.value = error.toString();
+      }
+    }
+  }
+
+  @visibleForTesting
+  void debugSetStatus(SessionStatus value) => _setStatus(value);
 
   void _onTerminalInput(String data) {
     final line = _lineInput;
@@ -794,6 +904,18 @@ class PtySessionController implements TerminalSessionController {
     final text = _pending.toString();
     _pending.clear();
     terminal.write(text);
+    if (_autoRecordingPending) {
+      if (_autoRecordingBuffer.length + text.length > _autoRecordingBufferLimit) {
+        _autoRecordingPending = false;
+        _autoRecordingBuffer.clear();
+        recordingError.value = 'Initial session output exceeded the recording buffer';
+        _endRecording();
+      } else {
+        _autoRecordingBuffer.write(text);
+      }
+    } else {
+      _recorder?.write(text);
+    }
     if (!_outputController.isClosed) _outputController.add(text);
     _sniffAdd(text);
     _watchLogin(text);
@@ -855,6 +977,9 @@ class PtySessionController implements TerminalSessionController {
     _sniffStop();
     _flushTimer?.cancel();
     _flush();
+    _autoRecordingPending = false;
+    _autoRecordingBuffer.clear();
+    _endRecording();
     dismissSudoPrompt();
     _sudoWatcher.reset();
     try {
@@ -877,11 +1002,14 @@ class PtySessionController implements TerminalSessionController {
 
   @override
   void dispose() {
+    _disposed = true;
     loginQuestion.dispose();
     sftpOpen.dispose();
     _lineInput = null;
     _stopProcess();
     sudoPrompt.dispose();
+    recordingPath.dispose();
+    recordingError.dispose();
     _statusController.close();
     _outputController.close();
   }

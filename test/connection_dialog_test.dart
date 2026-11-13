@@ -59,4 +59,58 @@ void main() {
     expect(saved.rdpWallpaper, isTrue);
     expect(saved.folderId, folder.id);
   });
+
+  testWidgets(
+    'SSH connection has an off-by-default recording checkbox under Other',
+    (tester) async {
+      tester.view.physicalSize = const Size(1000, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      final app = AppState();
+      await tester.pump();
+      final connection = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10');
+      app.connections.add(connection);
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: app,
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () =>
+                      showEditConnectionDialog(context, app.connections.single),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.text('OTHER')).dy,
+        greaterThan(tester.getTopLeft(find.text('CREDENTIALS')).dy),
+      );
+      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+      await tester.tap(find.text('Record session automatically'));
+      await tester.pump();
+      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(app.connections.single.recordSessionByDefault, isTrue);
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+      await tester.tap(find.text('RDP'));
+      await tester.pumpAndSettle();
+      expect(find.text('Record session automatically'), findsNothing);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(app.connections.single.recordSessionByDefault, isFalse);
+    },
+  );
 }
