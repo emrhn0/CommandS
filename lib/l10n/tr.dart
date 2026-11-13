@@ -299,14 +299,14 @@ const turkish = <String, String>{
   'Do not run': 'Çalıştırma',
   'Run': 'Çalıştır',
   'Allowed connections': 'İzin verilen bağlantılar',
-  'Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees the name, address and port of each connection, never its username or password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.':
-      'Ajanın kullanabileceği SSH bağlantılarını işaretle; bir klasör içindekilerin hepsini işaretler. Ajan her bağlantının adını, adresini ve portunu görür; kullanıcı adını ve şifresini asla görmez. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce sana sorulur. Terminal çıktısı olduğu gibi gönderilir.',
+  'Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees the name, address, port and username of each connection, never its password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.':
+      'Ajanın kullanabileceği SSH bağlantılarını işaretle; bir klasör içindekilerin hepsini işaretler. Ajan her bağlantının adını, adresini, portunu ve kullanıcı adını görür; şifresini asla görmez. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce sana sorulur. Terminal çıktısı olduğu gibi gönderilir.',
   'Search connections': 'Bağlantılarda ara',
   '{n} of {total} allowed': '{total} bağlantıdan {n} tanesine izin var',
   'No saved SSH connections yet.': 'Henüz kayıtlı SSH bağlantısı yok.',
   'No connection matches.': 'Eşleşen bağlantı yok.',
-  'Right-click a connection in the list to allow it. The agent sees the name, address and port of each connection, never its username or password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.':
-      'İzin vermek için listede bağlantıya sağ tıklayın. Ajan her bağlantının adını, adresini ve portunu görür; kullanıcı adını ve şifresini asla görmez. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce size sorulur. Terminal çıktısı olduğu gibi gönderilir.',
+  'Right-click a connection in the list to allow it. The agent sees the name, address, port and username of each connection, never its password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.':
+      'İzin vermek için listede bağlantıya sağ tıklayın. Ajan her bağlantının adını, adresini, portunu ve kullanıcı adını görür; şifresini asla görmez. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce size sorulur. Terminal çıktısı olduğu gibi gönderilir.',
   'None yet.': 'Henüz yok.',
   'Remove access': 'Erişimi kaldır',
   'Allow agent access': 'Ajan erişimine izin ver',

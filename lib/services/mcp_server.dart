@@ -23,8 +23,8 @@ class McpApproval {
 
 /// Only saved SSH connections the user allowed one by one are exposed, each
 /// with a stable id (`DEVICE-01`...), its name, host address, port and device
-/// type, so the agent can tell which device is which. Usernames and passwords
-/// are never in the tool results. On network devices,
+/// type and username, so the agent can tell which device is which and log in
+/// context is clear. The password is never in the tool results. On network devices,
 /// show and display commands run at once; every other command waits for the
 /// user's yes (see mcp_command_policy.dart).
 abstract class McpGateway {
@@ -105,8 +105,8 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
     throw ArgumentError('Connection not found, or not allowed for this agent.');
   }
 
-  /// What the agent is told about each allowed connection. The username and
-  /// password stay in CommandS: the session logs in on its own.
+  /// What the agent is told about each allowed connection. The password
+  /// stays in CommandS: the session logs in on its own.
   @override
   List<Map<String, Object>> listConnections() => [
     for (final c in allowedConnections)
@@ -115,6 +115,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
         'name': c.name,
         'host': c.host,
         'port': c.port,
+        'username': c.username,
         'device_type': c.device?.label ?? 'Unknown',
       },
   ];
@@ -417,7 +418,7 @@ class McpServer extends ChangeNotifier {
                 : '2025-11-25',
             'capabilities': {'tools': {}},
             'serverInfo': {'name': 'commands', 'version': appVersion},
-            'instructions': 'Use only the connections listed, by their id. Each has its name, host address and port; the login is handled by CommandS, so no username or password is needed or given. '
+            'instructions': 'Use only the connections listed, by their id. Each has its name, host address, port and username; the login itself is handled by CommandS, so no password is needed or given. '
                 'Use device_type to choose device-specific commands. Unknown means inspect the banner and prompt before sending a command; do not assume a Unix shell. '
                 'On network devices, show and display commands (and turning off paging for the session) run at once. Every other command, such as configuration changes or saving, is approved by the user in CommandS first and can be refused. '
                 'Open a session, send a single command, then read output using the returned cursor. '
@@ -521,7 +522,7 @@ class McpServer extends ChangeNotifier {
   static const _tools = [
     {
       'name': 'list_connections',
-      'description': 'List the SSH connections the user allowed for this agent: id (use it to open the connection), name, host (hostname or IP address), port and device_type. Unknown means the type has not been identified. Usernames and passwords are never returned; CommandS logs in by itself.',
+      'description': 'List the SSH connections the user allowed for this agent: id (use it to open the connection), name, host (hostname or IP address), port, username and device_type. Unknown means the type has not been identified. The password is never returned; CommandS logs in by itself.',
       'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
     },
     {

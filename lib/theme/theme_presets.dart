@@ -435,4 +435,24 @@ final List<ThemePreset> builtInThemes = List.unmodifiable([
       0x6C6F85, 0xD20F39, 0x40A02B, 0xDF8E1D, 0x1E66F5, 0xEA76CB, 0x179299, 0xBCC0CC,
     ]),
   ),
+  // Not a published palette like the others above: CommandS's own, after the
+  // violet-to-cyan glow the user picked from a mockup.
+  ThemePreset(
+    id: 'builtin:aurora',
+    name: 'Aurora',
+    dark: true,
+    background: const Color(0xFF0A0A10),
+    panel: const Color(0xFF15121F),
+    panelAlt: const Color(0xFF211B33),
+    border: const Color(0xFF2A2440),
+    text: const Color(0xFFEDEDF5),
+    textDim: const Color(0xFF8B8AA6),
+    accent: const Color(0xFF8C7CFF),
+    terminalBackground: const Color(0xFF0A0A10),
+    terminalForeground: const Color(0xFFE4E4F0),
+    ansi: _c([
+      0x15121F, 0xFF5B6E, 0x5BFFA3, 0xFFC85B, 0x5B9BFF, 0xC58CFF, 0x5BE0FF, 0xC7C7E0,
+      0x3A3550, 0xFF8299, 0x8CFFC2, 0xFFDD8C, 0x8CC2FF, 0xDDB3FF, 0x8CEBFF, 0xEDEDF5,
+    ]),
+  ),
 ]);

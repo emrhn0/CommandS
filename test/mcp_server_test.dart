@@ -274,7 +274,7 @@ void main() {
       PtySessionController.checkReachability = true;
     });
 
-    test('lists only allowed connections, with name and address but no login', () async {
+    test('lists only allowed connections, with name, address and username but no password', () async {
       expect(gateway.listConnections(), isEmpty);
       await gateway.setAllowed('c2', true);
       final listed = gateway.listConnections();
@@ -284,14 +284,13 @@ void main() {
           'name': 'CUSTOMER-B FIREWALL',
           'host': '192.0.2.2',
           'port': 22,
+          'username': 'test-user',
           'device_type': 'Palo Alto',
         },
       ]);
       expect(jsonEncode(listed), isNot(contains('CUSTOMER-A')), reason: 'not allowed');
-      expect(jsonEncode(listed), isNot(contains('test-user')));
       expect(jsonEncode(listed), isNot(contains('fake-secret')));
       expect(jsonEncode(listed), isNot(contains('password')));
-      expect(jsonEncode(listed), isNot(contains('username')));
       await gateway.setAllowed('c1', true);
       final unknown = gateway.listConnections().firstWhere((c) => c['id'] == gateway.aliasOf('c1'));
       expect(unknown['device_type'], 'Unknown');
@@ -522,6 +521,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(gateway.allowedConnections.map((c) => c.name).toSet(), {'SWITCH-01', 'SWITCH-02', 'SWITCH-03'});
     expect(find.text('3 of 3 allowed'), findsOneWidget);
+    // The internal MCP id (DEVICE-01...) is not shown next to a connection:
+    // the checkbox already says it is allowed, and the agent is sent the
+    // real name now, so the id would only confuse.
+    expect(find.text(gateway.aliasOf(app.connections.first.id)!), findsNothing);
 
     // Opening it shows the tree; unticking one leaves the folder half-ticked.
     await tester.tap(find.text('CUSTOMER-A'));

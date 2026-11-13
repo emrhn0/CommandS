@@ -385,7 +385,7 @@ class _McpPanel extends StatelessWidget {
           Text(tr('Allowed connections'), style: const TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
-            tr('Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees the name, address and port of each connection, never its username or password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.'),
+            tr('Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees the name, address, port and username of each connection, never its password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.'),
             style: TextStyle(fontSize: 12, color: secondary),
           ),
           const SizedBox(height: 10),
@@ -487,9 +487,10 @@ class _McpConnectionPickerState extends State<_McpConnectionPicker> {
         ),
         icon: kind == null ? Icon(Icons.terminal, size: 15, color: palette.textDim) : DeviceIcon(kind, size: 15),
         label: c.name,
-        trailing: allowed
-            ? Text(gateway.aliasOf(c.id)!, style: TextStyle(fontSize: 11, color: palette.textDim, fontFamily: 'Consolas'))
-            : null,
+        // The checkbox already says whether it is allowed; the internal MCP
+        // id (DEVICE-01...) is not shown here, since it means nothing to the
+        // user and once meant the agent saw no other name -- no longer true
+        // now that the agent is sent the real name, host and username.
         onTap: () => gateway.setAllowed(c.id, !allowed),
       ));
     }

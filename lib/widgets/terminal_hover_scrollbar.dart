@@ -52,7 +52,14 @@ class _TerminalHoverScrollbarState extends State<TerminalHoverScrollbar> {
             minThumbLength: 24,
             mainAxisMargin: 4,
             crossAxisMargin: 3,
-            child: widget.child,
+            // Desktop platforms draw a second, plain scrollbar over any
+            // Scrollable on their own (MaterialScrollBehavior); it shared
+            // this same controller, so the pane showed two thumbs. This one
+            // is the only scrollbar the terminal pane should have.
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+              child: widget.child,
+            ),
           ),
         );
       },

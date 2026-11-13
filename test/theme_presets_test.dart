@@ -40,12 +40,22 @@ void main() {
   group('catalogue', () {
     test('has the requested themes, each complete', () {
       final names = builtInThemes.map((t) => t.name).toSet();
-      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai']));
+      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora']));
       expect(builtInThemes.map((t) => t.id).toSet().length, builtInThemes.length, reason: 'unique ids');
       for (final t in builtInThemes) {
         expect(t.ansi, hasLength(16), reason: t.name);
         expect(t.imported, isFalse);
       }
+    });
+
+    test('Aurora round-trips through its JSON form like any other theme', () {
+      final aurora = builtInThemes.firstWhere((t) => t.name == 'Aurora');
+      final back = ThemePreset.fromJson(jsonDecode(jsonEncode(aurora.toJson())));
+      expect(back.name, aurora.name);
+      expect(back.dark, isTrue);
+      expect(back.background, aurora.background);
+      expect(back.accent, aurora.accent);
+      expect(back.ansi, aurora.ansi);
     });
 
     test('every built-in theme survives its own file format', () {

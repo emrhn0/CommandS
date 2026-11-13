@@ -69,4 +69,40 @@ void main() {
     expect(thumbColor(), Colors.transparent);
     await mouse.removePointer();
   });
+
+  testWidgets('on a desktop platform, only our thumb shows -- not a second, plain one', (
+    tester,
+  ) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    final terminal = Terminal();
+    for (var i = 0; i < 120; i++) {
+      terminal.write('line $i\r\n');
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        // MaterialScrollBehavior wraps every Scrollable in its own Scrollbar
+        // on desktop platforms; without suppressing it, the terminal pane
+        // showed both that one and TerminalHoverScrollbar's RawScrollbar
+        // stacked on the same controller.
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: SizedBox(
+            width: 320,
+            height: 240,
+            child: TerminalHoverScrollbar(
+              controller: scroll,
+              color: Colors.white,
+              child: TerminalView(terminal, scrollController: scroll),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RawScrollbar), findsOneWidget);
+    expect(find.byType(Scrollbar), findsNothing, reason: 'the framework\'s own auto scrollbar must be off here');
+  });
 }
