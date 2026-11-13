@@ -60,18 +60,30 @@ class UpdateService {
       final betas = await _chosenChannel() == ReleaseChannel.beta;
       final tags = await fetchTags();
       if (tags == null) return const UpdateCheck.failed();
-      String? newest;
-      for (final tag in tags) {
-        final stable = _stableTag.hasMatch(tag);
-        if (!stable && !(betas && _betaTag.hasMatch(tag))) continue;
-        if (newest == null || compareVersions(tag, newest) > 0) newest = tag;
-      }
       // Never an older one, a beta behind the version installed included.
-      if (newest == null || compareVersions(newest, appVersion) <= 0) return const UpdateCheck.upToDate();
+      final candidates = {
+        for (final tag in tags)
+          if ((_stableTag.hasMatch(tag) || (betas && _betaTag.hasMatch(tag))) &&
+              compareVersions(tag, appVersion) > 0)
+            tag,
+      }.toList()
+        ..sort((a, b) => compareVersions(b, a));
 
-      final release = await fetchRelease(newest);
-      if (release == null) return const UpdateCheck.failed();
-      if (release['draft'] == true) return const UpdateCheck.upToDate();
+      // The feed lists a tag as soon as it is pushed, while its release is
+      // still a draft being built (or after a release was removed). Such a
+      // tag is not an update yet, and not a failure either: the next one
+      // down is tried, and with none left the copy is up to date.
+      String? newest;
+      Map<String, dynamic>? release;
+      for (final tag in candidates) {
+        final found = await fetchRelease(tag);
+        if (found == null) return const UpdateCheck.failed();
+        if (found['draft'] == true) continue;
+        newest = tag;
+        release = found;
+        break;
+      }
+      if (newest == null || release == null) return const UpdateCheck.upToDate();
       final channel = _betaTag.hasMatch(newest) ? ReleaseChannel.beta : ReleaseChannel.stable;
       final assets = (release['assets'] as List?) ?? const [];
       final plan = await _plan(assets, newest, channel);
@@ -107,8 +119,20 @@ class UpdateService {
   @visibleForTesting
   static Future<List<String>?> Function() fetchTags = _fetchFeedTags;
   @visibleForTesting
-  static Future<Map<String, dynamic>?> Function(String tag) fetchRelease =
-      (tag) => _fetchJson('https://api.github.com/repos/$_owner/$_repo/releases/tags/${Uri.encodeComponent(tag)}');
+  static Future<Map<String, dynamic>?> Function(String tag) fetchRelease = _fetchRelease;
+
+  /// A tag whose release is not public (a draft still building, or one that
+  /// was removed) answers 404. That comes back as a draft, so the check moves
+  /// on instead of reporting that GitHub could not be reached.
+  static Future<Map<String, dynamic>?> _fetchRelease(String tag) async {
+    final url = 'https://api.github.com/repos/$_owner/$_repo/releases/tags/${Uri.encodeComponent(tag)}';
+    final response = await _fetchResponse(url, accept: 'application/vnd.github+json');
+    if (response.status == 404) return const {'draft': true};
+    final body = response.body;
+    if (body == null) return null;
+    final decoded = jsonDecode(utf8.decode(body));
+    return decoded is Map<String, dynamic> ? decoded : null;
+  }
 
   static Future<List<String>?> _fetchFeedTags() async {
     final body = await _fetch(_feedUrl, accept: 'application/atom+xml');
@@ -254,16 +278,13 @@ class UpdateService {
     return x[3] - y[3];
   }
 
-  static Future<Map<String, dynamic>?> _fetchJson(String url) async {
-    final body = await _fetch(url, accept: 'application/vnd.github+json');
-    if (body == null) return null;
-    final decoded = jsonDecode(utf8.decode(body));
-    return decoded is Map<String, dynamic> ? decoded : null;
-  }
-
   /// One redirect-following GET. `dart:io`'s client is used rather than adding
   /// an HTTP package for two requests.
-  static Future<List<int>?> _fetch(String url, {String? accept}) async {
+  static Future<List<int>?> _fetch(String url, {String? accept}) async =>
+      (await _fetchResponse(url, accept: accept)).body;
+
+  /// [_fetch] with the final status code, null when no answer came at all.
+  static Future<({int? status, List<int>? body})> _fetchResponse(String url, {String? accept}) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {
       var target = Uri.parse(url);
@@ -276,23 +297,23 @@ class UpdateService {
         if (response.isRedirect) {
           final location = response.headers.value(HttpHeaders.locationHeader);
           await response.drain<void>();
-          if (location == null) return null;
+          if (location == null) return (status: response.statusCode, body: null);
           target = target.resolve(location);
           continue;
         }
         if (response.statusCode != 200) {
           await response.drain<void>();
-          return null;
+          return (status: response.statusCode, body: null);
         }
         final bytes = <int>[];
         await for (final chunk in response) {
           bytes.addAll(chunk);
         }
-        return bytes;
+        return (status: 200, body: bytes);
       }
-      return null;
+      return (status: null, body: null);
     } catch (_) {
-      return null;
+      return (status: null, body: null);
     } finally {
       client.close(force: true);
     }

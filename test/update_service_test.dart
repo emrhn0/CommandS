@@ -57,6 +57,32 @@ void main() {
       expect(asked, isEmpty);
     });
 
+    test('a tag whose release is still a draft is up to date, not a failure', () async {
+      // The feed lists a new tag while its release is still being built; the
+      // API then answers 404, which fetchRelease reports as a draft.
+      UpdateService.fetchRelease = (tag) async {
+        asked.add(tag);
+        return tag == 'v99.0.0-beta.1' ? const {'draft': true} : {'tag_name': tag, 'draft': false, 'assets': const []};
+      };
+      SharedPreferences.setMockInitialValues({'commands.update.channel': 'beta'});
+      tags = ['v99.0.0-beta.1', 'v0.0.1'];
+      final nothing = await UpdateService.checkNow();
+      expect(nothing.failed, isFalse);
+      expect(nothing.info, isNull);
+
+      // An older published release behind the draft is still offered.
+      tags = ['v99.0.0-beta.1', 'v98.0.0'];
+      expect((await UpdateService.check())?.version, 'v98.0.0');
+      expect(asked, containsAllInOrder(['v99.0.0-beta.1', 'v98.0.0']));
+    });
+
+    test('no answer from the API is still a failed check', () async {
+      UpdateService.fetchRelease = (_) async => null;
+      SharedPreferences.setMockInitialValues({'commands.update.channel': 'beta'});
+      tags = ['v99.0.0-beta.1'];
+      expect((await UpdateService.checkNow()).failed, isTrue);
+    });
+
     test('a feed that cannot be read is a failed check, not an update', () async {
       UpdateService.fetchTags = () async => null;
       expect((await UpdateService.checkNow()).failed, isTrue);
