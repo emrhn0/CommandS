@@ -588,7 +588,7 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
             'Interface        IP-Address      Status   Protocol\n'
             'Vlan10           192.0.2.1       up       up\n'
             'Gi1/0/1          unassigned      up       up\n'
-            'Türkçe: çağrı şişe ığdır öğün İstanbul',
+            '"Türk! Öğün, çalış, güven." - Mustafa Kemal Atatürk',
             style: TextStyle(
               color: fg,
               fontFamily: family,

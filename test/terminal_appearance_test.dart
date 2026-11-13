@@ -87,5 +87,21 @@ void main() {
       expect(find.text('Use #RRGGBB, #RGB or rgb(r, g, b)'), findsOneWidget);
       expect(app.terminalBackground, const Color(0xFF102030), reason: 'unchanged by a bad code');
     });
+
+    testWidgets('the font preview shows a line with Turkish letters', (tester) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(ChangeNotifierProvider(
+        create: (_) => AppState(),
+        child: const MaterialApp(home: SettingsScreen()),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('"Türk! Öğün, çalış, güven." - Mustafa Kemal Atatürk'),
+        findsOneWidget,
+      );
+    });
   });
 }
