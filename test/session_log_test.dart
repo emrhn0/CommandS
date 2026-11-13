@@ -33,6 +33,39 @@ void main() {
     expect(await SessionLogSettings.directory(), selected);
   });
 
+  test('by default logs stay on this computer, not in Documents', () async {
+    final dir = await SessionLogSettings.defaultDirectory({
+      'LOCALAPPDATA': r'C:\Users\user1\AppData\Local',
+      'HOME': '/Users/user1',
+    });
+    expect(dir.toLowerCase(), isNot(contains('documents')));
+    if (Platform.isWindows) {
+      expect(dir, r'C:\Users\user1\AppData\Local\CommandS\Session Logs');
+    } else if (Platform.isMacOS) {
+      expect(dir, '/Users/user1/Library/Application Support/CommandS/Session Logs');
+    }
+  });
+
+  test('terminal codes are removed, also when split across chunks', () {
+    final cleaner = TerminalTextCleaner();
+    expect(cleaner.clean('\x1B[1;32muser1@switch-01\x1B[0m:~\$ ls\r\n'), 'user1@switch-01:~\$ ls\r\n');
+    expect(cleaner.clean('\x1B]0;switch-01\x07title gone\r\n'), 'title gone\r\n');
+    // A sequence cut in half is held until the rest arrives.
+    expect(cleaner.clean('before \x1B['), 'before ');
+    expect(cleaner.clean('31mred\x1B[0m after'), 'red after');
+    // Tabs and line breaks stay; bell and other controls go.
+    expect(cleaner.clean('a\tb\x07c\r\n'), 'a\tbc\r\n');
+    expect(cleaner.clean('\x1B[42D          \x1B[42D<switch-01>'), '          <switch-01>');
+  });
+
+  test('a log file holds plain text', () async {
+    final recorder = await SessionLogRecorder.start(root: root.path, host: '192.0.2.10');
+    recorder.write('\x1B[1mbold\x1B');
+    recorder.write('[0m plain\r\n');
+    await recorder.close();
+    expect(await File(recorder.path).readAsString(), 'bold plain\r\n');
+  });
+
   test('connection recording default survives JSON, XML and CSV', () {
     final oldSave = SavedConnection.fromJson({
       'id': 'old',
