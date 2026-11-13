@@ -8,6 +8,7 @@ import 'package:xterm/xterm.dart';
 
 import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
+import '../services/mcp_server.dart';
 import '../services/pane_layout.dart';
 import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
@@ -584,6 +585,47 @@ class _TabDrag {
 
 /// A tab in the strip. It can be dragged along the strip to reorder it, like a
 /// browser's, and a plain tab can also be dragged onto the panes to split them.
+/// Shown on the tab of a session an AI agent opened over MCP, so it is clear
+/// which sessions the agent is working in. Nothing when no agent opened it.
+class _AgentMark extends StatelessWidget {
+  const _AgentMark({required this.tabIds});
+  final List<String> tabIds;
+
+  @override
+  Widget build(BuildContext context) {
+    final gateway = context.watch<McpServer?>()?.gateway;
+    if (gateway is! AppMcpGateway) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: gateway,
+      builder: (context, _) {
+        if (!tabIds.any(gateway.isAgentTab)) return const SizedBox.shrink();
+        final accent = Theme.of(context).colorScheme.primary;
+        return Tooltip(
+          message: tr('Opened by an AI agent over MCP'),
+          child: Container(
+            key: const ValueKey('tab-agent-mark'),
+            margin: const EdgeInsets.only(left: 4, right: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: accent.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.smart_toy_outlined, size: 11, color: accent),
+                const SizedBox(width: 3),
+                Text('AI', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: accent)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _TabChip extends StatefulWidget {
   const _TabChip({
     super.key,
@@ -693,6 +735,7 @@ class _TabChipState extends State<_TabChip> {
           Expanded(
             child: Text(widget.title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
           ),
+          _AgentMark(tabIds: widget.tabIds),
           InkWell(
             onTap: widget.onClose,
             child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 14)),

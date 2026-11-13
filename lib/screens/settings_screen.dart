@@ -29,8 +29,9 @@ Future<void> showSettings(BuildContext context) {
 /// The pages of Settings, in the order the sidebar lists them.
 enum SettingsPage {
   general('General', Icons.tune),
-  theme('Theme', Icons.palette_outlined),
-  terminal('SSH terminal', Icons.terminal),
+  // The app's theme and the SSH terminal's look on one page, so colours are
+  // set in one place.
+  theme('Theme & colors', Icons.palette_outlined),
   connections('Connections', Icons.swap_vert),
   sessionLogs('Session logs', Icons.description_outlined),
   privacy('Privacy', Icons.shield_outlined),
@@ -69,9 +70,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case SettingsPage.general:
         return const [_Section(children: [_LanguagePicker()])];
       case SettingsPage.theme:
-        return const [_Section(children: [_ThemePicker()])];
-      case SettingsPage.terminal:
-        return const [_Section(children: [_TerminalAppearance()])];
+        return const [
+          _Section(title: 'App theme', children: [_ThemePicker()]),
+          SizedBox(height: 18),
+          _Section(title: 'SSH terminal', children: [_TerminalAppearance()]),
+        ];
       case SettingsPage.connections:
         return const [_Section(children: [_ImportExport()])];
       case SettingsPage.sessionLogs:
@@ -382,7 +385,7 @@ class _McpPanel extends StatelessWidget {
           Text(tr('Allowed connections'), style: const TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
-            tr('Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.'),
+            tr('Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees the name, address and port of each connection, never its username or password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.'),
             style: TextStyle(fontSize: 12, color: secondary),
           ),
           const SizedBox(height: 10),
@@ -1143,6 +1146,10 @@ class _TerminalAppearance extends StatefulWidget {
 
 class _TerminalAppearanceState extends State<_TerminalAppearance> {
   static const _other = '\u0000other';
+  // Room for the longer preset list, a typed colour and the palette button,
+  // so both groups size their swatches alike.
+  static final _swatchSlots =
+      (_bgPresets.length > _fgPresets.length ? _bgPresets.length : _fgPresets.length) + 2;
   // The bundled fonts are there from the start; the installed ones join once
   // the system has been asked.
   List<String> _fonts = withBundledFonts([defaultTerminalFont]);
@@ -1202,122 +1209,175 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
             ),
           ),
         ),
-        const SizedBox(height: 18),
-        Wrap(
-          spacing: 24,
-          runSpacing: 14,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 280,
-              child: _FontMenuField(
-                fonts: options,
-                current: _typingFont ? _other : family,
-                otherValue: _other,
-                onSelected: (v) {
-                  if (v == _other) {
-                    setState(() {
-                      _typingFont = true;
-                      _fontName.text = '';
-                    });
-                  } else {
-                    setState(() => _typingFont = false);
-                    app.setTerminalFont(
-                      family: v == defaultTerminalFont ? null : v,
-                      resetFamily: v == defaultTerminalFont,
-                    );
-                  }
-                },
-              ),
-            ),
-            // The size and its value sit on the slider's own line, level with
-            // the font field, rather than floating above it.
-            SizedBox(
-              width: 280,
-              child: Row(
-                children: [
-                  Text(tr('Size'), style: TextStyle(fontSize: 12, color: dim)),
-                  Expanded(
-                    child: Slider(
-                      value: size.clamp(9, 24),
-                      min: 9,
-                      max: 24,
-                      divisions: 15,
-                      label: '${size.round()} pt',
-                      onChanged: (v) => app.setTerminalFont(size: v),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 38,
-                    child: Text('${size.round()} pt', style: TextStyle(fontSize: 12, color: dim)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        if (_typingFont) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              SizedBox(
-                width: 280,
-                child: TextField(
-                  controller: _fontName,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: tr('Font name, as installed (e.g. JetBrains Mono)'),
-                    isDense: true,
-                  ),
-                  onSubmitted: (v) {
-                    if (v.trim().isEmpty) return;
-                    app.setTerminalFont(family: v);
-                    setState(() => _typingFont = false);
-                  },
+        const SizedBox(height: 22),
+        // Two groups that do not mix: the background on its own, and
+        // everything about the text (font, size, colour) together. Side by
+        // side when there is room, one under the other when not.
+        LayoutBuilder(
+          builder: (context, box) {
+            final background = _AppearanceGroup(
+              key: const ValueKey('terminal-group-background'),
+              title: 'Background',
+              children: [
+                _SwatchGroup(
+                  slots: _swatchSlots,
+                  colors: _bgPresets,
+                  selected: bg,
+                  onPick: (c) => app.setTerminalColors(background: c),
                 ),
-              ),
-              const SizedBox(width: 10),
-              OutlinedButton(
-                onPressed: () {
-                  if (_fontName.text.trim().isEmpty) return;
-                  app.setTerminalFont(family: _fontName.text);
+              ],
+            );
+            final text = _AppearanceGroup(
+              key: const ValueKey('terminal-group-text'),
+              title: 'Text',
+              children: _textControls(app, options, family, size, fg, dim),
+            );
+            if (box.maxWidth < 600) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [background, const SizedBox(height: 24), text],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Equal widths: the gap on this side matches the line and
+                // the gap on the other.
+                Expanded(child: Padding(padding: const EdgeInsets.only(right: 21), child: background)),
+                // The line between the two groups.
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.only(left: 20),
+                    decoration: BoxDecoration(
+                      border: Border(left: BorderSide(color: Theme.of(context).dividerColor)),
+                    ),
+                    child: text,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// The text group: font, its size right under it, then its colour.
+  List<Widget> _textControls(
+    AppState app,
+    List<String> options,
+    String family,
+    double size,
+    Color fg,
+    Color? dim,
+  ) {
+    return [
+      _FontMenuField(
+        fonts: options,
+        current: _typingFont ? _other : family,
+        otherValue: _other,
+        onSelected: (v) {
+          if (v == _other) {
+            setState(() {
+              _typingFont = true;
+              _fontName.text = '';
+            });
+          } else {
+            setState(() => _typingFont = false);
+            app.setTerminalFont(
+              family: v == defaultTerminalFont ? null : v,
+              resetFamily: v == defaultTerminalFont,
+            );
+          }
+        },
+      ),
+      if (_typingFont) ...[
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _fontName,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: tr('Font name, as installed (e.g. JetBrains Mono)'),
+                  isDense: true,
+                ),
+                onSubmitted: (v) {
+                  if (v.trim().isEmpty) return;
+                  app.setTerminalFont(family: v);
                   setState(() => _typingFont = false);
                 },
-                child: Text(tr('Use')),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            tr(
-              'A font that is not installed falls back to the default, so a typo shows straight away in the preview.',
-            ),
-            style: TextStyle(fontSize: 11, color: dim),
-          ),
-        ],
-        const SizedBox(height: 22),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _SwatchGroup(
-                title: 'Background',
-                colors: _bgPresets,
-                selected: bg,
-                onPick: (c) => app.setTerminalColors(background: c),
               ),
             ),
-            const SizedBox(width: 24),
-            Expanded(
-              child: _SwatchGroup(
-                title: 'Text',
-                colors: _fgPresets,
-                selected: fg,
-                onPick: (c) => app.setTerminalColors(foreground: c),
-              ),
+            const SizedBox(width: 10),
+            OutlinedButton(
+              onPressed: () {
+                if (_fontName.text.trim().isEmpty) return;
+                app.setTerminalFont(family: _fontName.text);
+                setState(() => _typingFont = false);
+              },
+              child: Text(tr('Use')),
             ),
           ],
         ),
+        const SizedBox(height: 4),
+        Text(
+          tr(
+            'A font that is not installed falls back to the default, so a typo shows straight away in the preview.',
+          ),
+          style: TextStyle(fontSize: 11, color: dim),
+        ),
+      ],
+      const SizedBox(height: 10),
+      // The size right under the font it belongs to, its value on the
+      // slider's own line.
+      Row(
+        children: [
+          Text(tr('Size'), style: TextStyle(fontSize: 12, color: dim)),
+          Expanded(
+            child: Slider(
+              value: size.clamp(9, 24),
+              min: 9,
+              max: 24,
+              divisions: 15,
+              label: '${size.round()} pt',
+              onChanged: (v) => app.setTerminalFont(size: v),
+            ),
+          ),
+          SizedBox(
+            width: 38,
+            child: Text('${size.round()} pt', style: TextStyle(fontSize: 12, color: dim)),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      Text(tr('Color'), style: TextStyle(fontSize: 12, color: dim)),
+      const SizedBox(height: 10),
+      _SwatchGroup(
+        slots: _swatchSlots,
+        colors: _fgPresets,
+        selected: fg,
+        onPick: (c) => app.setTerminalColors(foreground: c),
+      ),
+    ];
+  }
+}
+
+/// One titled group of the terminal's look, its controls as wide as it is.
+class _AppearanceGroup extends StatelessWidget {
+  const _AppearanceGroup({super.key, required this.title, required this.children});
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(tr(title), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 14),
+        ...children,
       ],
     );
   }
@@ -1366,7 +1426,7 @@ class _ColorCodeFieldState extends State<_ColorCodeField> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 220,
+      width: double.infinity,
       child: TextField(
         controller: _text,
         focusNode: _focus,
@@ -1410,19 +1470,20 @@ class _ColorCodeFieldState extends State<_ColorCodeField> {
 
 class _SwatchGroup extends StatelessWidget {
   const _SwatchGroup({
-    required this.title,
+    required this.slots,
     required this.colors,
     required this.selected,
     required this.onPick,
   });
 
-  final String title;
+  /// How many swatches to size for, so groups next to each other match.
+  final int slots;
   final List<Color> colors;
   final Color selected;
   final ValueChanged<Color> onPick;
 
   /// The last swatch: opens the palette for any colour, not only these.
-  Widget _paletteButton(BuildContext context) {
+  Widget _paletteButton(BuildContext context, double d) {
     final theme = Theme.of(context);
     return Tooltip(
       message: tr('Pick a color'),
@@ -1434,8 +1495,8 @@ class _SwatchGroup extends StatelessWidget {
             if (c != null) onPick(c);
           },
           child: Container(
-            width: 34,
-            height: 34,
+            width: d,
+            height: d,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const SweepGradient(
@@ -1453,8 +1514,8 @@ class _SwatchGroup extends StatelessWidget {
             ),
             child: Center(
               child: Container(
-                width: 20,
-                height: 20,
+                width: d * 0.6,
+                height: d * 0.6,
                 decoration: BoxDecoration(color: theme.colorScheme.surface, shape: BoxShape.circle),
                 child: Icon(Icons.colorize, size: 12, color: theme.textTheme.bodyMedium?.color),
               ),
@@ -1465,15 +1526,15 @@ class _SwatchGroup extends StatelessWidget {
     );
   }
 
-  Widget _swatch(Color c, Color accent) {
+  Widget _swatch(Color c, Color accent, double d) {
     final on = selected.toARGB32() == c.toARGB32();
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: () => onPick(c),
         child: Container(
-          width: 34,
-          height: 34,
+          width: d,
+          height: d,
           decoration: BoxDecoration(
             color: c,
             shape: BoxShape.circle,
@@ -1488,21 +1549,30 @@ class _SwatchGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     final custom = !colors.any((c) => c.toARGB32() == selected.toARGB32());
+    // Every swatch and the palette button on one line: they shrink to fit
+    // the group rather than spill a lone button onto a second line.
+    final shown = colors.length + (custom ? 1 : 0) + 1;
+    final count = shown > slots ? shown : slots;
+    const gap = 8.0;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(tr(title), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final c in colors) _swatch(c, accent),
-            // A colour entered by code shows as its own selected swatch, so
-            // it is clear which colour is in use.
-            if (custom) _swatch(selected, accent),
-            _paletteButton(context),
-          ],
+        LayoutBuilder(
+          builder: (context, box) {
+            final d = ((box.maxWidth - gap * (count - 1)) / count).clamp(20.0, 34.0);
+            return Wrap(
+              key: const ValueKey('swatch-row'),
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final c in colors) _swatch(c, accent, d),
+                // A colour entered by code shows as its own selected swatch,
+                // so it is clear which colour is in use.
+                if (custom) _swatch(selected, accent, d),
+                _paletteButton(context, d),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 14),
         _ColorCodeField(color: selected, onChanged: onPick),

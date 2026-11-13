@@ -55,8 +55,7 @@ void main() {
         // Every page, reached from the sidebar. An overflow on any fails.
         final expected = {
           SettingsPage.general: 'Applies to CommandS itself; sessions are not affected.',
-          SettingsPage.theme: 'Light',
-          SettingsPage.terminal: 'Font',
+          SettingsPage.theme: 'Font',
           SettingsPage.connections: 'Export connections',
           SettingsPage.sessionLogs: 'Choose log folder',
           SettingsPage.privacy: 'Passwords',
@@ -91,13 +90,76 @@ void main() {
       tester.getBottomLeft(find.widgetWithText(OutlinedButton, 'Export…')).dy,
     );
 
-    await tester.tap(find.byKey(const ValueKey('settings-nav-terminal')));
+    await tester.tap(find.byKey(const ValueKey('settings-nav-theme')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Size'));
     await tester.pumpAndSettle();
     expect((tester.getCenter(find.text('Size')).dy - tester.getCenter(find.text('13 pt')).dy).abs(), lessThan(2));
     expect((tester.getCenter(find.text('Size')).dy - tester.getCenter(find.byType(Slider)).dy).abs(), lessThan(2));
   });
+
+  testWidgets('the app theme and the SSH terminal look share one page', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_app(const SettingsScreen(initialPage: SettingsPage.theme), dark: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Theme & colors'), findsWidgets);
+    expect(find.text('App theme'), findsOneWidget);
+    expect(find.text('SSH terminal'), findsOneWidget);
+    expect(find.text('Light'), findsWidgets);
+    expect(find.text('Font'), findsWidgets);
+    expect(find.byKey(const ValueKey('settings-nav-terminal')), findsNothing);
+  });
+
+  for (final width in [1100.0, 1374.0, 1920.0]) {
+    testWidgets('terminal background and text are two separate groups at $width px', (tester) async {
+      tester.view.physicalSize = Size(width, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_app(const SettingsScreen(initialPage: SettingsPage.theme), dark: true));
+      await tester.pumpAndSettle();
+
+      final bgGroup = find.byKey(const ValueKey('terminal-group-background'));
+      final textGroup = find.byKey(const ValueKey('terminal-group-text'));
+      await tester.ensureVisible(textGroup);
+      await tester.pumpAndSettle();
+
+      // Side by side, the same width, tops level.
+      final bg = tester.getRect(bgGroup);
+      final text = tester.getRect(textGroup);
+      expect(bg.top, text.top);
+      expect(bg.right, lessThan(text.left));
+      expect((bg.width - text.width).abs(), lessThan(1));
+
+      // The font, its size and the text colour all sit inside the text group.
+      for (final control in [find.text('Font'), find.byType(Slider), find.text('Color')]) {
+        expect(text.contains(tester.getCenter(control.first)), isTrue);
+        expect(bg.contains(tester.getCenter(control.first)), isFalse);
+      }
+      // The size is right under the font, not off to the side.
+      final font = tester.getRect(find.ancestor(of: find.text('Font'), matching: find.byType(InputDecorator)).first);
+      final slider = tester.getRect(find.byType(Slider));
+      expect(slider.top, greaterThan(font.bottom));
+      expect(slider.top - font.bottom, lessThan(40));
+
+      // Each group's swatches and palette button stay on a single line.
+      final rows = find.byKey(const ValueKey('swatch-row'));
+      expect(rows, findsNWidgets(2));
+      for (final row in rows.evaluate()) {
+        final swatches = find.descendant(of: find.byWidget(row.widget), matching: find.byType(Container));
+        final tops = {for (final e in swatches.evaluate()) (e.renderObject as RenderBox).localToGlobal(Offset.zero).dy.round()};
+        final first = tops.reduce((a, b) => a < b ? a : b);
+        expect(tops.every((t) => t - first < 34), isTrue, reason: 'a swatch wrapped to a second line');
+      }
+      // The two colour code fields line up across the groups.
+      final codes = find.widgetWithText(TextField, 'Color code');
+      expect(codes, findsNWidgets(2));
+      expect((tester.getSize(codes.at(0)).width - tester.getSize(codes.at(1)).width).abs(), lessThan(1));
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('connection cards stack in a narrow settings window', (tester) async {
     tester.view.physicalSize = const Size(640, 900);

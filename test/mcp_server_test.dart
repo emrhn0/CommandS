@@ -24,7 +24,7 @@ class _FakeGateway implements McpGateway {
   String? sent;
 
   @override
-  List<Map<String, String>> listConnections() => [
+  List<Map<String, Object>> listConnections() => [
     {'id': 'device-01', 'name': 'DEVICE-01', 'device_type': 'Palo Alto'},
   ];
 
@@ -274,17 +274,24 @@ void main() {
       PtySessionController.checkReachability = true;
     });
 
-    test('lists only allowed connections, under anonymous names', () async {
+    test('lists only allowed connections, with name and address but no login', () async {
       expect(gateway.listConnections(), isEmpty);
       await gateway.setAllowed('c2', true);
       final listed = gateway.listConnections();
       expect(listed, [
-        {'id': 'DEVICE-01', 'name': 'DEVICE-01', 'device_type': 'Palo Alto'},
+        {
+          'id': 'DEVICE-01',
+          'name': 'CUSTOMER-B FIREWALL',
+          'host': '192.0.2.2',
+          'port': 22,
+          'device_type': 'Palo Alto',
+        },
       ]);
-      expect(jsonEncode(listed), isNot(contains('CUSTOMER')));
-      expect(jsonEncode(listed), isNot(contains('192.0.2')));
+      expect(jsonEncode(listed), isNot(contains('CUSTOMER-A')), reason: 'not allowed');
       expect(jsonEncode(listed), isNot(contains('test-user')));
       expect(jsonEncode(listed), isNot(contains('fake-secret')));
+      expect(jsonEncode(listed), isNot(contains('password')));
+      expect(jsonEncode(listed), isNot(contains('username')));
       await gateway.setAllowed('c1', true);
       final unknown = gateway.listConnections().firstWhere((c) => c['id'] == gateway.aliasOf('c1'));
       expect(unknown['device_type'], 'Unknown');
@@ -295,6 +302,18 @@ void main() {
       expect(() => gateway.openConnection('c2'), throwsArgumentError);
       expect(() => gateway.openConnection('c1'), throwsArgumentError, reason: 'real ids are not names it knows');
       expect(() => gateway.openConnection('DEVICE-02'), throwsArgumentError);
+    });
+
+    test('a tab the agent opened is marked as such; the user tab is not', () async {
+      await gateway.setAllowed('c1', true);
+      await app.openConnection(app.connections.first);
+      final own = app.tabs.last.id;
+      var notified = 0;
+      gateway.addListener(() => notified++);
+      final session = await gateway.openConnection('DEVICE-01');
+      expect(gateway.isAgentTab(session), isTrue);
+      expect(gateway.isAgentTab(own), isFalse);
+      expect(notified, greaterThan(0), reason: 'the tab bar redraws to show the mark');
     });
 
     test('every command waits for the user; a no sends nothing', () async {

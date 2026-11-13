@@ -267,6 +267,10 @@ const turkish = <String, String>{
   // ---- Settings ----
   'Appearance': 'Görünüm',
   'Theme': 'Tema',
+  'Theme & colors': 'Tema ve Renkler',
+  'Opened by an AI agent over MCP': 'MCP üzerinden bir yapay zeka ajanı açtı',
+  'App theme': 'Uygulama teması',
+  'Color': 'Renk',
   'Light': 'Açık',
   'Dark': 'Koyu',
   'SSH terminal': 'SSH terminali',
@@ -295,14 +299,14 @@ const turkish = <String, String>{
   'Do not run': 'Çalıştırma',
   'Run': 'Çalıştır',
   'Allowed connections': 'İzin verilen bağlantılar',
-  'Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.':
-      'Ajanın kullanabileceği SSH bağlantılarını işaretle; bir klasör içindekilerin hepsini işaretler. Ajan yalnızca anonim adı görür. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce sana sorulur. Terminal çıktısı olduğu gibi gönderilir, yani cihaz adları ve adresler yine görünebilir.',
+  'Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees the name, address and port of each connection, never its username or password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.':
+      'Ajanın kullanabileceği SSH bağlantılarını işaretle; bir klasör içindekilerin hepsini işaretler. Ajan her bağlantının adını, adresini ve portunu görür; kullanıcı adını ve şifresini asla görmez. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce sana sorulur. Terminal çıktısı olduğu gibi gönderilir.',
   'Search connections': 'Bağlantılarda ara',
   '{n} of {total} allowed': '{total} bağlantıdan {n} tanesine izin var',
   'No saved SSH connections yet.': 'Henüz kayıtlı SSH bağlantısı yok.',
   'No connection matches.': 'Eşleşen bağlantı yok.',
-  'Right-click a connection in the list to allow it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.':
-      'İzin vermek için listede bağlantıya sağ tıklayın. Ajan yalnızca anonim adı görür. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce size sorulur. Terminal çıktısı olduğu gibi gönderilir, bu yüzden cihaz adları ve adresler yine de görünebilir.',
+  'Right-click a connection in the list to allow it. The agent sees the name, address and port of each connection, never its username or password. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is.':
+      'İzin vermek için listede bağlantıya sağ tıklayın. Ajan her bağlantının adını, adresini ve portunu görür; kullanıcı adını ve şifresini asla görmez. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce size sorulur. Terminal çıktısı olduğu gibi gönderilir.',
   'None yet.': 'Henüz yok.',
   'Remove access': 'Erişimi kaldır',
   'Allow agent access': 'Ajan erişimine izin ver',

@@ -79,7 +79,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/icon/commands_mark.png
+    - assets/icon/commands_mark_light.svg
+    - assets/icon/commands_mark_dark.svg
     - assets/devices/
     # The licences of the bundled terminal fonts travel with them.
     - assets/fonts/JetBrainsMono/OFL.txt

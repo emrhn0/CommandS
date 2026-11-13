@@ -21,13 +21,14 @@ class McpApproval {
   final String command;
 }
 
-/// Only saved SSH connections the user allowed one by one are exposed, under
-/// anonymous names (`DEVICE-01`...) with their device types. Credentials,
-/// hosts and real names are never in the tool results. On network devices,
+/// Only saved SSH connections the user allowed one by one are exposed, each
+/// with a stable id (`DEVICE-01`...), its name, host address, port and device
+/// type, so the agent can tell which device is which. Usernames and passwords
+/// are never in the tool results. On network devices,
 /// show and display commands run at once; every other command waits for the
 /// user's yes (see mcp_command_policy.dart).
 abstract class McpGateway {
-  List<Map<String, String>> listConnections();
+  List<Map<String, Object>> listConnections();
   Future<String> openConnection(String connectionId);
   Future<int> sendCommand(String sessionId, String command);
   Map<String, Object?> readOutput(String sessionId, int cursor);
@@ -44,7 +45,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
 
   final _sessions = <String, _CapturedSession>{};
 
-  /// Allowed connection ids, each with the number of its anonymous name. The
+  /// Allowed connection ids, each with the number of its id. The
   /// number stays with a connection, so a name the agent saw keeps meaning
   /// the same device.
   final Map<String, int> _allowed = {};
@@ -67,7 +68,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
 
   bool isAllowed(String connectionId) => _allowed.containsKey(connectionId);
 
-  /// The anonymous name an allowed connection is shown to the agent under.
+  /// The id (`DEVICE-01`...) an allowed connection is shown to the agent under.
   String? aliasOf(String connectionId) {
     final n = _allowed[connectionId];
     return n == null ? null : 'DEVICE-${n.toString().padLeft(2, '0')}';
@@ -92,7 +93,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
     await prefs.setString(_allowedKey, jsonEncode(_allowed));
   }
 
-  /// Allowed SSH connections that still exist, by anonymous name.
+  /// Allowed SSH connections that still exist.
   Iterable<SavedConnection> get allowedConnections => app.connections.where(
     (c) => c.protocol == ConnectionProtocol.ssh && isAllowed(c.id),
   );
@@ -104,15 +105,22 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
     throw ArgumentError('Connection not found, or not allowed for this agent.');
   }
 
+  /// What the agent is told about each allowed connection. The username and
+  /// password stay in CommandS: the session logs in on its own.
   @override
-  List<Map<String, String>> listConnections() => [
+  List<Map<String, Object>> listConnections() => [
     for (final c in allowedConnections)
       {
         'id': aliasOf(c.id)!,
-        'name': aliasOf(c.id)!,
+        'name': c.name,
+        'host': c.host,
+        'port': c.port,
         'device_type': c.device?.label ?? 'Unknown',
       },
   ];
+
+  /// Whether a tab was opened by the agent, for the mark on its tab.
+  bool isAgentTab(String tabId) => _sessions.containsKey(tabId);
 
   @override
   Future<String> openConnection(String connectionId) async {
@@ -127,6 +135,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
       throw StateError('Not an SSH session.');
     }
     _sessions[tab.id] = _CapturedSession(controller, connection.id);
+    notifyListeners();
     return tab.id;
   }
 
@@ -137,7 +146,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
           (t) => t.id == id && identical(t.controller, session.controller),
         )) {
       session?.close();
-      _sessions.remove(id);
+      if (_sessions.remove(id) != null) notifyListeners();
       throw ArgumentError('MCP session not found.');
     }
     // Access taken away after the session was opened ends it for the agent.
@@ -198,6 +207,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
       session.close();
     }
     _sessions.clear();
+    notifyListeners();
   }
 }
 
@@ -407,7 +417,7 @@ class McpServer extends ChangeNotifier {
                 : '2025-11-25',
             'capabilities': {'tools': {}},
             'serverInfo': {'name': 'commands', 'version': appVersion},
-            'instructions': 'Use only the connections listed; they have anonymous names. '
+            'instructions': 'Use only the connections listed, by their id. Each has its name, host address and port; the login is handled by CommandS, so no username or password is needed or given. '
                 'Use device_type to choose device-specific commands. Unknown means inspect the banner and prompt before sending a command; do not assume a Unix shell. '
                 'On network devices, show and display commands (and turning off paging for the session) run at once. Every other command, such as configuration changes or saving, is approved by the user in CommandS first and can be refused. '
                 'Open a session, send a single command, then read output using the returned cursor. '
@@ -511,7 +521,7 @@ class McpServer extends ChangeNotifier {
   static const _tools = [
     {
       'name': 'list_connections',
-      'description': 'List the SSH connections the user allowed for this agent, by anonymous ID and device_type. Unknown means the type has not been identified. No real names, hostnames or credentials are returned.',
+      'description': 'List the SSH connections the user allowed for this agent: id (use it to open the connection), name, host (hostname or IP address), port and device_type. Unknown means the type has not been identified. Usernames and passwords are never returned; CommandS logs in by itself.',
       'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
     },
     {

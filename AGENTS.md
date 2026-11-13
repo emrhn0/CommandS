@@ -47,6 +47,7 @@ flutter test integration_test/<file> -d windows   # real-window tests, Windows o
 | `lib/widgets/connection_tree.dart` | The left-hand tree: selection, double click, drag and drop, folder order, selection bar. |
 | `lib/widgets/terminal_tabs.dart` | Tabs, split panes, the terminal view. |
 | `lib/widgets/device_icon.dart`, `assets/devices/*.svg` | Device logos in the tree. |
+| `tool/make_icons.py` | Draws the app icon (⌘ with a red cursor) into `assets/icon/*.svg` (title bar, light and dark), `app_icon.ico` and the macOS `AppIcon` PNGs. Change the icon there and rerun it. |
 | `lib/l10n/strings.dart`, `lib/l10n/tr.dart` | Translations. |
 | `release-notes/vX.Y.Z.md` | User-facing notes per release (see Releasing). |
 | `windows/installer.iss` | Inno Setup installer. |
