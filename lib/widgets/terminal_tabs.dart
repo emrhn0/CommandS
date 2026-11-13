@@ -21,6 +21,7 @@ import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
 import 'terminal_drag_select.dart';
+import 'terminal_hover_scrollbar.dart';
 import 'sftp_browser.dart';
 import 'sftp_window.dart';
 import 'threshold_draggable.dart';
@@ -1101,9 +1102,13 @@ class _TerminalPaneState extends State<_TerminalPane> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final style = terminalStyle(family: app.terminalFontFamily, size: app.terminalFontSize);
-    final terminal = GestureDetector(
-      onTap: () => _focusNode.requestFocus(),
-      child: TerminalViewport(style: style, background: app.terminalBackground, child: _view(app, style)),
+    final terminal = TerminalHoverScrollbar(
+      controller: _scroll,
+      color: app.terminalForeground,
+      child: GestureDetector(
+        onTap: () => _focusNode.requestFocus(),
+        child: TerminalViewport(style: style, background: app.terminalBackground, child: _view(app, style)),
+      ),
     );
     final session = widget.controller;
     if (session is! PtySessionController) return terminal;
