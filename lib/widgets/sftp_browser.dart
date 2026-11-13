@@ -628,8 +628,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final panel = isDark ? AppColors.darkPanel : AppColors.lightPanel;
+    final panel = AppPalette.of(context).panel;
     if (widget.wide) {
       // This computer on the left, the device on the right, the buttons
       // between them pointing the way the file goes.
@@ -738,8 +737,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
     VoidCallback? close,
     ValueChanged<String>? onPath,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    final dim = AppPalette.of(context).textDim;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
       child: Column(
@@ -859,8 +857,8 @@ class _FileRowState extends State<_FileRow> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final text = isDark ? AppColors.darkText : AppColors.lightText;
-    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    final text = AppPalette.of(context).text;
+    final dim = AppPalette.of(context).textDim;
     final overlay = isDark ? Colors.white : Colors.black;
     final background = widget.selected
         ? overlay.withValues(alpha: isDark ? 0.11 : 0.075)
@@ -943,10 +941,9 @@ class _WideSftp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    final dim = AppPalette.of(context).textDim;
     return Material(
-      color: isDark ? AppColors.darkBg : AppColors.lightBg,
+      color: AppPalette.of(context).bg,
       child: Column(
         children: [
           Container(
@@ -1026,8 +1023,8 @@ class _PathFieldState extends State<_PathField> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
-    final text = isDark ? AppColors.darkText : AppColors.lightText;
+    final dim = AppPalette.of(context).textDim;
+    final text = AppPalette.of(context).text;
     final overlay = isDark ? Colors.white : Colors.black;
     return SizedBox(
       height: 24,

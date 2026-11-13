@@ -318,6 +318,32 @@ const turkish = <String, String>{
   '{font} (default)': '{font} (varsayılan)',
   'Other font by name…': 'Adıyla başka bir yazı tipi…',
   'Size': 'Boyut',
+  'Theme catalogue': 'Tema kataloğu',
+  'Import theme': 'Tema içe aktar',
+  'Import theme…': 'Tema içe aktar…',
+  'A JSON file in the CommandS theme format.': 'CommandS tema biçiminde bir JSON dosyası.',
+  'Theme imported: {name}': 'Tema içe aktarıldı: {name}',
+  'Could not import the theme: {error}': 'Tema içe aktarılamadı: {error}',
+  'Could not read the theme file.': 'Tema dosyası okunamadı.',
+  'Remove theme': 'Temayı kaldır',
+  'Keep my SSH terminal colours': 'SSH terminal renklerimi koru',
+  'A theme then changes only the app, not the terminal colours you set.':
+      'Tema yalnızca uygulamayı değiştirir, ayarladığın terminal renklerine dokunmaz.',
+  // Theme file errors (lib/theme/theme_presets.dart).
+  'A theme file is a JSON object.': 'Tema dosyası bir JSON nesnesi olmalı.',
+  'Not a CommandS theme: "format" must be "commands-theme".':
+      'CommandS teması değil: "format" değeri "commands-theme" olmalı.',
+  'Unsupported theme version; this CommandS reads version 1.':
+      'Desteklenmeyen tema sürümü; bu CommandS 1. sürümü okur.',
+  'The theme needs a "name".': 'Temanın bir "name" alanı olmalı.',
+  'The theme name must be 1 to 40 characters.': 'Tema adı 1 ile 40 karakter arasında olmalı.',
+  '"dark" must be true or false.': '"dark" true ya da false olmalı.',
+  'The theme needs a "ui" object.': 'Temanın bir "ui" nesnesi olmalı.',
+  'The theme needs a "terminal" object.': 'Temanın bir "terminal" nesnesi olmalı.',
+  '"terminal.ansi" must list exactly 16 colours.': '"terminal.ansi" tam 16 renk içermeli.',
+  'The theme file is too large.': 'Tema dosyası çok büyük.',
+  'The file is not valid JSON.': 'Dosya geçerli bir JSON değil.',
+  'Too many imported themes; remove one first.': 'Çok fazla içe aktarılmış tema var; önce birini kaldır.',
   'Font name, as installed (e.g. JetBrains Mono)': 'Yüklü yazı tipinin adı (ör. JetBrains Mono)',
   'Use': 'Kullan',
   'A font that is not installed falls back to the default, so a typo shows straight away in the preview.':

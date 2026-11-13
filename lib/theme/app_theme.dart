@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'theme_presets.dart';
+
 /// CommandS palette — plain monochrome: white accent on near-black in dark
 /// mode, black accent on near-white in light mode. No brand color riding on
 /// top, so the two themes stay genuinely black/white rather than a tinted
@@ -31,7 +33,93 @@ class AppColors {
 /// surface in the app has the same desktop shape as the context menu.
 const double kControlRadius = 6;
 
+/// The surface and text colours of the current theme, for widgets that draw
+/// their own (the tree, the title bar, the file manager) instead of reading
+/// Material's colour scheme. Set by every theme [AppTheme] builds, so a
+/// catalogue theme reaches them too.
+@immutable
+class AppPalette extends ThemeExtension<AppPalette> {
+  const AppPalette({
+    required this.bg,
+    required this.panel,
+    required this.panelAlt,
+    required this.border,
+    required this.text,
+    required this.textDim,
+  });
+
+  final Color bg;
+  final Color panel;
+  final Color panelAlt;
+  final Color border;
+  final Color text;
+  final Color textDim;
+
+  static const classicDark = AppPalette(
+    bg: AppColors.darkBg,
+    panel: AppColors.darkPanel,
+    panelAlt: AppColors.darkPanelAlt,
+    border: AppColors.darkBorder,
+    text: AppColors.darkText,
+    textDim: AppColors.darkTextDim,
+  );
+
+  static const classicLight = AppPalette(
+    bg: AppColors.lightBg,
+    panel: AppColors.lightPanel,
+    panelAlt: AppColors.lightPanelAlt,
+    border: AppColors.lightBorder,
+    text: AppColors.lightText,
+    textDim: AppColors.lightTextDim,
+  );
+
+  static AppPalette of(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.extension<AppPalette>() ??
+        (theme.brightness == Brightness.dark ? classicDark : classicLight);
+  }
+
+  @override
+  AppPalette copyWith({Color? bg, Color? panel, Color? panelAlt, Color? border, Color? text, Color? textDim}) =>
+      AppPalette(
+        bg: bg ?? this.bg,
+        panel: panel ?? this.panel,
+        panelAlt: panelAlt ?? this.panelAlt,
+        border: border ?? this.border,
+        text: text ?? this.text,
+        textDim: textDim ?? this.textDim,
+      );
+
+  @override
+  AppPalette lerp(AppPalette? other, double t) {
+    if (other == null) return this;
+    return AppPalette(
+      bg: Color.lerp(bg, other.bg, t)!,
+      panel: Color.lerp(panel, other.panel, t)!,
+      panelAlt: Color.lerp(panelAlt, other.panelAlt, t)!,
+      border: Color.lerp(border, other.border, t)!,
+      text: Color.lerp(text, other.text, t)!,
+      textDim: Color.lerp(textDim, other.textDim, t)!,
+    );
+  }
+}
+
 class AppTheme {
+  /// A catalogue or imported theme, built the same way as Light and Dark.
+  static ThemeData fromPreset(ThemePreset p) => _build(
+    brightness: p.dark ? Brightness.dark : Brightness.light,
+    accent: p.accent,
+    onAccent: p.accent.computeLuminance() > 0.45 ? const Color(0xFF111111) : Colors.white,
+    bg: p.background,
+    panel: p.panel,
+    panelAlt: p.panelAlt,
+    border: p.border,
+    text: p.text,
+    textDim: p.textDim,
+    field: p.dark ? Color.lerp(p.background, Colors.black, 0.25)! : p.background,
+    overlay: p.dark ? Colors.white : Colors.black,
+  );
+
   static ThemeData dark() => _build(
     brightness: Brightness.dark,
     accent: AppColors.accentDark,
@@ -100,6 +188,9 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      extensions: [
+        AppPalette(bg: bg, panel: panel, panelAlt: panelAlt, border: border, text: text, textDim: textDim),
+      ],
       brightness: brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: bg,

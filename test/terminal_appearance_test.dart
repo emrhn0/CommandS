@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/settings_screen.dart';
 import 'package:commands/services/terminal_appearance.dart';
@@ -86,6 +88,61 @@ void main() {
       await tester.pump();
       expect(find.text('Use #RRGGBB, #RGB or rgb(r, g, b)'), findsOneWidget);
       expect(app.terminalBackground, const Color(0xFF102030), reason: 'unchanged by a bad code');
+    });
+
+    testWidgets('the font menu is the desktop menu and lists the bundled fonts', (tester) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      late AppState app;
+      await tester.pumpWidget(ChangeNotifierProvider(
+        create: (_) => app = AppState(),
+        child: const MaterialApp(home: SettingsScreen()),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('terminal-font')));
+      await tester.pumpAndSettle();
+
+      for (final f in bundledTerminalFonts) {
+        expect(find.widgetWithText(PopupMenuItem<String>, f), findsOneWidget, reason: f);
+      }
+      final item = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Hack'),
+      );
+      expect(item.height, lessThan(40), reason: 'compact desktop rows');
+
+      await tester.tap(find.widgetWithText(PopupMenuItem<String>, 'JetBrains Mono'));
+      await tester.pumpAndSettle();
+      expect(app.terminalFontFamily, 'JetBrains Mono');
+      expect(find.byType(PopupMenuItem<String>), findsNothing, reason: 'menu closed');
+
+      await tester.tap(find.byKey(const ValueKey('terminal-font')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(PopupMenuItem<String>, 'Other font by name…'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, 'Font name, as installed (e.g. JetBrains Mono)'), findsOneWidget);
+    });
+
+    test('bundled fonts are listed once, after the installed ones', () {
+      expect(withBundledFonts(['Consolas', 'Hack']), [
+        'Consolas', 'Hack',
+        ...bundledTerminalFonts.where((f) => f != 'Hack'),
+      ]);
+    });
+
+    test('every bundled font is in pubspec.yaml with its files and licence', () {
+      final pubspec = File('pubspec.yaml').readAsStringSync().replaceAll('\r\n', '\n');
+      for (final f in bundledTerminalFonts) {
+        expect(pubspec, contains('- family: $f\n'), reason: f);
+        final licence = bundledFontLicences[f]!;
+        expect(File(licence).existsSync(), isTrue, reason: licence);
+        expect(pubspec, contains('- $licence'), reason: licence);
+      }
+      for (final m in RegExp(r'^ +- asset: (\S+)', multiLine: true).allMatches(pubspec)) {
+        expect(File(m.group(1)!).existsSync(), isTrue, reason: m.group(1));
+      }
     });
 
     testWidgets('the font preview shows a line with Turkish letters', (tester) async {

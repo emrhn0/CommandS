@@ -1534,8 +1534,8 @@ class _TreeRowState extends State<_TreeRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final text = isDark ? AppColors.darkText : AppColors.lightText;
-    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
+    final text = AppPalette.of(context).text;
+    final dim = AppPalette.of(context).textDim;
     final overlay = isDark ? Colors.white : Colors.black;
 
     // Windows 11's navigation pane: a rounded, neutral highlight inset from
@@ -1615,7 +1615,7 @@ class _TreeRowState extends State<_TreeRow> {
                         children: [
                           _OpenBadge(
                             status: widget.openStatus,
-                            cutout: isDark ? AppColors.darkPanel : AppColors.lightPanel,
+                            cutout: AppPalette.of(context).panel,
                             child: widget.leading ?? Icon(widget.icon, size: 16, color: text),
                           ),
                           const SizedBox(width: 8),

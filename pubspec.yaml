@@ -81,6 +81,46 @@ flutter:
   assets:
     - assets/icon/commands_mark.png
     - assets/devices/
+    # The licences of the bundled terminal fonts travel with them.
+    - assets/fonts/JetBrainsMono/OFL.txt
+    - assets/fonts/FiraCode/OFL.txt
+    - assets/fonts/SourceCodePro/OFL.txt
+    - assets/fonts/IBMPlexMono/OFL.txt
+    - assets/fonts/RobotoMono/OFL.txt
+    - assets/fonts/UbuntuMono/UFL.txt
+    - assets/fonts/Hack/LICENSE.md
+
+  # Terminal fonts popular for SSH, all with full Turkish letters, so they can
+  # be picked on any machine without installing them. Open licences (OFL,
+  # UFL, MIT); the variable ones carry every weight in one file.
+  fonts:
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono/JetBrainsMono.ttf
+    - family: Fira Code
+      fonts:
+        - asset: assets/fonts/FiraCode/FiraCode.ttf
+    - family: Source Code Pro
+      fonts:
+        - asset: assets/fonts/SourceCodePro/SourceCodePro.ttf
+    - family: IBM Plex Mono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono/IBMPlexMono-Regular.ttf
+        - asset: assets/fonts/IBMPlexMono/IBMPlexMono-Bold.ttf
+          weight: 700
+    - family: Roboto Mono
+      fonts:
+        - asset: assets/fonts/RobotoMono/RobotoMono.ttf
+    - family: Ubuntu Mono
+      fonts:
+        - asset: assets/fonts/UbuntuMono/UbuntuMono-Regular.ttf
+        - asset: assets/fonts/UbuntuMono/UbuntuMono-Bold.ttf
+          weight: 700
+    - family: Hack
+      fonts:
+        - asset: assets/fonts/Hack/Hack-Regular.ttf
+        - asset: assets/fonts/Hack/Hack-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

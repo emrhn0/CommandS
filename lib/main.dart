@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show LicenseEntryWithLineBreaks, LicenseRegistry;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -11,6 +13,7 @@ import 'app_version.dart';
 import 'screens/home_screen.dart';
 import 'services/rdp_session.dart';
 import 'services/mcp_server.dart';
+import 'services/terminal_appearance.dart';
 import 'widgets/mcp_approval_dialog.dart';
 import 'theme/app_theme.dart';
 import 'widgets/sftp_window.dart';
@@ -18,6 +21,12 @@ import 'widgets/update_dialog.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The bundled terminal fonts' licences, read only if the list is shown.
+  LicenseRegistry.addLicense(() async* {
+    for (final entry in bundledFontLicences.entries) {
+      yield LicenseEntryWithLineBreaks([entry.key], await rootBundle.loadString(entry.value));
+    }
+  });
   // A second window (the SFTP file manager) runs this same entry point in its
   // own engine, with its launch arguments telling it what to be.
   final sftp = await _sftpWindowArguments();
@@ -96,9 +105,15 @@ class CommandSApp extends StatelessWidget {
             title: appName,
             navigatorKey: _navigatorKey,
             debugShowCheckedModeBanner: false,
+            // A catalogue theme is one look, light or dark; otherwise the
+            // classic pair, switched by themeMode.
             themeMode: app.themeMode,
-            theme: AppTheme.light(),
-            darkTheme: AppTheme.dark(),
+            theme: app.activeTheme != null && !app.activeTheme!.dark
+                ? AppTheme.fromPreset(app.activeTheme!)
+                : AppTheme.light(),
+            darkTheme: app.activeTheme != null && app.activeTheme!.dark
+                ? AppTheme.fromPreset(app.activeTheme!)
+                : AppTheme.dark(),
             // Embedded RDP sessions are windows of their own, drawn above the
             // app; this tells them to step aside while a dialog is open. See
             // [RdpModalObserver].

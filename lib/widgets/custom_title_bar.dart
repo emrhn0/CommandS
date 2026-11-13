@@ -62,7 +62,6 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isMac = Platform.isMacOS;
     // The name sits in the middle of the window whatever its size, over the
     // drag area rather than in it, so the caption buttons do not push it off
@@ -81,7 +80,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.3,
-                color: isDark ? AppColors.darkText : AppColors.lightText,
+                color: AppPalette.of(context).text,
               ),
             ),
           ],
@@ -90,7 +89,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
     );
     return Container(
       height: kTitleBarHeight,
-      color: isDark ? AppColors.darkBg : AppColors.lightBg,
+      color: AppPalette.of(context).bg,
       child: Stack(
         children: [
           _buttons(isMac),

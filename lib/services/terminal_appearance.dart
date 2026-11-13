@@ -34,10 +34,37 @@ const knownMonospaceFonts = [
   'Noto Sans Mono', 'Liberation Mono', 'Victor Mono', 'Iosevka', 'MesloLGS NF', 'Meslo LG M',
 ];
 
+/// Fonts shipped inside the app (see pubspec.yaml), so they are offered on
+/// every machine whether or not they are installed. All of them have the
+/// full Turkish alphabet.
+const bundledTerminalFonts = [
+  'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'IBM Plex Mono',
+  'Roboto Mono', 'Ubuntu Mono', 'Hack',
+];
+
+/// Licence files of [bundledTerminalFonts], keyed by family.
+const bundledFontLicences = {
+  'JetBrains Mono': 'assets/fonts/JetBrainsMono/OFL.txt',
+  'Fira Code': 'assets/fonts/FiraCode/OFL.txt',
+  'Source Code Pro': 'assets/fonts/SourceCodePro/OFL.txt',
+  'IBM Plex Mono': 'assets/fonts/IBMPlexMono/OFL.txt',
+  'Roboto Mono': 'assets/fonts/RobotoMono/OFL.txt',
+  'Ubuntu Mono': 'assets/fonts/UbuntuMono/UFL.txt',
+  'Hack': 'assets/fonts/Hack/LICENSE.md',
+};
+
+/// The installed fonts first, then the bundled ones not already among them,
+/// so a machine's own copy and the shipped one never show twice.
+List<String> withBundledFonts(List<String> installed) => [
+      ...installed,
+      for (final f in bundledTerminalFonts) if (!installed.contains(f)) f,
+    ];
+
 String _squash(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
-/// Which of [knownMonospaceFonts] are installed. Never throws; on failure it
-/// returns the platform default alone.
+/// Which of [knownMonospaceFonts] are installed, followed by the bundled
+/// fonts. Never throws; on failure it returns the platform default and the
+/// bundled fonts.
 Future<List<String>> installedTerminalFonts() async {
   try {
     final names = <String>[];
@@ -67,9 +94,9 @@ Future<List<String>> installedTerminalFonts() async {
 
     final found = [for (final f in knownMonospaceFonts) if (present(f)) f];
     if (!found.contains(defaultTerminalFont)) found.insert(0, defaultTerminalFont);
-    return found;
+    return withBundledFonts(found);
   } catch (_) {
-    return [defaultTerminalFont];
+    return withBundledFonts([defaultTerminalFont]);
   }
 }
 

@@ -1418,6 +1418,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
       theme: TerminalThemes.withColors(
         background: app.terminalBackground,
         foreground: app.terminalForeground,
+        ansi: app.terminalAnsi,
       ),
     );
   }
@@ -1431,10 +1432,10 @@ class _SudoPasswordOffer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final background = dark ? AppColors.darkPanelAlt : AppColors.lightPanel;
-    final foreground = dark ? AppColors.darkText : AppColors.lightText;
-    final muted = dark ? AppColors.darkTextDim : AppColors.lightTextDim;
-    final border = dark ? AppColors.darkBorder : AppColors.lightBorder;
+    final background = dark ? AppPalette.of(context).panelAlt : AppPalette.of(context).panel;
+    final foreground = AppPalette.of(context).text;
+    final muted = AppPalette.of(context).textDim;
+    final border = AppPalette.of(context).border;
     return Material(
       color: background,
       shape: RoundedRectangleBorder(
@@ -1632,30 +1633,37 @@ class TerminalThemes {
     searchHitForeground: Color(0xFF14161A),
   );
 
-  static TerminalTheme withColors({required Color background, required Color foreground}) {
+  /// [ansi] is a theme's 16 colours (see ThemePreset.ansi); without it the
+  /// CommandS defaults are used, with white following the foreground.
+  static TerminalTheme withColors({
+    required Color background,
+    required Color foreground,
+    List<Color>? ansi,
+  }) {
+    final a = ansi != null && ansi.length == 16 ? ansi : null;
     return TerminalTheme(
-      cursor: dark.cursor,
-      selection: dark.selection,
+      cursor: a == null ? dark.cursor : foreground,
+      selection: a == null ? dark.selection : foreground.withValues(alpha: 0.3),
       foreground: foreground,
       background: background,
-      black: dark.black,
-      red: dark.red,
-      green: dark.green,
-      yellow: dark.yellow,
-      blue: dark.blue,
-      magenta: dark.magenta,
-      cyan: dark.cyan,
-      white: foreground,
-      brightBlack: dark.brightBlack,
-      brightRed: dark.brightRed,
-      brightGreen: dark.brightGreen,
-      brightYellow: dark.brightYellow,
-      brightBlue: dark.brightBlue,
-      brightMagenta: dark.brightMagenta,
-      brightCyan: dark.brightCyan,
-      brightWhite: Colors.white,
-      searchHitBackground: dark.searchHitBackground,
-      searchHitBackgroundCurrent: dark.searchHitBackgroundCurrent,
+      black: a?[0] ?? dark.black,
+      red: a?[1] ?? dark.red,
+      green: a?[2] ?? dark.green,
+      yellow: a?[3] ?? dark.yellow,
+      blue: a?[4] ?? dark.blue,
+      magenta: a?[5] ?? dark.magenta,
+      cyan: a?[6] ?? dark.cyan,
+      white: a?[7] ?? foreground,
+      brightBlack: a?[8] ?? dark.brightBlack,
+      brightRed: a?[9] ?? dark.brightRed,
+      brightGreen: a?[10] ?? dark.brightGreen,
+      brightYellow: a?[11] ?? dark.brightYellow,
+      brightBlue: a?[12] ?? dark.brightBlue,
+      brightMagenta: a?[13] ?? dark.brightMagenta,
+      brightCyan: a?[14] ?? dark.brightCyan,
+      brightWhite: a?[15] ?? Colors.white,
+      searchHitBackground: a?[8] ?? dark.searchHitBackground,
+      searchHitBackgroundCurrent: a == null ? dark.searchHitBackgroundCurrent : foreground,
       searchHitForeground: background,
     );
   }

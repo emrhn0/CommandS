@@ -330,9 +330,9 @@ class _PickerRowState extends State<_PickerRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final text = isDark ? AppColors.darkText : AppColors.lightText;
-    final dim = isDark ? AppColors.darkTextDim : AppColors.lightTextDim;
-    final guide = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final text = AppPalette.of(context).text;
+    final dim = AppPalette.of(context).textDim;
+    final guide = AppPalette.of(context).border;
     final accent = theme.colorScheme.primary;
     final bg = widget.selected
         ? accent.withValues(alpha: isDark ? 0.16 : 0.12)

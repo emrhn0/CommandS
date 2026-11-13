@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +12,7 @@ import '../services/session_log.dart';
 import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/theme_presets.dart';
 import '../widgets/color_picker_dialog.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/import_export_dialog.dart';
@@ -377,24 +380,127 @@ class _LanguagePicker extends StatelessWidget {
 class _ThemePicker extends StatelessWidget {
   const _ThemePicker();
 
+  Future<void> _import(BuildContext context) async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: tr('Import theme'),
+      type: FileType.custom,
+      allowedExtensions: const ['json'],
+    );
+    final path = result?.files.single.path;
+    if (path == null) return;
+    try {
+      final file = File(path);
+      if (await file.length() > ThemePreset.maxFileBytes) {
+        throw const FormatException('The theme file is too large.');
+      }
+      final theme = await app.importTheme(await file.readAsString());
+      await app.selectTheme(theme.id);
+      messenger.showSnackBar(SnackBar(content: Text(tr('Theme imported: {name}', {'name': theme.name}))));
+    } on FormatException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Could not import the theme: {error}', {'error': tr(e.message)}))));
+    } on FileSystemException {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Could not read the theme file.'))));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    return Wrap(
-      spacing: 14,
-      runSpacing: 14,
+    final classic = app.themeId == null;
+    final dim = Theme.of(context).textTheme.bodySmall?.color;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _ThemeCard(
-          label: 'Light',
-          light: true,
-          selected: app.themeMode == ThemeMode.light,
-          onTap: () => app.setThemeMode(ThemeMode.light),
+        Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            _ThemeCard(
+              label: 'Light',
+              palette: AppPalette.classicLight,
+              selected: classic && app.themeMode == ThemeMode.light,
+              onTap: () => app.setThemeMode(ThemeMode.light),
+            ),
+            _ThemeCard(
+              label: 'Dark',
+              palette: AppPalette.classicDark,
+              selected: classic && app.themeMode == ThemeMode.dark,
+              onTap: () => app.setThemeMode(ThemeMode.dark),
+            ),
+          ],
         ),
-        _ThemeCard(
-          label: 'Dark',
-          light: false,
-          selected: app.themeMode == ThemeMode.dark,
-          onTap: () => app.setThemeMode(ThemeMode.dark),
+        const SizedBox(height: 22),
+        Text(tr('Theme catalogue'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final t in app.allThemes)
+              _ThemeCard(
+                key: ValueKey('theme-${t.id}'),
+                label: t.name,
+                translate: false,
+                compact: true,
+                palette: AppPalette(
+                  bg: t.background,
+                  panel: t.panel,
+                  panelAlt: t.panelAlt,
+                  border: t.border,
+                  text: t.text,
+                  textDim: t.textDim,
+                ),
+                accent: t.accent,
+                terminal: t.ansi,
+                selected: app.themeId == t.id,
+                onTap: () => app.selectTheme(t.id),
+                onRemove: t.imported ? () => app.removeImportedTheme(t.id) : null,
+              ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 18,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('import-theme'),
+              onPressed: () => _import(context),
+              icon: const Icon(Icons.file_open_outlined, size: 16),
+              label: Text(tr('Import theme…')),
+            ),
+            Text(
+              tr('A JSON file in the CommandS theme format.'),
+              style: TextStyle(fontSize: 12, color: dim),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Switch(
+              key: const ValueKey('keep-terminal-colors'),
+              value: app.keepTerminalColors,
+              onChanged: app.setKeepTerminalColors,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tr('Keep my SSH terminal colours'), style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text(
+                    tr('A theme then changes only the app, not the terminal colours you set.'),
+                    style: TextStyle(fontSize: 12, color: dim),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -402,107 +508,152 @@ class _ThemePicker extends StatelessWidget {
 }
 
 /// A miniature of the app in one theme -- title bar, sidebar, content -- so
-/// the choice is made by looking rather than by reading a word.
+/// the choice is made by looking rather than by reading a word. Catalogue
+/// themes also show a strip of their terminal colours.
 class _ThemeCard extends StatelessWidget {
-  const _ThemeCard({required this.label, required this.light, required this.selected, required this.onTap});
+  const _ThemeCard({
+    super.key,
+    required this.label,
+    required this.palette,
+    required this.selected,
+    required this.onTap,
+    this.accent,
+    this.terminal,
+    this.compact = false,
+    this.translate = true,
+    this.onRemove,
+  });
 
   final String label;
-  final bool light;
+  final AppPalette palette;
+  final Color? accent;
+  final List<Color>? terminal;
   final bool selected;
+  final bool compact;
+
+  /// Theme names are names; only Light and Dark are translated.
+  final bool translate;
   final VoidCallback onTap;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    final bg = light ? AppColors.lightBg : AppColors.darkBg;
-    final panel = light ? AppColors.lightPanelAlt : AppColors.darkPanelAlt;
-    final line = light ? AppColors.lightBorder : AppColors.darkBorder;
-    final ink = light ? AppColors.lightText : AppColors.darkText;
+    final selectedColor = Theme.of(context).colorScheme.primary;
+    final width = compact ? 160.0 : 220.0;
+    final height = compact ? 96.0 : 132.0;
+    final line = palette.border;
 
-    Widget bar(double width) => Container(
-      width: width,
-      height: 5,
-      margin: const EdgeInsets.only(bottom: 6),
+    Widget bar(double w) => Container(
+      width: w,
+      height: compact ? 4 : 5,
+      margin: EdgeInsets.only(bottom: compact ? 5 : 6),
       decoration: BoxDecoration(color: line, borderRadius: BorderRadius.circular(2)),
     );
 
+    final colours = terminal;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              width: 220,
-              height: 132,
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: selected ? accent : Theme.of(context).dividerColor,
-                  width: selected ? 2 : 1,
+        child: SizedBox(
+          width: width,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: width,
+                height: height,
+                decoration: BoxDecoration(
+                  color: palette.bg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: selected ? selectedColor : Theme.of(context).dividerColor,
+                    width: selected ? 2 : 1,
+                  ),
                 ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  Container(height: 14, color: panel),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 66,
-                          color: panel,
-                          padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [bar(44), bar(36), bar(48), bar(30), bar(40)],
-                          ),
-                        ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    Container(height: compact ? 10 : 14, color: palette.panelAlt),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            width: compact ? 46 : 66,
+                            color: palette.panel,
+                            padding: EdgeInsets.fromLTRB(compact ? 6 : 8, compact ? 8 : 10, compact ? 6 : 8, 0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 60,
-                                  height: 7,
-                                  margin: const EdgeInsets.only(bottom: 9),
-                                  decoration: BoxDecoration(
-                                    color: ink,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
-                                bar(100),
-                                bar(84),
-                                bar(92),
-                              ],
+                              children: [bar(compact ? 30 : 44), bar(compact ? 24 : 36), bar(compact ? 32 : 48)],
                             ),
                           ),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.all(compact ? 8 : 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: compact ? 44 : 60,
+                                    height: compact ? 5 : 7,
+                                    margin: EdgeInsets.only(bottom: compact ? 7 : 9),
+                                    decoration: BoxDecoration(
+                                      color: accent ?? palette.text,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  bar(compact ? 70 : 100),
+                                  bar(compact ? 56 : 84),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (colours != null)
+                      SizedBox(
+                        height: 6,
+                        child: Row(
+                          children: [
+                            for (final c in colours.sublist(1, 7)) Expanded(child: ColoredBox(color: c)),
+                          ],
                         ),
-                      ],
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                    size: 16,
+                    color: selected ? selectedColor : Theme.of(context).textTheme.bodySmall?.color,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      translate ? tr(label) : label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                     ),
                   ),
+                  if (onRemove != null)
+                    IconButton(
+                      tooltip: tr('Remove theme'),
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 15,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                      onPressed: onRemove,
+                      icon: const Icon(Icons.close),
+                    ),
                 ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  size: 16,
-                  color: selected ? accent : Theme.of(context).textTheme.bodySmall?.color,
-                ),
-                const SizedBox(width: 6),
-                Text(tr(label), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -532,6 +683,85 @@ const _fgPresets = [
   Color(0xFF000000), // black (for light backgrounds)
 ];
 
+/// The font picker. It opens the app's own desktop menu (hairline border,
+/// soft shadow, compact rows) instead of Material's tall dropdown sheet, and
+/// shows each font in itself with a tick on the current one.
+class _FontMenuField extends StatelessWidget {
+  const _FontMenuField({
+    required this.fonts,
+    required this.current,
+    required this.otherValue,
+    required this.onSelected,
+  });
+
+  final List<String> fonts;
+  final String current;
+  final String otherValue;
+  final ValueChanged<String> onSelected;
+
+  String _label(String f) => f == defaultTerminalFont ? tr('{font} (default)', {'font': f}) : f;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dim = theme.textTheme.bodySmall?.color;
+    TextStyle face(String f) => TextStyle(
+          fontFamily: f,
+          fontFamilyFallback: const ['Consolas', 'Menlo'],
+          fontSize: 13,
+        );
+    PopupMenuItem<String> row(String value, Widget label) => PopupMenuItem<String>(
+          value: value,
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 22,
+                child: value == current ? const Icon(Icons.check, size: 15) : null,
+              ),
+              Expanded(child: label),
+            ],
+          ),
+        );
+
+    return LayoutBuilder(
+      builder: (context, constraints) => PopupMenuButton<String>(
+        key: const ValueKey('terminal-font'),
+        tooltip: tr('Font'),
+        position: PopupMenuPosition.under,
+        offset: const Offset(0, 4),
+        constraints: BoxConstraints(
+          minWidth: constraints.maxWidth,
+          maxWidth: constraints.maxWidth,
+          maxHeight: 360,
+        ),
+        initialValue: current,
+        onSelected: onSelected,
+        itemBuilder: (_) => [
+          for (final f in fonts)
+            row(f, Text(_label(f), style: face(f), overflow: TextOverflow.ellipsis)),
+          const PopupMenuDivider(height: 9),
+          row(otherValue, Text(tr('Other font by name…'), style: TextStyle(fontSize: 13, color: dim))),
+        ],
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: tr('Font'),
+            isDense: true,
+            suffixIcon: const Icon(Icons.expand_more, size: 18),
+            suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 20),
+          ),
+          child: Text(
+            current == otherValue ? tr('Other font by name…') : _label(current),
+            style: current == otherValue ? null : face(current),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TerminalAppearance extends StatefulWidget {
   const _TerminalAppearance();
 
@@ -541,7 +771,9 @@ class _TerminalAppearance extends StatefulWidget {
 
 class _TerminalAppearanceState extends State<_TerminalAppearance> {
   static const _other = '\u0000other';
-  List<String> _fonts = [defaultTerminalFont];
+  // The bundled fonts are there from the start; the installed ones join once
+  // the system has been asked.
+  List<String> _fonts = withBundledFonts([defaultTerminalFont]);
   bool _typingFont = false;
   final _fontName = TextEditingController();
 
@@ -602,33 +834,21 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
         Wrap(
           spacing: 24,
           runSpacing: 14,
-          crossAxisAlignment: WrapCrossAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             SizedBox(
               width: 280,
-              child: DropdownButtonFormField<String>(
-                initialValue: _typingFont ? _other : family,
-                isExpanded: true,
-                borderRadius: BorderRadius.circular(6),
-                decoration: InputDecoration(labelText: tr('Font'), isDense: true),
-                items: [
-                  for (final f in options)
-                    DropdownMenuItem(
-                      value: f,
-                      child: Text(
-                        f == defaultTerminalFont ? tr('{font} (default)', {'font': f}) : f,
-                        style: TextStyle(fontFamily: f, fontFamilyFallback: const ['Consolas', 'Menlo']),
-                      ),
-                    ),
-                  DropdownMenuItem(value: _other, child: Text(tr('Other font by name…'))),
-                ],
-                onChanged: (v) {
+              child: _FontMenuField(
+                fonts: options,
+                current: _typingFont ? _other : family,
+                otherValue: _other,
+                onSelected: (v) {
                   if (v == _other) {
                     setState(() {
                       _typingFont = true;
                       _fontName.text = '';
                     });
-                  } else if (v != null) {
+                  } else {
                     setState(() => _typingFont = false);
                     app.setTerminalFont(
                       family: v == defaultTerminalFont ? null : v,
@@ -638,6 +858,8 @@ class _TerminalAppearanceState extends State<_TerminalAppearance> {
                 },
               ),
             ),
+            // The size and its value sit on the slider's own line, level with
+            // the font field, rather than floating above it.
             SizedBox(
               width: 280,
               child: Row(
