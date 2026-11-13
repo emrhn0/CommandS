@@ -317,7 +317,7 @@ const turkish = <String, String>{
   'Font': 'Yazı tipi',
   '{font} (default)': '{font} (varsayılan)',
   'Other font by name…': 'Adıyla başka bir yazı tipi…',
-  'Size: {n} pt': 'Boyut: {n} pt',
+  'Size': 'Boyut',
   'Font name, as installed (e.g. JetBrains Mono)': 'Yüklü yazı tipinin adı (ör. JetBrains Mono)',
   'Use': 'Kullan',
   'A font that is not installed falls back to the default, so a typo shows straight away in the preview.':
