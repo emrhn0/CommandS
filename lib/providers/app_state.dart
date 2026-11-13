@@ -98,6 +98,9 @@ class AppState extends ChangeNotifier {
   static const _kTerminalFromTheme = 'commands.terminalFromTheme';
   static const maxImportedThemes = 50;
 
+  /// The theme an install that has never opened Settings > Theme starts on.
+  static const defaultThemeId = 'builtin:commands';
+
   /// The catalogue or imported theme in use; null means the classic Light or
   /// Dark picked with [setThemeMode].
   String? themeId;
@@ -178,6 +181,26 @@ class AppState extends ChangeNotifier {
         themeMode = ThemeMode.light;
       case 'dark':
         themeMode = ThemeMode.dark;
+    }
+    // Neither key was ever written, so Settings > Theme was never opened --
+    // a fresh install, or an existing one that always ran on the implicit
+    // Light default. Those start on the CommandS theme instead, chrome and
+    // terminal both, exactly as choosing it would set them; a deleted or
+    // unreadable catalogue leaves the classic default alone rather than
+    // throwing.
+    if (!prefs.containsKey(_kThemeMode) && !prefs.containsKey(_kThemeId)) {
+      ThemePreset? commandS;
+      for (final t in builtInThemes) {
+        if (t.id == defaultThemeId) commandS = t;
+      }
+      if (commandS != null) {
+        themeId = commandS.id;
+        themeMode = commandS.dark ? ThemeMode.dark : ThemeMode.light;
+        terminalBackground = commandS.terminalBackground;
+        terminalForeground = commandS.terminalForeground;
+        terminalAnsi = commandS.ansi;
+        _terminalFromTheme = true;
+      }
     }
     notifyListeners();
   }

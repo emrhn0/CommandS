@@ -742,20 +742,51 @@ class _ThemePicker extends StatelessWidget {
     }
   }
 
+  Widget _catalogueCard(AppState app, ThemePreset t) => _ThemeCard(
+        key: ValueKey('theme-${t.id}'),
+        label: t.name,
+        translate: false,
+        compact: true,
+        palette: AppPalette(
+          bg: t.background,
+          panel: t.panel,
+          panelAlt: t.panelAlt,
+          border: t.border,
+          text: t.text,
+          textDim: t.textDim,
+        ),
+        accent: t.accent,
+        terminal: t.ansi,
+        selected: app.themeId == t.id,
+        onTap: () => app.selectTheme(t.id),
+        onRemove: t.imported ? () => app.removeImportedTheme(t.id) : null,
+      );
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final classic = app.themeId == null;
     final dim = Theme.of(context).textTheme.bodySmall?.color;
+    ThemePreset? commandS;
+    final rest = <ThemePreset>[];
+    for (final t in app.allThemes) {
+      if (t.id == AppState.defaultThemeId) {
+        commandS = t;
+      } else {
+        rest.add(t);
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Light and Dark first, then the catalogue and imported themes, all
-        // the same size.
+        // CommandS's own theme first -- the one a fresh install starts on --
+        // then Light and Dark, then the rest of the catalogue and any
+        // imported themes, all the same size.
         Wrap(
           spacing: 12,
           runSpacing: 14,
           children: [
+            if (commandS != null) _catalogueCard(app, commandS),
             _ThemeCard(
               key: const ValueKey('theme-light'),
               label: 'Light',
@@ -772,26 +803,7 @@ class _ThemePicker extends StatelessWidget {
               selected: classic && app.themeMode == ThemeMode.dark,
               onTap: () => app.setThemeMode(ThemeMode.dark),
             ),
-            for (final t in app.allThemes)
-              _ThemeCard(
-                key: ValueKey('theme-${t.id}'),
-                label: t.name,
-                translate: false,
-                compact: true,
-                palette: AppPalette(
-                  bg: t.background,
-                  panel: t.panel,
-                  panelAlt: t.panelAlt,
-                  border: t.border,
-                  text: t.text,
-                  textDim: t.textDim,
-                ),
-                accent: t.accent,
-                terminal: t.ansi,
-                selected: app.themeId == t.id,
-                onTap: () => app.selectTheme(t.id),
-                onRemove: t.imported ? () => app.removeImportedTheme(t.id) : null,
-              ),
+            for (final t in rest) _catalogueCard(app, t),
           ],
         ),
         const SizedBox(height: 14),

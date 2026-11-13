@@ -40,7 +40,7 @@ void main() {
   group('catalogue', () {
     test('has the requested themes, each complete', () {
       final names = builtInThemes.map((t) => t.name).toSet();
-      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora']));
+      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora', 'CommandS']));
       expect(builtInThemes.map((t) => t.id).toSet().length, builtInThemes.length, reason: 'unique ids');
       for (final t in builtInThemes) {
         expect(t.ansi, hasLength(16), reason: t.name);
@@ -128,6 +128,32 @@ void main() {
     });
   });
 
+  group('the default theme', () {
+    test('a fresh install, or one that never opened Settings > Theme, starts on CommandS', () async {
+      final app = await _loadedState();
+      final commandS = builtInThemes.firstWhere((t) => t.id == AppState.defaultThemeId);
+      expect(app.themeId, commandS.id);
+      expect(app.themeMode, ThemeMode.dark);
+      expect(app.terminalBackground, commandS.terminalBackground);
+      expect(app.terminalAnsi, commandS.ansi);
+
+      // It is the implicit default, not a saved choice: nothing was written.
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey('commands.themeId'), isFalse);
+      expect(prefs.containsKey('commands.themeMode'), isFalse);
+    });
+
+    test('once Light or Dark is chosen, a later install no longer gets the CommandS default', () async {
+      final app = await _loadedState();
+      await app.setThemeMode(ThemeMode.light);
+      expect(app.themeId, isNull);
+
+      final again = await _loadedState();
+      expect(again.themeId, isNull);
+      expect(again.themeMode, ThemeMode.light);
+    });
+  });
+
   group('choosing a theme', () {
     test('applies its terminal colours and is remembered after a restart', () async {
       final app = await _loadedState();
@@ -145,6 +171,9 @@ void main() {
     });
 
     test('keep my terminal colours leaves the terminal alone', () async {
+      // An install that already has a classic baseline (not the fresh/
+      // never-touched case the CommandS default covers).
+      SharedPreferences.setMockInitialValues({'commands.themeMode': 'light'});
       final app = await _loadedState();
       await app.setTerminalColors(background: const Color(0xFF102030));
       await app.setKeepTerminalColors(true);

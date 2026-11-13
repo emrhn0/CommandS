@@ -163,8 +163,28 @@ class ThemePreset {
 List<Color> _c(List<int> values) => [for (final v in values) Color(0xFF000000 | v)];
 
 /// The themes shipped with CommandS. Colours follow each theme's published
-/// palette.
+/// palette, except CommandS itself: the app's own, white on black with the
+/// icon's orange, and the one an install with no theme choice of its own
+/// starts on (see [AppState.defaultThemeId]).
 final List<ThemePreset> builtInThemes = List.unmodifiable([
+  ThemePreset(
+    id: 'builtin:commands',
+    name: 'CommandS',
+    dark: true,
+    background: const Color(0xFF0D0D0D),
+    panel: const Color(0xFF161616),
+    panelAlt: const Color(0xFF1F1F1F),
+    border: const Color(0xFF2C2C2C),
+    text: const Color(0xFFF5F3EF),
+    textDim: const Color(0xFF9A9690),
+    accent: const Color(0xFFFF8A3D),
+    terminalBackground: const Color(0xFF0D0D0D),
+    terminalForeground: const Color(0xFFF5F3EF),
+    ansi: _c([
+      0x1A1A1A, 0xFF5C5C, 0x6BCB77, 0xFF8A3D, 0x5B9BD5, 0xC77DFF, 0x4FD1C5, 0xD9D5CE,
+      0x4A4A4A, 0xFF8080, 0x8FE3A0, 0xFFB066, 0x8FC1E8, 0xDDA8FF, 0x7FE8DB, 0xF5F3EF,
+    ]),
+  ),
   ThemePreset(
     id: 'builtin:tokyo-night',
     name: 'Tokyo Night',
