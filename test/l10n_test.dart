@@ -88,15 +88,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Appearance'), findsOneWidget);
+    expect(find.text('Updates'), findsOneWidget);
     expect(find.text('English'), findsOneWidget);
 
-    await tester.tap(find.text('Türkçe'));
+    // The language is picked from a menu, ready for more languages.
+    await tester.tap(find.byKey(const ValueKey('language')));
     await tester.pumpAndSettle();
-    // Including the const section headers a plain rebuild would skip.
-    expect(find.text('Görünüm'), findsOneWidget);
-    expect(find.text('Güncellemeleri denetle'), findsOneWidget);
-    expect(find.text('Appearance'), findsNothing);
+    await tester.tap(find.text('Türkçe').last);
+    await tester.pumpAndSettle();
+    // Including the const sidebar and page titles a plain rebuild would skip.
+    expect(find.text('Güncellemeler'), findsOneWidget);
+    expect(find.text('Genel'), findsWidgets);
+    expect(find.text('Updates'), findsNothing);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('commands.language'), 'tr');
 
@@ -106,9 +109,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(again.language, AppLanguage.tr);
 
-    await tester.tap(find.text('English'));
+    await tester.tap(find.byKey(const ValueKey('language')));
     await tester.pumpAndSettle();
-    expect(find.text('Appearance'), findsOneWidget);
+    await tester.tap(find.text('English').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Updates'), findsOneWidget);
   });
 
   testWidgets('sidebar in Turkish', (tester) async {

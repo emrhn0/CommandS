@@ -403,7 +403,7 @@ void main() {
         ChangeNotifierProvider<AppState>.value(value: app),
         ChangeNotifierProvider<McpServer>.value(value: server),
       ],
-      child: const MaterialApp(home: SettingsScreen()),
+      child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.privacy)),
     ));
     await tester.pumpAndSettle();
     expect(find.text('Allow MCP access'), findsOneWidget);
@@ -428,7 +428,7 @@ void main() {
         ChangeNotifierProvider<AppState>.value(value: app),
         ChangeNotifierProvider<McpServer>.value(value: server),
       ],
-      child: const MaterialApp(home: SettingsScreen()),
+      child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.privacy)),
     ));
     await tester.pumpAndSettle();
     final before = server.url!;
@@ -448,5 +448,101 @@ void main() {
     expect(server.url, isNot(before));
     expect(find.text(server.url!), findsOneWidget);
     await tester.runAsync(server.stop);
+  });
+
+  testWidgets('Settings picks MCP connections from the folder tree', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('window_manager'),
+      (call) async => call.method.startsWith('is') ? false : null,
+    );
+    tester.view.physicalSize = const Size(1200, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final app = AppState();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await app.addFolder('CUSTOMER-A');
+      final a = app.folders.single.id;
+      await app.addFolder('Site 1', parentId: a);
+      final site = app.folders.firstWhere((f) => f.name == 'Site 1').id;
+      await app.upsertConnection(SavedConnection(name: 'SWITCH-01', host: '192.0.2.1', folderId: a));
+      await app.upsertConnection(SavedConnection(name: 'SWITCH-02', host: '192.0.2.2', folderId: site));
+      await app.upsertConnection(SavedConnection(name: 'SWITCH-03', host: '192.0.2.3', folderId: site));
+      await app.upsertConnection(SavedConnection(
+        name: 'SERVER-01', host: '192.0.2.4', folderId: a, protocol: ConnectionProtocol.rdp,
+      ));
+    });
+    final gateway = AppMcpGateway(app);
+    final server = McpServer(gateway, port: 0);
+    addTearDown(server.dispose);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AppState>.value(value: app),
+        ChangeNotifierProvider<McpServer>.value(value: server),
+      ],
+      child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.privacy)),
+    ));
+    await tester.pumpAndSettle();
+
+    Finder row(String label) => find.ancestor(
+          of: find.text(label),
+          matching: find.byWidgetPredicate(
+            (w) => w.key is ValueKey && '${(w.key as ValueKey).value}'.startsWith('mcp-'),
+          ),
+        ).first;
+    Finder box(String label) => find.descendant(of: row(label), matching: find.byType(Checkbox)).first;
+
+    // Folders start closed; RDP connections are not offered at all.
+    expect(find.text('CUSTOMER-A'), findsOneWidget);
+    expect(find.text('SWITCH-01'), findsNothing);
+    expect(find.text('0 of 3 allowed'), findsOneWidget);
+
+    // Ticking a folder allows everything in it, subfolders included.
+    await tester.tap(box('CUSTOMER-A'));
+    await tester.pumpAndSettle();
+    expect(gateway.allowedConnections.map((c) => c.name).toSet(), {'SWITCH-01', 'SWITCH-02', 'SWITCH-03'});
+    expect(find.text('3 of 3 allowed'), findsOneWidget);
+
+    // Opening it shows the tree; unticking one leaves the folder half-ticked.
+    await tester.tap(find.text('CUSTOMER-A'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Site 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(box('SWITCH-02'));
+    await tester.pumpAndSettle();
+    expect(gateway.isAllowed(app.connections.firstWhere((c) => c.name == 'SWITCH-02').id), isFalse);
+    expect(tester.widget<Checkbox>(box('CUSTOMER-A')).value, isNull);
+    expect(find.text('2/3'), findsOneWidget);
+
+    // A half-ticked folder ticks the rest; ticked again, it clears.
+    await tester.tap(box('CUSTOMER-A'));
+    await tester.pumpAndSettle();
+    expect(gateway.allowedConnections, hasLength(3));
+    await tester.tap(box('CUSTOMER-A'));
+    await tester.pumpAndSettle();
+    expect(gateway.allowedConnections, isEmpty);
+
+    // The search narrows the tree to matching connections.
+    await tester.enterText(find.byKey(const ValueKey('mcp-search')), '03');
+    await tester.pumpAndSettle();
+    expect(find.text('SWITCH-03'), findsOneWidget);
+    expect(find.text('SWITCH-01'), findsNothing);
+  });
+
+  test('allowing several at once keeps each anonymous name', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState();
+    final gateway = AppMcpGateway(app);
+    await gateway.setAllowed('a', true);
+    await gateway.setAllowedAll(['b', 'a', 'c'], true);
+    expect(gateway.aliasOf('a'), 'DEVICE-01');
+    expect(gateway.aliasOf('b'), 'DEVICE-02');
+    expect(gateway.aliasOf('c'), 'DEVICE-03');
+    await gateway.setAllowedAll(['a', 'c'], false);
+    expect(gateway.isAllowed('a'), isFalse);
+    expect(gateway.aliasOf('b'), 'DEVICE-02');
+    final saved = jsonDecode((await SharedPreferences.getInstance()).getString('commands.mcp.allowed')!);
+    expect(saved, {'b': 2});
   });
 }

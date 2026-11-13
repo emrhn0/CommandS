@@ -319,11 +319,11 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: app,
-        child: const MaterialApp(home: SettingsScreen()),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.sessionLogs)),
       ),
     );
     await tester.pump();
-    expect(find.text('Session logs'), findsOneWidget);
+    expect(find.text('Session logs'), findsNWidgets(2), reason: 'sidebar and page title');
     expect(find.text('Choose log folder'), findsOneWidget);
     await tester.runAsync(() async {
       for (var i = 0; i < 50; i++) {

@@ -73,12 +73,19 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
     return n == null ? null : 'DEVICE-${n.toString().padLeft(2, '0')}';
   }
 
-  Future<void> setAllowed(String connectionId, bool allowed) async {
-    if (allowed) {
-      final next = _allowed.values.fold(0, max) + 1;
-      _allowed.putIfAbsent(connectionId, () => next);
-    } else {
-      _allowed.remove(connectionId);
+  Future<void> setAllowed(String connectionId, bool allowed) => setAllowedAll([connectionId], allowed);
+
+  /// Allows or removes several connections at once, as when a whole folder is
+  /// ticked in Settings; saved once. New ones get the next free numbers in
+  /// the order given.
+  Future<void> setAllowedAll(Iterable<String> connectionIds, bool allowed) async {
+    for (final id in connectionIds) {
+      if (allowed) {
+        final next = _allowed.values.fold(0, max) + 1;
+        _allowed.putIfAbsent(id, () => next);
+      } else {
+        _allowed.remove(id);
+      }
     }
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();

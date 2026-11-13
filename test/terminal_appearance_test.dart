@@ -69,7 +69,7 @@ void main() {
       late AppState app;
       await tester.pumpWidget(ChangeNotifierProvider(
         create: (_) => app = AppState(),
-        child: const MaterialApp(home: SettingsScreen()),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.terminal)),
       ));
       await tester.pumpAndSettle();
 
@@ -97,7 +97,7 @@ void main() {
       late AppState app;
       await tester.pumpWidget(ChangeNotifierProvider(
         create: (_) => app = AppState(),
-        child: const MaterialApp(home: SettingsScreen()),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.terminal)),
       ));
       await tester.pumpAndSettle();
 
@@ -151,7 +151,7 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(ChangeNotifierProvider(
         create: (_) => AppState(),
-        child: const MaterialApp(home: SettingsScreen()),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.terminal)),
       ));
       await tester.pumpAndSettle();
 

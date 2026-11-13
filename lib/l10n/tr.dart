@@ -271,6 +271,11 @@ const turkish = <String, String>{
   'Dark': 'Koyu',
   'SSH terminal': 'SSH terminali',
   'Language': 'Dil',
+  'General': 'Genel',
+  'Privacy': 'Gizlilik',
+  'Passwords': 'Parolalar',
+  'Remembered passwords are encrypted and kept on this computer. An export includes them only if you choose to.':
+      'Hatırlanan parolalar şifrelenir ve bu bilgisayarda saklanır. Dışa aktarmaya yalnızca sen seçersen eklenir.',
   'Applies to CommandS itself; sessions are not affected.':
       'Yalnızca CommandS’in kendi arayüzünü değiştirir; oturumlar etkilenmez.',
   'Connections': 'Bağlantılar',
@@ -290,6 +295,12 @@ const turkish = <String, String>{
   'Do not run': 'Çalıştırma',
   'Run': 'Çalıştır',
   'Allowed connections': 'İzin verilen bağlantılar',
+  'Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.':
+      'Ajanın kullanabileceği SSH bağlantılarını işaretle; bir klasör içindekilerin hepsini işaretler. Ajan yalnızca anonim adı görür. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce sana sorulur. Terminal çıktısı olduğu gibi gönderilir, yani cihaz adları ve adresler yine görünebilir.',
+  'Search connections': 'Bağlantılarda ara',
+  '{n} of {total} allowed': '{total} bağlantıdan {n} tanesine izin var',
+  'No saved SSH connections yet.': 'Henüz kayıtlı SSH bağlantısı yok.',
+  'No connection matches.': 'Eşleşen bağlantı yok.',
   'Right-click a connection in the list to allow it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.':
       'İzin vermek için listede bağlantıya sağ tıklayın. Ajan yalnızca anonim adı görür. Ağ cihazlarında show ve display komutları hemen çalışır; diğer her komut önce size sorulur. Terminal çıktısı olduğu gibi gönderilir, bu yüzden cihaz adları ve adresler yine de görünebilir.',
   'None yet.': 'Henüz yok.',
@@ -318,7 +329,6 @@ const turkish = <String, String>{
   '{font} (default)': '{font} (varsayılan)',
   'Other font by name…': 'Adıyla başka bir yazı tipi…',
   'Size': 'Boyut',
-  'Theme catalogue': 'Tema kataloğu',
   'Import theme': 'Tema içe aktar',
   'Import theme…': 'Tema içe aktar…',
   'A JSON file in the CommandS theme format.': 'CommandS tema biçiminde bir JSON dosyası.',

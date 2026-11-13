@@ -206,7 +206,7 @@ void main() {
     late AppState app;
     await tester.pumpWidget(ChangeNotifierProvider(
       create: (_) => app = AppState(),
-      child: const MaterialApp(home: SettingsScreen()),
+      child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.theme)),
     ));
     await tester.pumpAndSettle();
 

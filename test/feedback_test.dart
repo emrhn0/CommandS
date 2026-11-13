@@ -47,7 +47,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: app,
-        child: const MaterialApp(home: SettingsScreen()),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.support)),
       ),
     );
     await tester.pumpAndSettle();
@@ -57,7 +57,7 @@ void main() {
 
   testWidgets('Send stays off until something is written; a sent message clears the box', (tester) async {
     await pumpSettings(tester);
-    expect(find.text('Support & feedback'), findsOneWidget);
+    expect(find.text('Support & feedback'), findsNWidgets(2), reason: 'sidebar and page title');
     expect(tester.widget<ElevatedButton>(sendButton()).onPressed, isNull);
 
     await tester.enterText(find.byKey(const ValueKey('feedback-text')), 'Please add serial logging');

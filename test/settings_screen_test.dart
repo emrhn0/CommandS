@@ -50,15 +50,25 @@ void main() {
 
         await tester.pumpWidget(_app(const SettingsScreen(), dark: dark));
         await tester.pumpAndSettle();
-
         expect(find.text('Settings'), findsOneWidget);
-        expect(find.text('Appearance'), findsOneWidget);
-        expect(find.text('Light'), findsOneWidget);
-        expect(find.text('Dark'), findsOneWidget);
-        expect(find.text('SSH terminal'), findsOneWidget);
-        expect(find.text('Import connections'), findsOneWidget);
-        expect(find.text('Export connections'), findsOneWidget);
-        expect(find.text('Check for updates'), findsOneWidget);
+
+        // Every page, reached from the sidebar. An overflow on any fails.
+        final expected = {
+          SettingsPage.general: 'Applies to CommandS itself; sessions are not affected.',
+          SettingsPage.theme: 'Light',
+          SettingsPage.terminal: 'Font',
+          SettingsPage.connections: 'Export connections',
+          SettingsPage.sessionLogs: 'Choose log folder',
+          SettingsPage.privacy: 'Passwords',
+          SettingsPage.updates: 'Check for updates',
+          SettingsPage.support: 'Support & feedback',
+        };
+        for (final page in SettingsPage.values) {
+          await tester.tap(find.byKey(ValueKey('settings-nav-${page.name}')));
+          await tester.pumpAndSettle();
+          expect(find.byKey(ValueKey('settings-page-${page.name}')), findsOneWidget);
+          expect(find.text(expected[page]!), findsWidgets, reason: page.name);
+        }
       });
     }
   }
@@ -67,7 +77,7 @@ void main() {
     tester.view.physicalSize = const Size(900, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(_app(const SettingsScreen(), dark: false));
+    await tester.pumpWidget(_app(const SettingsScreen(initialPage: SettingsPage.connections), dark: false));
     await tester.pumpAndSettle();
 
     final importCard = find.byKey(const Key('settings-import-card'));
@@ -81,6 +91,8 @@ void main() {
       tester.getBottomLeft(find.widgetWithText(OutlinedButton, 'Export…')).dy,
     );
 
+    await tester.tap(find.byKey(const ValueKey('settings-nav-terminal')));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Size'));
     await tester.pumpAndSettle();
     expect((tester.getCenter(find.text('Size')).dy - tester.getCenter(find.text('13 pt')).dy).abs(), lessThan(2));
@@ -91,7 +103,7 @@ void main() {
     tester.view.physicalSize = const Size(640, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(_app(const SettingsScreen(), dark: false));
+    await tester.pumpWidget(_app(const SettingsScreen(initialPage: SettingsPage.connections), dark: false));
     await tester.pumpAndSettle();
 
     final importCard = find.byKey(const Key('settings-import-card'));
@@ -111,7 +123,7 @@ void main() {
     late AppState app;
     await tester.pumpWidget(ChangeNotifierProvider(
       create: (_) => app = AppState(),
-      child: const MaterialApp(home: SettingsScreen()),
+      child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.theme)),
     ));
     await tester.pumpAndSettle();
 
@@ -135,7 +147,7 @@ void main() {
     late AppState app;
     await tester.pumpWidget(ChangeNotifierProvider(
       create: (_) => app = AppState(),
-      child: const MaterialApp(home: SettingsScreen()),
+      child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.updates)),
     ));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('beta-updates')));

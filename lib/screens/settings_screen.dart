@@ -18,26 +18,83 @@ import '../widgets/custom_title_bar.dart';
 import '../widgets/import_export_dialog.dart';
 import '../widgets/update_dialog.dart';
 import '../l10n/strings.dart';
+import '../models/models.dart';
+import '../widgets/device_icon.dart';
 
 /// Opens the Settings page.
 Future<void> showSettings(BuildContext context) {
   return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
 }
 
-/// Everything that used to be scattered across four unlabelled icons in the
-/// sidebar header -- theme, terminal colours, import, export -- plus checking
-/// for updates, on one page with room to explain itself.
+/// The pages of Settings, in the order the sidebar lists them.
+enum SettingsPage {
+  general('General', Icons.tune),
+  theme('Theme', Icons.palette_outlined),
+  terminal('SSH terminal', Icons.terminal),
+  connections('Connections', Icons.swap_vert),
+  sessionLogs('Session logs', Icons.description_outlined),
+  privacy('Privacy', Icons.shield_outlined),
+  updates('Updates', Icons.system_update_alt),
+  support('Support & feedback', Icons.chat_bubble_outline);
+
+  const SettingsPage(this.title, this.icon);
+
+  /// English text, the key for [tr].
+  final String title;
+  final IconData icon;
+}
+
+/// Settings, laid out like a desktop app's preferences: the sections down a
+/// sidebar on the left, one page at a time on the right.
 ///
 /// A full page rather than a dialog: it carries the app's own title bar, so
 /// the window can still be moved and closed while it is open, and opening it
 /// suspends any embedded RDP session the same way a dialog does (the session
 /// is a window of its own, drawn above the app, and would otherwise cover it).
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key, this.initialPage = SettingsPage.general});
+
+  /// The page shown first; tests open the one they are about.
+  final SettingsPage initialPage;
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  late SettingsPage _page = widget.initialPage;
+
+  List<Widget> _content(SettingsPage page, bool hasMcpServer) {
+    switch (page) {
+      case SettingsPage.general:
+        return const [_Section(children: [_LanguagePicker()])];
+      case SettingsPage.theme:
+        return const [_Section(children: [_ThemePicker()])];
+      case SettingsPage.terminal:
+        return const [_Section(children: [_TerminalAppearance()])];
+      case SettingsPage.connections:
+        return const [_Section(children: [_ImportExport()])];
+      case SettingsPage.sessionLogs:
+        return const [_Section(children: [_SessionLogSettings()])];
+      case SettingsPage.privacy:
+        return [
+          if (hasMcpServer) ...[
+            const _Section(title: 'MCP integration', children: [_McpPanel()]),
+            const SizedBox(height: 18),
+          ],
+          const _Section(title: 'Passwords', children: [_PasswordsNote()]),
+        ];
+      case SettingsPage.updates:
+        return const [_Section(children: [_UpdatesPanel()])];
+      case SettingsPage.support:
+        return const [_Section(children: [_FeedbackPanel()])];
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final divider = Theme.of(context).dividerColor;
+    final theme = Theme.of(context);
+    final divider = theme.dividerColor;
     final hasMcpServer = context.watch<McpServer?>() != null;
     return Scaffold(
       body: Column(
@@ -62,47 +119,121 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _Section(
-                        title: 'Appearance',
-                        children: [
-                          _Label('Theme'),
-                          _ThemePicker(),
-                          SizedBox(height: 28),
-                          _Label('SSH terminal'),
-                          _TerminalAppearance(),
-                          SizedBox(height: 28),
-                          _Label('Language'),
-                          _LanguagePicker(),
-                        ],
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SettingsNav(current: _page, onSelect: (p) => setState(() => _page = p)),
+                Expanded(
+                  child: SingleChildScrollView(
+                    key: ValueKey('settings-page-${_page.name}'),
+                    padding: const EdgeInsets.fromLTRB(32, 26, 32, 32),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 780),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(tr(_page.title), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 18),
+                            ..._content(_page, hasMcpServer),
+                          ],
+                        ),
                       ),
-                      SizedBox(height: 22),
-                      _Section(title: 'Connections', children: [_ImportExport()]),
-                      SizedBox(height: 22),
-                      _Section(title: 'Session logs', children: [_SessionLogSettings()]),
-                      SizedBox(height: 22),
-                      if (hasMcpServer) ...[
-                        const _Section(title: 'MCP integration', children: [_McpPanel()]),
-                        const SizedBox(height: 22),
-                      ],
-                      _Section(title: 'Updates', children: [_UpdatesPanel()]),
-                      SizedBox(height: 22),
-                      _Section(title: 'Support & feedback', children: [_FeedbackPanel()]),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SettingsNav extends StatelessWidget {
+  const _SettingsNav({required this.current, required this.onSelect});
+
+  final SettingsPage current;
+  final ValueChanged<SettingsPage> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = AppPalette.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final selected = palette.text.withValues(alpha: dark ? 0.10 : 0.07);
+    return Container(
+      width: 224,
+      decoration: BoxDecoration(
+        color: palette.panel,
+        border: Border(right: BorderSide(color: theme.dividerColor)),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 14, 10, 14),
+      child: ListView(
+        children: [
+          for (final page in SettingsPage.values)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Material(
+                color: page == current ? selected : Colors.transparent,
+                borderRadius: BorderRadius.circular(kControlRadius),
+                child: InkWell(
+                  key: ValueKey('settings-nav-${page.name}'),
+                  borderRadius: BorderRadius.circular(kControlRadius),
+                  onTap: () => onSelect(page),
+                  child: Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        Icon(
+                          page.icon,
+                          size: 17,
+                          color: page == current ? palette.text : palette.textDim,
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Text(
+                            tr(page.title),
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: page == current ? FontWeight.w600 : FontWeight.w400,
+                              color: page == current ? palette.text : palette.textDim,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PasswordsNote extends StatelessWidget {
+  const _PasswordsNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.lock_outline, size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            tr('Remembered passwords are encrypted and kept on this computer. An export includes them only if you choose to.'),
+            style: TextStyle(fontSize: 13, height: 1.45, color: Theme.of(context).textTheme.bodySmall?.color),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -246,41 +377,16 @@ class _McpPanel extends StatelessWidget {
           Text(tr('Use this URL directly in ChatGPT Work desktop, or point a Secure MCP Tunnel at it for hosted ChatGPT Work. Keep the URL private.'),
               style: TextStyle(fontSize: 12, color: secondary)),
         ],
-        if (server.enabled) ...[
-          const SizedBox(height: 16),
+        if (server.gateway case final AppMcpGateway gateway) ...[
+          const SizedBox(height: 20),
           Text(tr('Allowed connections'), style: const TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
-            tr('Right-click a connection in the list to allow it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.'),
+            tr('Tick the SSH connections an agent may use; a folder ticks everything in it. The agent sees only the anonymous name. On network devices, show and display commands run at once; every other command asks you first. Terminal output is sent as it is, so it can still show device names and addresses.'),
             style: TextStyle(fontSize: 12, color: secondary),
           ),
-          const SizedBox(height: 8),
-          if (server.gateway case final AppMcpGateway gateway)
-            ListenableBuilder(
-              listenable: gateway,
-              builder: (context, _) {
-                final allowed = gateway.allowedConnections.toList();
-                if (allowed.isEmpty) {
-                  return Text(tr('None yet.'), style: TextStyle(fontSize: 12, color: secondary));
-                }
-                return Column(
-                  children: [
-                    for (final c in allowed)
-                      Row(
-                        children: [
-                          Expanded(child: Text(c.name, overflow: TextOverflow.ellipsis)),
-                          Text(gateway.aliasOf(c.id)!, style: TextStyle(fontSize: 12, color: secondary)),
-                          IconButton(
-                            tooltip: tr('Remove access'),
-                            icon: const Icon(Icons.close, size: 16),
-                            onPressed: () => gateway.setAllowed(c.id, false),
-                          ),
-                        ],
-                      ),
-                  ],
-                );
-              },
-            ),
+          const SizedBox(height: 10),
+          _McpConnectionPicker(gateway: gateway),
         ],
         if (server.error case final error?) ...[
           const SizedBox(height: 8),
@@ -291,13 +397,254 @@ class _McpPanel extends StatelessWidget {
   }
 }
 
+/// Which saved SSH connections an agent may use, picked from the same folder
+/// tree as the sidebar. Ticking a folder allows every SSH connection in it,
+/// subfolders included; a half-ticked folder has some of them.
+class _McpConnectionPicker extends StatefulWidget {
+  const _McpConnectionPicker({required this.gateway});
+
+  final AppMcpGateway gateway;
+
+  @override
+  State<_McpConnectionPicker> createState() => _McpConnectionPickerState();
+}
+
+class _McpConnectionPickerState extends State<_McpConnectionPicker> {
+  final _expanded = <String>{};
+  final _search = TextEditingController();
+
+  void _changed() => setState(() {});
+
+  @override
+  void initState() {
+    super.initState();
+    widget.gateway.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(_McpConnectionPicker old) {
+    super.didUpdateWidget(old);
+    if (old.gateway != widget.gateway) {
+      old.gateway.removeListener(_changed);
+      widget.gateway.addListener(_changed);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.gateway.removeListener(_changed);
+    _search.dispose();
+    super.dispose();
+  }
+
+  static int _byName(String a, String b) => a.toLowerCase().compareTo(b.toLowerCase());
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final gateway = widget.gateway;
+    final palette = AppPalette.of(context);
+    final query = _search.text.trim().toLowerCase();
+
+    final ssh = [
+      for (final c in app.connections)
+        if (c.protocol == ConnectionProtocol.ssh && (query.isEmpty || c.name.toLowerCase().contains(query))) c,
+    ];
+    final folderIds = {for (final f in app.folders) f.id};
+    final childFolders = <String?, List<ConnectionFolder>>{};
+    for (final f in app.folders) {
+      final parent = folderIds.contains(f.parentId) ? f.parentId : null;
+      childFolders.putIfAbsent(parent, () => []).add(f);
+    }
+    final directConnections = <String?, List<SavedConnection>>{};
+    for (final c in ssh) {
+      final folder = folderIds.contains(c.folderId) ? c.folderId : null;
+      directConnections.putIfAbsent(folder, () => []).add(c);
+    }
+
+    // Every SSH connection under a folder, subfolders included.
+    final under = <String, List<SavedConnection>>{};
+    List<SavedConnection> collect(String id) => under[id] ??= [
+          ...?directConnections[id],
+          for (final sub in childFolders[id] ?? const <ConnectionFolder>[]) ...collect(sub.id),
+        ];
+
+    final rows = <Widget>[];
+    void addConnection(SavedConnection c, int depth) {
+      final allowed = gateway.isAllowed(c.id);
+      final kind = DeviceIcon.of(c);
+      rows.add(_TreeRow(
+        key: ValueKey('mcp-conn-${c.id}'),
+        depth: depth,
+        leading: const SizedBox(width: 20),
+        checkbox: Checkbox(
+          value: allowed,
+          visualDensity: VisualDensity.compact,
+          onChanged: (v) => gateway.setAllowed(c.id, v ?? false),
+        ),
+        icon: kind == null ? Icon(Icons.terminal, size: 15, color: palette.textDim) : DeviceIcon(kind, size: 15),
+        label: c.name,
+        trailing: allowed
+            ? Text(gateway.aliasOf(c.id)!, style: TextStyle(fontSize: 11, color: palette.textDim, fontFamily: 'Consolas'))
+            : null,
+        onTap: () => gateway.setAllowed(c.id, !allowed),
+      ));
+    }
+
+    void addFolder(ConnectionFolder f, int depth) {
+      final inside = collect(f.id);
+      if (inside.isEmpty) return;
+      final count = inside.where((c) => gateway.isAllowed(c.id)).length;
+      final open = query.isNotEmpty || _expanded.contains(f.id);
+      void toggleOpen() => setState(() => open ? _expanded.remove(f.id) : _expanded.add(f.id));
+      rows.add(_TreeRow(
+        key: ValueKey('mcp-folder-${f.id}'),
+        depth: depth,
+        leading: InkWell(
+          onTap: toggleOpen,
+          child: Icon(open ? Icons.expand_more : Icons.chevron_right, size: 18, color: palette.textDim),
+        ),
+        checkbox: Checkbox(
+          tristate: true,
+          value: count == 0 ? false : (count == inside.length ? true : null),
+          visualDensity: VisualDensity.compact,
+          onChanged: (_) => gateway.setAllowedAll(
+            [for (final c in inside) c.id],
+            count < inside.length,
+          ),
+        ),
+        icon: Icon(open ? Icons.folder_open_outlined : Icons.folder_outlined, size: 16, color: palette.textDim),
+        label: f.name,
+        bold: true,
+        trailing: Text('$count/${inside.length}', style: TextStyle(fontSize: 11, color: palette.textDim)),
+        onTap: toggleOpen,
+      ));
+      if (!open) return;
+      for (final sub in [...?childFolders[f.id]]..sort((a, b) => _byName(a.name, b.name))) {
+        addFolder(sub, depth + 1);
+      }
+      for (final c in [...?directConnections[f.id]]..sort((a, b) => _byName(a.name, b.name))) {
+        addConnection(c, depth + 1);
+      }
+    }
+
+    for (final f in [...?childFolders[null]]..sort((a, b) => _byName(a.name, b.name))) {
+      addFolder(f, 0);
+    }
+    for (final c in [...?directConnections[null]]..sort((a, b) => _byName(a.name, b.name))) {
+      addConnection(c, 0);
+    }
+
+    final total = app.connections.where((c) => c.protocol == ConnectionProtocol.ssh).length;
+    final allowedCount = gateway.allowedConnections.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                key: const ValueKey('mcp-search'),
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: tr('Search connections'),
+                  prefixIcon: const Icon(Icons.search, size: 16),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 20),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Text(
+              tr('{n} of {total} allowed', {'n': allowedCount, 'total': total}),
+              style: TextStyle(fontSize: 12, color: palette.textDim),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 340),
+          decoration: BoxDecoration(
+            border: Border.all(color: palette.border),
+            borderRadius: BorderRadius.circular(kControlRadius),
+          ),
+          child: rows.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text(
+                    query.isEmpty ? tr('No saved SSH connections yet.') : tr('No connection matches.'),
+                    style: TextStyle(fontSize: 12, color: palette.textDim),
+                  ),
+                )
+              : ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  children: rows,
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TreeRow extends StatelessWidget {
+  const _TreeRow({
+    super.key,
+    required this.depth,
+    required this.leading,
+    required this.checkbox,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.trailing,
+    this.bold = false,
+  });
+
+  final int depth;
+  final Widget leading;
+  final Widget checkbox;
+  final Widget icon;
+  final String label;
+  final Widget? trailing;
+  final bool bold;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 32,
+        child: Row(
+          children: [
+            SizedBox(width: 6.0 + depth * 20),
+            SizedBox(width: 20, child: leading),
+            checkbox,
+            icon,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, fontWeight: bold ? FontWeight.w600 : FontWeight.w400),
+              ),
+            ),
+            if (trailing != null) ...[trailing!, const SizedBox(width: 12)],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Layout pieces
 // ---------------------------------------------------------------------------
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children});
-  final String title;
+  const _Section({this.title, required this.children});
+  final String? title;
   final List<Widget> children;
 
   @override
@@ -313,31 +660,12 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(tr(title), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 18),
+          if (title != null) ...[
+            Text(tr(title!), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+          ],
           ...children,
         ],
-      ),
-    );
-  }
-}
-
-class _Label extends StatelessWidget {
-  const _Label(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        tr(text),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
-          color: Theme.of(context).textTheme.bodySmall?.color,
-        ),
       ),
     );
   }
@@ -357,11 +685,16 @@ class _LanguagePicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SegmentedButton<AppLanguage>(
-          showSelectedIcon: false,
-          segments: [for (final l in AppLanguage.values) ButtonSegment(value: l, label: Text(l.label))],
-          selected: {app.language},
-          onSelectionChanged: (s) => app.setLanguage(s.first),
+        // A menu rather than side-by-side buttons, so more languages fit.
+        SizedBox(
+          width: 280,
+          child: _MenuField<AppLanguage>(
+            key: const ValueKey('language'),
+            label: tr('Language'),
+            current: app.language,
+            onSelected: app.setLanguage,
+            choices: [for (final l in AppLanguage.values) _MenuChoice(l, l.label)],
+          ),
         ),
         const SizedBox(height: 8),
         Text(
@@ -413,31 +746,28 @@ class _ThemePicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Light and Dark first, then the catalogue and imported themes, all
+        // the same size.
         Wrap(
-          spacing: 14,
+          spacing: 12,
           runSpacing: 14,
           children: [
             _ThemeCard(
+              key: const ValueKey('theme-light'),
               label: 'Light',
+              compact: true,
               palette: AppPalette.classicLight,
               selected: classic && app.themeMode == ThemeMode.light,
               onTap: () => app.setThemeMode(ThemeMode.light),
             ),
             _ThemeCard(
+              key: const ValueKey('theme-dark'),
               label: 'Dark',
+              compact: true,
               palette: AppPalette.classicDark,
               selected: classic && app.themeMode == ThemeMode.dark,
               onTap: () => app.setThemeMode(ThemeMode.dark),
             ),
-          ],
-        ),
-        const SizedBox(height: 22),
-        Text(tr('Theme catalogue'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
             for (final t in app.allThemes)
               _ThemeCard(
                 key: ValueKey('theme-${t.id}'),
@@ -551,6 +881,12 @@ class _ThemeCard extends StatelessWidget {
     );
 
     final colours = terminal;
+    Widget tint(Color c, double w) => Container(
+      width: w,
+      height: compact ? 4 : 5,
+      margin: EdgeInsets.only(bottom: compact ? 5 : 6),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(2)),
+    );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -603,8 +939,16 @@ class _ThemeCard extends StatelessWidget {
                                       borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
-                                  bar(compact ? 70 : 100),
-                                  bar(compact ? 56 : 84),
+                                  // A catalogue theme shows its own terminal
+                                  // colours, so the cards tell apart at a glance.
+                                  if (colours != null) ...[
+                                    tint(colours[2], compact ? 64 : 92),
+                                    tint(colours[4], compact ? 48 : 70),
+                                    tint(colours[3], compact ? 56 : 80),
+                                  ] else ...[
+                                    bar(compact ? 70 : 100),
+                                    bar(compact ? 56 : 84),
+                                  ],
                                 ],
                               ),
                             ),
@@ -612,15 +956,6 @@ class _ThemeCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (colours != null)
-                      SizedBox(
-                        height: 6,
-                        child: Row(
-                          children: [
-                            for (final c in colours.sublist(1, 7)) Expanded(child: ColoredBox(color: c)),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -683,9 +1018,87 @@ const _fgPresets = [
   Color(0xFF000000), // black (for light backgrounds)
 ];
 
-/// The font picker. It opens the app's own desktop menu (hairline border,
-/// soft shadow, compact rows) instead of Material's tall dropdown sheet, and
-/// shows each font in itself with a tick on the current one.
+/// One row of a [_MenuField].
+class _MenuChoice<T> {
+  const _MenuChoice(this.value, this.label, {this.style, this.dividerBefore = false});
+  final T value;
+  final String label;
+  final TextStyle? style;
+  final bool dividerBefore;
+}
+
+/// A field that opens the app's own desktop menu (hairline border, soft
+/// shadow, compact rows) instead of Material's tall dropdown sheet, with a
+/// tick on the current choice. Used for the font and the language, and for
+/// anything with more choices to come.
+class _MenuField<T> extends StatelessWidget {
+  const _MenuField({
+    super.key,
+    required this.label,
+    required this.choices,
+    required this.current,
+    required this.onSelected,
+  });
+
+  final String label;
+  final List<_MenuChoice<T>> choices;
+  final T current;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    _MenuChoice<T>? chosen;
+    for (final c in choices) {
+      if (c.value == current) chosen = c;
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) => PopupMenuButton<T>(
+        tooltip: label,
+        position: PopupMenuPosition.under,
+        offset: const Offset(0, 4),
+        constraints: BoxConstraints(
+          minWidth: constraints.maxWidth,
+          maxWidth: constraints.maxWidth,
+          maxHeight: 360,
+        ),
+        initialValue: current,
+        onSelected: onSelected,
+        itemBuilder: (_) => [
+          for (final c in choices) ...[
+            if (c.dividerBefore) const PopupMenuDivider(height: 9),
+            PopupMenuItem<T>(
+              value: c.value,
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 22,
+                    child: c.value == current ? const Icon(Icons.check, size: 15) : null,
+                  ),
+                  Expanded(
+                    child: Text(c.label, style: c.style ?? const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            isDense: true,
+            suffixIcon: const Icon(Icons.expand_more, size: 18),
+            suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 20),
+          ),
+          child: Text(chosen?.label ?? '', style: chosen?.style, overflow: TextOverflow.ellipsis),
+        ),
+      ),
+    );
+  }
+}
+
+/// The font picker: each font shown in itself.
 class _FontMenuField extends StatelessWidget {
   const _FontMenuField({
     required this.fonts,
@@ -699,65 +1112,24 @@ class _FontMenuField extends StatelessWidget {
   final String otherValue;
   final ValueChanged<String> onSelected;
 
-  String _label(String f) => f == defaultTerminalFont ? tr('{font} (default)', {'font': f}) : f;
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dim = theme.textTheme.bodySmall?.color;
-    TextStyle face(String f) => TextStyle(
-          fontFamily: f,
-          fontFamilyFallback: const ['Consolas', 'Menlo'],
-          fontSize: 13,
-        );
-    PopupMenuItem<String> row(String value, Widget label) => PopupMenuItem<String>(
-          value: value,
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 22,
-                child: value == current ? const Icon(Icons.check, size: 15) : null,
-              ),
-              Expanded(child: label),
-            ],
-          ),
-        );
-
-    return LayoutBuilder(
-      builder: (context, constraints) => PopupMenuButton<String>(
-        key: const ValueKey('terminal-font'),
-        tooltip: tr('Font'),
-        position: PopupMenuPosition.under,
-        offset: const Offset(0, 4),
-        constraints: BoxConstraints(
-          minWidth: constraints.maxWidth,
-          maxWidth: constraints.maxWidth,
-          maxHeight: 360,
+    TextStyle face(String f) => TextStyle(fontFamily: f, fontFamilyFallback: const ['Consolas', 'Menlo'], fontSize: 13);
+    return _MenuField<String>(
+      key: const ValueKey('terminal-font'),
+      label: tr('Font'),
+      current: current,
+      onSelected: onSelected,
+      choices: [
+        for (final f in fonts)
+          _MenuChoice(f, f == defaultTerminalFont ? tr('{font} (default)', {'font': f}) : f, style: face(f)),
+        _MenuChoice(
+          otherValue,
+          tr('Other font by name…'),
+          style: TextStyle(fontSize: 13, color: Theme.of(context).textTheme.bodySmall?.color),
+          dividerBefore: true,
         ),
-        initialValue: current,
-        onSelected: onSelected,
-        itemBuilder: (_) => [
-          for (final f in fonts)
-            row(f, Text(_label(f), style: face(f), overflow: TextOverflow.ellipsis)),
-          const PopupMenuDivider(height: 9),
-          row(otherValue, Text(tr('Other font by name…'), style: TextStyle(fontSize: 13, color: dim))),
-        ],
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: tr('Font'),
-            isDense: true,
-            suffixIcon: const Icon(Icons.expand_more, size: 18),
-            suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 20),
-          ),
-          child: Text(
-            current == otherValue ? tr('Other font by name…') : _label(current),
-            style: current == otherValue ? null : face(current),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ),
+      ],
     );
   }
 }

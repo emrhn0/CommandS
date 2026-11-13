@@ -24,7 +24,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: app,
-        child: const MaterialApp(home: SettingsScreen()),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.terminal)),
       ),
     );
     await tester.pumpAndSettle();
