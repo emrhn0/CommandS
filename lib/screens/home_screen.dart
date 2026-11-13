@@ -20,11 +20,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _sidebarVisible = true;
-
   @override
   Widget build(BuildContext context) {
     final width = context.select<AppState, double>((a) => a.sidebarWidth);
+    final sidebarVisible = context.select<AppState, bool>((a) => a.sidebarVisible);
     return Scaffold(
       body: Column(
         children: [
@@ -32,11 +31,11 @@ class _HomeScreenState extends State<HomeScreen> {
             leading: Padding(
               padding: const EdgeInsets.only(left: 8),
               child: Tooltip(
-                message: tr(_sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'),
+                message: tr(sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'),
                 child: IconButton(
                   key: const Key('sidebar-toggle'),
-                  onPressed: () => setState(() => _sidebarVisible = !_sidebarVisible),
-                  icon: Icon(_sidebarVisible ? Icons.menu_open : Icons.menu, size: 18),
+                  onPressed: () => context.read<AppState>().setSidebarVisible(!sidebarVisible),
+                  icon: Icon(sidebarVisible ? Icons.menu_open : Icons.menu, size: 18),
                   constraints: const BoxConstraints.tightFor(width: 32, height: 32),
                   padding: EdgeInsets.zero,
                 ),
@@ -46,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(
             child: Row(
               children: [
-                if (_sidebarVisible) SizedBox(
+                if (sidebarVisible) SizedBox(
                   width: width,
                   child: Column(
                     children: [
@@ -106,10 +105,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-                if (_sidebarVisible) const _SidebarResizer(),
+                if (sidebarVisible) const _SidebarResizer(),
                 // Sessions take whatever the panel leaves: terminals re-wrap
                 // and RDP sessions resize to the new pane.
-                Expanded(child: TerminalTabsArea(sidebarVisible: _sidebarVisible)),
+                Expanded(child: TerminalTabsArea(sidebarVisible: sidebarVisible)),
               ],
             ),
           ),

@@ -94,4 +94,35 @@ void main() {
     expect(tester.getSize(terminal).width, initialWidth);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a hidden sidebar stays hidden after a restart', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    UpdateService.available.value = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('window_manager'),
+      (call) async => call.method == 'isMaximized' ? false : null,
+    );
+    tester.view.physicalSize = const Size(900, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(ChangeNotifierProvider(
+      create: (_) => AppState(),
+      child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('sidebar-toggle')));
+    await tester.pumpAndSettle();
+    expect((await SharedPreferences.getInstance()).getBool('commands.sidebarVisible'), isFalse);
+
+    // A new AppState reads the saved preference, as on the next start.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(ChangeNotifierProvider(
+      create: (_) => AppState(),
+      child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('sidebar-new-connection')), findsNothing);
+    expect(find.byKey(const Key('sidebar-toggle')), findsOneWidget);
+  });
 }
