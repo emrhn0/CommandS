@@ -169,7 +169,7 @@ List<Color> _c(List<int> values) => [for (final v in values) Color(0xFF000000 | 
 final List<ThemePreset> builtInThemes = List.unmodifiable([
   ThemePreset(
     id: 'builtin:commands',
-    name: 'CommandS',
+    name: 'CommandS Dark',
     dark: true,
     background: const Color(0xFF0D0D0D),
     panel: const Color(0xFF161616),
@@ -183,6 +183,26 @@ final List<ThemePreset> builtInThemes = List.unmodifiable([
     ansi: _c([
       0x1A1A1A, 0xFF5C5C, 0x6BCB77, 0xFF8A3D, 0x5B9BD5, 0xC77DFF, 0x4FD1C5, 0xD9D5CE,
       0x4A4A4A, 0xFF8080, 0x8FE3A0, 0xFFB066, 0x8FC1E8, 0xDDA8FF, 0x7FE8DB, 0xF5F3EF,
+    ]),
+  ),
+  // CommandS's own light theme: black on white with the icon's orange,
+  // the light counterpart of the one above.
+  ThemePreset(
+    id: 'builtin:commands-light',
+    name: 'CommandS Light',
+    dark: false,
+    background: const Color(0xFFFFFFFF),
+    panel: const Color(0xFFF5F4F1),
+    panelAlt: const Color(0xFFECEAE6),
+    border: const Color(0xFFDCD9D3),
+    text: const Color(0xFF111111),
+    textDim: const Color(0xFF6B6760),
+    accent: const Color(0xFFE8711F),
+    terminalBackground: const Color(0xFFFFFFFF),
+    terminalForeground: const Color(0xFF111111),
+    ansi: _c([
+      0x1A1A1A, 0xD13B3B, 0x2E9446, 0xD9650F, 0x2F6CB0, 0x9447C2, 0x14857C, 0x8A8680,
+      0x5A5A5A, 0xE25555, 0x3AAE57, 0xF07F2A, 0x4A86CC, 0xAD64DA, 0x23A196, 0x2B2B2B,
     ]),
   ),
   ThemePreset(

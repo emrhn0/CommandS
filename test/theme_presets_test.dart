@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:commands/l10n/strings.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/settings_screen.dart';
 import 'package:commands/theme/app_theme.dart';
@@ -40,7 +41,7 @@ void main() {
   group('catalogue', () {
     test('has the requested themes, each complete', () {
       final names = builtInThemes.map((t) => t.name).toSet();
-      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora', 'CommandS']));
+      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora', 'CommandS Dark', 'CommandS Light']));
       expect(builtInThemes.map((t) => t.id).toSet().length, builtInThemes.length, reason: 'unique ids');
       for (final t in builtInThemes) {
         expect(t.ansi, hasLength(16), reason: t.name);
@@ -143,14 +144,40 @@ void main() {
       expect(prefs.containsKey('commands.themeMode'), isFalse);
     });
 
-    test('once Light or Dark is chosen, a later install no longer gets the CommandS default', () async {
+    test('someone on the old Light theme moves to CommandS Light, terminal untouched', () async {
+      SharedPreferences.setMockInitialValues({
+        'commands.themeMode': 'light',
+        'commands.terminalBg': 0xFF102030,
+      });
       final app = await _loadedState();
-      await app.setThemeMode(ThemeMode.light);
-      expect(app.themeId, isNull);
+      expect(app.themeId, AppState.lightThemeId);
+      expect(app.themeMode, ThemeMode.light);
+      expect(app.terminalBackground, const Color(0xFF102030), reason: 'the terminal keeps its colours');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('commands.themeId'), AppState.lightThemeId, reason: 'moved once, for good');
+      expect((await _loadedState()).themeId, AppState.lightThemeId);
+    });
 
-      final again = await _loadedState();
-      expect(again.themeId, isNull);
-      expect(again.themeMode, ThemeMode.light);
+    test('someone on the old Dark theme moves to CommandS Dark', () async {
+      SharedPreferences.setMockInitialValues({'commands.themeMode': 'dark'});
+      final app = await _loadedState();
+      expect(app.themeId, AppState.defaultThemeId);
+      expect(app.themeMode, ThemeMode.dark);
+    });
+
+    test('someone on the old CommandS theme stays on it, now named CommandS Dark', () async {
+      SharedPreferences.setMockInitialValues({'commands.themeMode': 'dark', 'commands.themeId': 'builtin:commands'});
+      final app = await _loadedState();
+      expect(app.themeId, AppState.defaultThemeId);
+      expect(app.activeTheme!.name, 'CommandS Dark');
+    });
+
+    test('CommandS Light is black and orange on white', () {
+      final light = builtInThemes.firstWhere((t) => t.id == AppState.lightThemeId);
+      expect(light.dark, isFalse);
+      expect(light.background, const Color(0xFFFFFFFF));
+      expect(light.text.computeLuminance(), lessThan(0.05));
+      expect(light.accent, const Color(0xFFE8711F));
     });
   });
 
@@ -192,20 +219,11 @@ void main() {
       expect(app.themeId, 'builtin:nord', reason: 'the app theme stays');
     });
 
-    test('Light and Dark still work; they undo only colours a theme brought', () async {
+    test('CommandS Light is chosen like any other theme', () async {
       final app = await _loadedState();
-      await app.selectTheme('builtin:monokai');
-      await app.setThemeMode(ThemeMode.light);
-      expect(app.themeId, isNull);
+      await app.selectTheme(AppState.lightThemeId);
       expect(app.themeMode, ThemeMode.light);
-      expect(app.terminalBackground, AppState.defaultTerminalBackground);
-      expect(app.terminalAnsi, isNull);
-
-      await app.selectTheme('builtin:monokai');
-      await app.setTerminalColors(background: const Color(0xFF223344));
-      await app.setThemeMode(ThemeMode.dark);
-      expect(app.terminalBackground, const Color(0xFF223344), reason: 'picked by the user');
-      expect((await _loadedState()).themeId, isNull);
+      expect((await _loadedState()).themeId, AppState.lightThemeId);
     });
 
     test('an imported theme is kept, replaced by name, and can be removed', () async {
@@ -223,8 +241,9 @@ void main() {
 
       await again.removeImportedTheme(theme.id);
       expect(again.importedThemes, isEmpty);
-      expect(again.themeId, isNull);
-      expect(again.activeTheme, isNull);
+      // It was a light theme: CommandS Light takes its place.
+      expect(again.themeId, AppState.lightThemeId);
+      expect((await _loadedState()).themeId, AppState.lightThemeId);
     });
 
     test('a broken saved theme is skipped rather than stopping the app', () async {
@@ -234,7 +253,7 @@ void main() {
       });
       final app = await _loadedState();
       expect(app.importedThemes.map((t) => t.name), ['Example Ocean']);
-      expect(app.themeId, isNull, reason: 'an unknown theme falls back to classic');
+      expect(app.themeId, AppState.defaultThemeId, reason: 'an unknown theme falls back to CommandS');
     });
   });
 
@@ -262,9 +281,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.keepTerminalColors, isTrue);
 
-    await tester.tap(find.text('Light'));
+    await tester.tap(find.text('CommandS Light'));
     await tester.pumpAndSettle();
-    expect(app.themeId, isNull);
+    expect(app.themeId, AppState.lightThemeId);
     expect(app.themeMode, ThemeMode.light);
+    expect(find.byKey(const ValueKey('theme-light')), findsNothing, reason: 'the old Light theme is gone');
+    expect(find.byKey(const ValueKey('theme-dark')), findsNothing);
+  });
+
+  testWidgets('Dark and Light in the CommandS theme names follow the app language', (tester) async {
+    tester.view.physicalSize = const Size(1280, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({'commands.language': 'tr'});
+    addTearDown(() => currentLanguage = AppLanguage.en);
+    await tester.pumpWidget(ChangeNotifierProvider(
+      create: (_) => AppState(),
+      child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.theme)),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('CommandS Koyu'), findsOneWidget);
+    expect(find.text('CommandS Açık'), findsOneWidget);
+    expect(find.text('CommandS Dark'), findsNothing);
   });
 }

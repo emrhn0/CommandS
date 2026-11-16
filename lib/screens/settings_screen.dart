@@ -776,9 +776,17 @@ class _ThemePicker extends StatelessWidget {
     }
   }
 
+  /// CommandS's own two themes say Dark and Light in the app's language;
+  /// the others keep their own names.
+  static String _label(ThemePreset t) => switch (t.id) {
+        AppState.defaultThemeId => 'CommandS ${tr('Dark')}',
+        AppState.lightThemeId => 'CommandS ${tr('Light')}',
+        _ => t.name,
+      };
+
   Widget _catalogueCard(AppState app, ThemePreset t) => _ThemeCard(
         key: ValueKey('theme-${t.id}'),
-        label: t.name,
+        label: _label(t),
         translate: false,
         compact: true,
         palette: AppPalette(
@@ -799,44 +807,29 @@ class _ThemePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final classic = app.themeId == null;
     final dim = Theme.of(context).textTheme.bodySmall?.color;
-    ThemePreset? commandS;
+    final own = <ThemePreset>[];
     final rest = <ThemePreset>[];
     for (final t in app.allThemes) {
-      if (t.id == AppState.defaultThemeId) {
-        commandS = t;
+      if (t.id == AppState.defaultThemeId || t.id == AppState.lightThemeId) {
+        own.add(t);
       } else {
         rest.add(t);
       }
     }
+    // Dark first, as the default.
+    own.sort((a, b) => a.dark == b.dark ? 0 : (a.dark ? -1 : 1));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // CommandS's own theme first -- the one a fresh install starts on --
-        // then Light and Dark, then the rest of the catalogue and any
-        // imported themes, all the same size.
+        // CommandS Dark and Light first -- Dark is what a fresh install
+        // starts on -- then the rest of the catalogue and any imported
+        // themes, all the same size.
         Wrap(
           spacing: 12,
           runSpacing: 14,
           children: [
-            if (commandS != null) _catalogueCard(app, commandS),
-            _ThemeCard(
-              key: const ValueKey('theme-light'),
-              label: 'Light',
-              compact: true,
-              palette: AppPalette.classicLight,
-              selected: classic && app.themeMode == ThemeMode.light,
-              onTap: () => app.setThemeMode(ThemeMode.light),
-            ),
-            _ThemeCard(
-              key: const ValueKey('theme-dark'),
-              label: 'Dark',
-              compact: true,
-              palette: AppPalette.classicDark,
-              selected: classic && app.themeMode == ThemeMode.dark,
-              onTap: () => app.setThemeMode(ThemeMode.dark),
-            ),
+            for (final t in own) _catalogueCard(app, t),
             for (final t in rest) _catalogueCard(app, t),
           ],
         ),

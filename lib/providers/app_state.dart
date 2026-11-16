@@ -102,11 +102,16 @@ class AppState extends ChangeNotifier {
   static const _kTerminalFromTheme = 'commands.terminalFromTheme';
   static const maxImportedThemes = 50;
 
-  /// The theme an install that has never opened Settings > Theme starts on.
+  /// The theme an install that has never opened Settings > Theme starts on:
+  /// CommandS Dark.
   static const defaultThemeId = 'builtin:commands';
 
-  /// The catalogue or imported theme in use; null means the classic Light or
-  /// Dark picked with [setThemeMode].
+  /// CommandS Light, which took the place of the classic Light theme.
+  static const lightThemeId = 'builtin:commands-light';
+
+  /// The catalogue or imported theme in use. Null only while loading: the
+  /// classic Light and Dark themes are gone, and a choice of either is moved
+  /// to CommandS Light or CommandS Dark.
   String? themeId;
   List<ThemePreset> importedThemes = [];
 
@@ -205,6 +210,16 @@ class AppState extends ChangeNotifier {
         terminalForeground = commandS.terminalForeground;
         terminalAnsi = commandS.ansi;
         _terminalFromTheme = true;
+      }
+    } else if (themeId == null) {
+      // The classic Light or Dark theme (now gone), or a theme that no longer
+      // exists: CommandS Light or Dark takes its place. Only the app's look
+      // moves; the terminal keeps the colours it had.
+      themeId = prefs.getString(_kThemeMode) == 'light' ? lightThemeId : defaultThemeId;
+      if (activeTheme == null) {
+        themeId = null;
+      } else {
+        await prefs.setString(_kThemeId, themeId!);
       }
     }
     notifyListeners();
@@ -307,15 +322,18 @@ class AppState extends ChangeNotifier {
     return theme;
   }
 
+  /// Removing the theme in use moves to CommandS Light or Dark, whichever
+  /// matches it.
   Future<void> removeImportedTheme(String id) async {
+    final removed = importedThemes.where((t) => t.id == id).firstOrNull;
     importedThemes = [for (final t in importedThemes) if (t.id != id) t];
     final wasActive = themeId == id;
-    if (wasActive) themeId = null;
+    if (wasActive) themeId = removed?.dark == false ? lightThemeId : defaultThemeId;
     notifyListeners();
     await _saveImportedThemes();
     if (wasActive) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_kThemeId);
+      await prefs.setString(_kThemeId, themeId!);
     }
   }
 
@@ -404,27 +422,6 @@ class AppState extends ChangeNotifier {
     WidgetsBinding.instance.addPostFrameCallback((_) => rebuildAllWidgets());
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLanguage, value.name);
-  }
-
-  /// The classic Light or Dark theme. Leaving a catalogue theme also takes
-  /// back the terminal colours it brought, but never colours the user picked
-  /// or asked to keep.
-  Future<void> setThemeMode(ThemeMode mode) async {
-    themeMode = mode;
-    final leftTheme = themeId != null;
-    themeId = null;
-    final resetTerminal = leftTheme && _terminalFromTheme && !keepTerminalColors;
-    if (resetTerminal) {
-      terminalBackground = defaultTerminalBackground;
-      terminalForeground = defaultTerminalForeground;
-      terminalAnsi = null;
-      _terminalFromTheme = false;
-    }
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kThemeMode, mode == ThemeMode.light ? 'light' : 'dark');
-    await prefs.remove(_kThemeId);
-    if (resetTerminal) await _saveTerminalColors(prefs);
   }
 
   Future<void> setUpdateChannel(ReleaseChannel channel) async {

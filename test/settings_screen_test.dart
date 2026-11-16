@@ -108,7 +108,7 @@ void main() {
     expect(find.text('Theme & colors'), findsWidgets);
     expect(find.text('App theme'), findsOneWidget);
     expect(find.text('SSH terminal'), findsOneWidget);
-    expect(find.text('Light'), findsWidgets);
+    expect(find.text('CommandS Light'), findsOneWidget);
     expect(find.text('Font'), findsWidgets);
     expect(find.byKey(const ValueKey('settings-nav-terminal')), findsNothing);
   });
@@ -189,16 +189,16 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Light'));
+    await tester.tap(find.text('CommandS Light'));
     await tester.pumpAndSettle();
     expect(app.themeMode, ThemeMode.light);
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('commands.themeMode'), 'light');
+    expect(prefs.getString('commands.themeId'), 'builtin:commands-light');
 
-    await tester.tap(find.text('Dark'));
+    await tester.tap(find.text('CommandS Dark'));
     await tester.pumpAndSettle();
     expect(app.themeMode, ThemeMode.dark);
-    expect(prefs.getString('commands.themeMode'), 'dark');
+    expect(prefs.getString('commands.themeId'), 'builtin:commands');
   });
 
   testWidgets('turning on beta updates is saved', (tester) async {
