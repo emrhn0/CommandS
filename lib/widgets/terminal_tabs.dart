@@ -83,7 +83,7 @@ class TerminalTabsArea extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              _PaneTreeView(node: layout),
+              _PaneTreeView(node: layout, headers: layout is PaneSplit),
               if (app.draggingTabId != null && app.tabs.length > 1)
                 _LayoutPicker(tabId: app.draggingTabId!, tabCount: app.tabs.length),
             ],
@@ -125,25 +125,8 @@ class _TabBarRow extends StatelessWidget {
             onMenu: (at) => _showGroupMenu(context, app, group, at),
           ),
         );
-        // Each session of the split too, so one can be dragged back out.
-        for (final m in members) {
-          final index = app.tabs.indexOf(m);
-          chips.add(
-            _TabChip(
-              key: ValueKey('member-${m.id}'),
-              tabIds: [m.id],
-              isGroup: false,
-              nested: true,
-              title: _tabTitle(m),
-              active: app.activeGroupId == group.id,
-              icon: _tabIcon(m),
-              status: m.controller.status,
-              onTap: () => app.activateGroup(group.id),
-              onClose: () => app.closeTab(index),
-              onMenu: (at) => _showTabMenu(context, app, m, at),
-            ),
-          );
-        }
+        // Its sessions are not repeated here: each has a small tab bar of
+        // its own above its pane (_PaneHeader), dragged from there to leave.
         continue;
       }
       chips.add(
@@ -646,11 +629,7 @@ class _TabChip extends StatefulWidget {
     required this.onClose,
     required this.onMenu,
     this.tooltip,
-    this.nested = false,
   });
-
-  /// A session inside a split, drawn under the split's own chip.
-  final bool nested;
 
   /// The sessions behind this chip, in tab order.
   final List<String> tabIds;
@@ -699,19 +678,15 @@ class _TabChipState extends State<_TabChip> {
   Widget _chip(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      constraints: BoxConstraints(minWidth: widget.nested ? 90 : 120, maxWidth: widget.nested ? 170 : 200),
+      constraints: const BoxConstraints(minWidth: 120, maxWidth: 200),
       height: 36,
       margin: const EdgeInsets.only(right: 2),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: widget.nested
-            ? scheme.primary.withValues(alpha: widget.active ? 0.08 : 0.04)
-            : widget.active
-            ? scheme.surface
-            : Colors.transparent,
+        color: widget.active ? scheme.surface : Colors.transparent,
         border: Border(
           bottom: BorderSide(
-            color: widget.active ? scheme.primary.withValues(alpha: widget.nested ? 0.5 : 1) : Colors.transparent,
+            color: widget.active ? scheme.primary : Colors.transparent,
             width: 2,
           ),
         ),
@@ -1070,8 +1045,12 @@ class _PresetTileState extends State<_PresetTile> {
 /// once (there is no hidden IndexedStack sibling anymore — a tab not in the
 /// tree just isn't rendered here at all).
 class _PaneTreeView extends StatelessWidget {
-  const _PaneTreeView({required this.node});
+  const _PaneTreeView({required this.node, this.headers = false});
   final PaneNode node;
+
+  /// Split: each pane gets its own small tab bar, as the strip at the top
+  /// shows only the split's tab.
+  final bool headers;
 
   @override
   Widget build(BuildContext context) {
@@ -1086,20 +1065,131 @@ class _PaneTreeView extends StatelessWidget {
         }
       }
       if (tab == null) return const SizedBox.shrink();
-      return _PaneDropTarget(
+      final pane = _PaneDropTarget(
         key: ValueKey(tab.id),
         tabId: tab.id,
         child: _SessionPane(controller: tab.controller, active: true),
       );
+      if (!headers) return pane;
+      return Column(
+        children: [
+          _PaneHeader(key: ValueKey('pane-header-${tab.id}'), tab: tab),
+          Expanded(child: pane),
+        ],
+      );
     }
     final split = n as PaneSplit;
-    return _ResizableSplit(split: split);
+    return _ResizableSplit(split: split, headers: headers);
+  }
+}
+
+/// The small tab bar above one pane of a split: the session's status, name
+/// and close button. Right-click gives the tab's menu; dragging it to the
+/// strip at the top takes the session out of the split, dragging it onto
+/// another pane moves it there.
+class _PaneHeader extends StatefulWidget {
+  const _PaneHeader({super.key, required this.tab});
+  final OpenTab tab;
+
+  @override
+  State<_PaneHeader> createState() => _PaneHeaderState();
+}
+
+class _PaneHeaderState extends State<_PaneHeader> {
+  bool _dragging = false;
+  AppState? _app;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _app = context.read<AppState>();
+  }
+
+  @override
+  void dispose() {
+    // Same as a chip: an unmounted Draggable reports no end.
+    if (_dragging) {
+      final app = _app;
+      WidgetsBinding.instance.addPostFrameCallback((_) => app?.setTabDrag(active: false));
+    }
+    super.dispose();
+  }
+
+  void _dragEnded() {
+    if (mounted) setState(() => _dragging = false);
+    _app?.setTabDrag(active: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final scheme = Theme.of(context).colorScheme;
+    final tab = widget.tab;
+    final title = _tabTitle(tab);
+    final bar = Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.06),
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: switch (tab.controller.status) {
+                SessionStatus.running => const Color(0xFF2EB85C),
+                SessionStatus.starting => const Color(0xFFE0A526),
+                SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
+              },
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Icon(_tabIcon(tab), size: 12),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5)),
+          ),
+          _AgentMark(tabIds: [tab.id]),
+          Tooltip(
+            message: tr('Close tab'),
+            child: InkWell(
+              key: ValueKey('pane-close-${tab.id}'),
+              onTap: () {
+                final index = app.tabs.indexOf(tab);
+                if (index >= 0) app.closeTab(index);
+              },
+              child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 13)),
+            ),
+          ),
+        ],
+      ),
+    );
+    return GestureDetector(
+      onSecondaryTapDown: (d) => _showTabMenu(context, app, tab, d.globalPosition),
+      child: ThresholdDraggable<_TabDrag>(
+        data: _TabDrag(tabIds: [tab.id], isGroup: false),
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        onDragStarted: () {
+          setState(() => _dragging = true);
+          app.setTabDrag(active: true, tabId: tab.id);
+        },
+        onDragEnd: (_) => _dragEnded(),
+        onDraggableCanceled: (_, _) => _dragEnded(),
+        feedback: _TabDragFeedback(title: title, icon: _tabIcon(tab)),
+        child: Opacity(opacity: _dragging ? 0.45 : 1, child: bar),
+      ),
+    );
   }
 }
 
 class _ResizableSplit extends StatefulWidget {
-  const _ResizableSplit({required this.split});
+  const _ResizableSplit({required this.split, this.headers = false});
   final PaneSplit split;
+  final bool headers;
 
   @override
   State<_ResizableSplit> createState() => _ResizableSplitState();
@@ -1117,7 +1207,7 @@ class _ResizableSplitState extends State<_ResizableSplit> {
           children: [
             Expanded(
               flex: (widget.split.ratio * 1000).round(),
-              child: _PaneTreeView(node: widget.split.first),
+              child: _PaneTreeView(node: widget.split.first, headers: widget.headers),
             ),
             MouseRegion(
               cursor: isRow ? SystemMouseCursors.resizeColumn : SystemMouseCursors.resizeRow,
@@ -1138,7 +1228,7 @@ class _ResizableSplitState extends State<_ResizableSplit> {
             ),
             Expanded(
               flex: ((1 - widget.split.ratio) * 1000).round(),
-              child: _PaneTreeView(node: widget.split.second),
+              child: _PaneTreeView(node: widget.split.second, headers: widget.headers),
             ),
           ],
         );

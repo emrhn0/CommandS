@@ -134,10 +134,10 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 100));
 
-    // One tab for the split, a small one per session in it (so a session can
-    // be dragged back out), and one for the new session.
+    // One tab for the split and one for the new session. The sessions in the
+    // split are not repeated in the strip: they get a bar above their pane.
     expect(find.text('Split View'), findsNWidgets(2), reason: 'the split tab and the Split View button');
-    expect(find.text('192.0.2.71'), findsOneWidget);
+    expect(find.text('192.0.2.71'), findsNothing);
     expect(find.text('192.0.2.74'), findsOneWidget);
     expect(app.activeGroupId, isNull);
 
@@ -145,6 +145,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(app.activeGroupId, app.groups.single.id);
     expect(tabIdsInLayoutOrdered(app.paneLayout), ids);
+    expect(find.text('192.0.2.71'), findsOneWidget, reason: 'on its pane bar');
 
     await tester.tap(find.text('Split View').first, buttons: kSecondaryMouseButton);
     for (var i = 0; i < 5; i++) {
