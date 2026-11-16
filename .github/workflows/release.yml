@@ -231,14 +231,21 @@ jobs:
             gh release edit "$TAG" --title "CommandS $TAG" --notes "$NOTES" --draft=false --prerelease=false --latest
           fi
 
-      - name: Prune old releases (keep latest 5)
+      # Normal releases are all kept. A beta is only a step towards its
+      # normal release: once that is out, the betas of it (and of anything
+      # older) are removed. Git tags stay either way.
+      - name: Remove betas a normal release has replaced
+        if: env.COMMANDS_CHANNEL != 'beta'
         shell: bash
         run: |
-          PRERELEASE=false
-          if [ "$COMMANDS_CHANNEL" = beta ]; then PRERELEASE=true; fi
-          gh release list --limit 100 --json tagName,publishedAt,isDraft,isPrerelease \
-            --jq "[.[] | select(.isDraft == false and .isPrerelease == $PRERELEASE)] | sort_by(.publishedAt) | reverse | .[5:] | .[].tagName" \
-          | while read -r old; do
-              echo "deleting old release $old"
-              gh release delete "$old" --yes || true
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release list --limit 200 --json tagName,isDraft,isPrerelease \
+            --jq '.[] | select(.isDraft == false and .isPrerelease == true) | .tagName' \
+          | while read -r beta; do
+              base="${beta%%-*}"
+              # Older than or the same as this release: sort -V puts it first.
+              if [ "$(printf '%s\n%s\n' "$base" "$TAG" | sort -V | head -n1)" = "$base" ]; then
+                echo "removing beta $beta (replaced by $TAG)"
+                gh release delete "$beta" --yes || true
+              fi
             done

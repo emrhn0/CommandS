@@ -189,7 +189,8 @@ Do not "simplify" these without reading why.
    - builds the Windows installer, the portable zip and the macOS zip onto a
      draft release;
    - writes `SHA256SUMS.txt` (the updater checks it);
-   - publishes the release and keeps the latest five.
+   - publishes the release. Normal releases are all kept; the betas of a
+     version (and older ones) are removed once its normal release is out.
 5. Installed apps list the app as "CommandS vX.Y.Z" (`AppVerName` in
    `installer.iss`).
 
