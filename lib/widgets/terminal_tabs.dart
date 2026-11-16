@@ -497,6 +497,8 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
     actions: [
       // First when the session has dropped: that is what the menu is for then.
       if (canReconnect(tab)) const MenuAction('reconnect', 'Reconnect', Icons.refresh),
+      if (tab.controller is PtySessionController)
+        const MenuAction('duplicate', 'Duplicate', Icons.copy_all_outlined),
       if (canSendCtrlAltDel(tab)) const MenuAction('ctrlaltdel', 'Send Ctrl+Alt+Del', Icons.keyboard),
       if (tab.controller case final PtySessionController ssh)
         ssh.sftpOpen.value
@@ -518,6 +520,11 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
   switch (key) {
     case 'reconnect':
       reconnectTab(tab);
+    case 'duplicate':
+      if (app.tabs.contains(tab)) {
+        final ssh = tab.controller as PtySessionController;
+        await app.openConnection(ssh.connectionForDuplicate(id: tab.connectionId));
+      }
     case 'ctrlaltdel':
       (tab.controller as RdpSessionController).sendCtrlAltDelete();
     case 'sftp':

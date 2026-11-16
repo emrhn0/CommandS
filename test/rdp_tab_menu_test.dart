@@ -84,6 +84,7 @@ void main() {
     await tester.tap(find.text('SERVER-01').first, buttons: kSecondaryButton);
     await settle(tester);
     expect(find.text('Send Ctrl+Alt+Del'), findsNothing);
+    expect(find.text('Duplicate'), findsNothing);
     await tester.tapAt(const Offset(900, 500));
     await settle(tester);
 
