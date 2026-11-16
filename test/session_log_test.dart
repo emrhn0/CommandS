@@ -52,12 +52,44 @@ void main() {
     final cleaner = TerminalTextCleaner();
     expect(cleaner.clean('\x1B[1;32muser1@switch-01\x1B[0m:~\$ ls\r\n'), 'user1@switch-01:~\$ ls\r\n');
     expect(cleaner.clean('\x1B]0;switch-01\x07title gone\r\n'), 'title gone\r\n');
-    // A sequence cut in half is held until the rest arrives.
-    expect(cleaner.clean('before \x1B['), 'before ');
-    expect(cleaner.clean('31mred\x1B[0m after'), 'red after');
+    // A sequence cut in half is held until the rest arrives; a line comes
+    // out once it ends, or from flush() when the session stops.
+    expect(cleaner.clean('before \x1B['), '');
+    expect(cleaner.clean('31mred\x1B[0m after'), '');
+    expect(cleaner.flush(), 'before red after');
     // Tabs and line breaks stay; bell and other controls go.
     expect(cleaner.clean('a\tb\x07c\r\n'), 'a\tbc\r\n');
-    expect(cleaner.clean('\x1B[42D          \x1B[42D<switch-01>'), '          <switch-01>');
+    expect(cleaner.clean('one\ntwo\n'), 'one\ntwo\n');
+    // A device that clears its prompt by moving back and writing spaces.
+    expect(cleaner.clean('\x1B[42D          \x1B[42D<switch-01>'), '');
+    expect(cleaner.flush(), '<switch-01>');
+  });
+
+  test('what was typed and erased before Enter does not reach the log', () {
+    final cleaner = TerminalTextCleaner(columns: () => 80);
+    const prompt = 'user1@server-a:~\$ ';
+    // bash echoes each key; Backspace comes back as "\b\x1B[K".
+    final typed = [
+      prompt, 's', '\b\x1B[K', 'l', 's', ' ', 'ğ', '\b\x1B[K', '-', 'l', '\r\n',
+      'total 0\r\n', prompt,
+    ];
+    expect(typed.map(cleaner.clean).join(), '${prompt}ls -l\r\ntotal 0\r\n');
+    expect(cleaner.flush(), prompt.trimRight());
+
+    // Some shells and devices answer Backspace with "\b \b".
+    expect(cleaner.clean('> pinx\b \bg 192.0.2.10\r\n'), '> ping 192.0.2.10\r\n');
+    // Cursor left then delete characters, as when fixing the middle of a line.
+    expect(cleaner.clean('> show runnning\x1B[4D\x1B[P\r\n'), '> show running\r\n');
+    // Ctrl+U: back to the prompt and erase the rest.
+    expect(cleaner.clean('> wrong command\r> \x1B[K\x1B[3Gshow version\r\n'), '> show version\r\n');
+  });
+
+  test('a long command that wraps on screen is logged whole', () {
+    final cleaner = TerminalTextCleaner(columns: () => 10);
+    // The first row fills up; readline forces the wrap with a space and a
+    // carriage return, which go to the start of the new row, not the line.
+    // A typo on the second row is then erased.
+    expect(cleaner.clean('\$ echo abc \rd xyz\b\x1B[K!\r\n'), '\$ echo abcd xy!\r\n');
   });
 
   test('a log file holds plain text', () async {

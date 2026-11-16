@@ -6,17 +6,56 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
 
-/// Removes terminal control sequences (colours, cursor moves, titles) so a
-/// log reads as plain text. Output arrives in chunks, so a sequence cut at
-/// the end of one chunk is held until the next.
+/// Turns terminal output into the plain text a reader would see on screen.
+///
+/// Colours, titles and other control sequences are removed. The current line
+/// is edited the way the terminal edits it, so what was typed and then
+/// erased (backspace, cursor left, erase to end of line, a redrawn prompt)
+/// does not reach the log: only the line as it finally stood. A line is
+/// returned once it ends; [flush] gives the unfinished last one.
+///
+/// Output arrives in chunks, so a sequence cut at the end of one chunk is
+/// held until the next.
+///
+/// [columns] is the terminal's width. A line longer than that wraps onto the
+/// next row of the screen, and a shell moves around a long command row by
+/// row (carriage return, cursor up), so those moves need the width to land
+/// in the right place. Without it every line is taken as one endless row.
 class TerminalTextCleaner {
+  TerminalTextCleaner({this.columns});
+
+  final int Function()? columns;
+
+  int get _width {
+    final w = columns?.call() ?? 0;
+    return w > 0 ? w : 1 << 30;
+  }
+
+  /// Where the cursor's screen row starts. Just past the last column the
+  /// cursor still belongs to the row it filled (the terminal wraps only once
+  /// the next character comes).
+  int _rowStart() {
+    final w = _width;
+    final row = _cursor > 0 && _cursor % w == 0 ? (_cursor - 1) ~/ w : _cursor ~/ w;
+    return row * w;
+  }
+
   static const _sequence =
       r'\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[PX^_][^\x1B]*\x1B\\|[()*+][0-~]|[ -/]*[0-Z\\^-~])';
-  static final _codes = RegExp('$_sequence|[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1A\\x1C-\\x1F\\x7F]');
+  static final _token = RegExp('$_sequence|[\\x00-\\x1F\\x7F]');
   static final _whole = RegExp('^(?:$_sequence)');
+  static final _csi = RegExp(r'^\x1B\[([0-?]*)[ -/]*([@-~])$');
   static const _maxHeld = 4096;
 
+  /// A line longer than this is written out as it is, so a stream with no
+  /// line breaks cannot grow without end.
+  static const _maxLine = 65536;
+
   String _held = '';
+
+  /// The line being drawn, one entry per character, and the cursor in it.
+  final List<String> _line = [];
+  int _cursor = 0;
 
   String clean(String chunk) {
     var text = _held + chunk;
@@ -30,7 +69,117 @@ class TerminalTextCleaner {
         if (tail.length <= _maxHeld) _held = tail;
       }
     }
-    return text.replaceAll(_codes, '');
+    final out = StringBuffer();
+    var at = 0;
+    for (final m in _token.allMatches(text)) {
+      if (m.start > at) _put(text.substring(at, m.start));
+      _control(m.group(0)!, out);
+      at = m.end;
+    }
+    if (at < text.length) _put(text.substring(at));
+    if (_line.length > _maxLine) out.write(_take());
+    return out.toString();
+  }
+
+  /// The last line, which has not ended yet.
+  String flush() => _take();
+
+  String _take() {
+    final line = _line.join().trimRight();
+    _line.clear();
+    _cursor = 0;
+    return line;
+  }
+
+  /// Printable text overwrites the line from the cursor, as on screen.
+  void _put(String text) {
+    _afterCr = false;
+    for (final rune in text.runes) {
+      final ch = String.fromCharCode(rune);
+      while (_line.length < _cursor) {
+        _line.add(' ');
+      }
+      if (_cursor < _line.length) {
+        _line[_cursor] = ch;
+      } else {
+        _line.add(ch);
+      }
+      _cursor++;
+    }
+  }
+
+  /// The last thing seen was a carriage return, so a line feed now ends the
+  /// line with "\r\n", as it came.
+  bool _afterCr = false;
+
+  void _control(String code, StringBuffer out) {
+    final afterCr = _afterCr;
+    // A colour reset between the two does not split "\r\n".
+    _afterCr = code == '\r' || (afterCr && code.startsWith('\x1B'));
+    switch (code) {
+      case '\n':
+        out.write('${_take()}${afterCr ? '\r\n' : '\n'}');
+        return;
+      case '\r':
+        _cursor = _rowStart();
+        return;
+      case '\b':
+        // As on screen, not back past the row's start.
+        if (_cursor > _rowStart()) _cursor--;
+        return;
+      case '\t':
+        _put('\t');
+        return;
+    }
+    final csi = _csi.firstMatch(code);
+    if (csi == null) return;
+    final params = csi.group(1)!;
+    final n = int.tryParse(params.split(';').first) ?? 0;
+    final count = n == 0 ? 1 : n;
+    final rowStart = _rowStart();
+    final rowEnd = rowStart + _width;
+    void blank(int from, int to) {
+      if (to >= _line.length) {
+        if (from < _line.length) _line.removeRange(from, _line.length);
+        return;
+      }
+      for (var i = from; i < to; i++) {
+        _line[i] = ' ';
+      }
+    }
+
+    switch (csi.group(2)) {
+      case 'D': // cursor left, not past the row's start
+        _cursor = (_cursor - count).clamp(rowStart, _cursor);
+      case 'C': // cursor right
+        _cursor = (_cursor + count).clamp(_cursor, rowEnd - 1);
+      case 'A': // up a row, within this line
+        _cursor = (_cursor - count * _width).clamp(0, _cursor);
+      case 'B': // down a row
+        _cursor += count * _width;
+      case 'G': // to column
+        _cursor = rowStart + count - 1;
+      case 'K': // erase in this row
+        if (n == 0) {
+          blank(_cursor, rowEnd);
+        } else if (n == 1) {
+          blank(rowStart, _cursor + 1);
+        } else if (n == 2) {
+          blank(rowStart, rowEnd);
+        }
+      case 'J': // erase below: the rest of this line goes
+        if (n == 0) blank(_cursor, 1 << 30);
+      case 'P': // delete characters
+        if (_cursor < _line.length) {
+          _line.removeRange(_cursor, (_cursor + count).clamp(_cursor, _line.length));
+        }
+      case '@': // insert blanks
+        if (_cursor < _line.length) _line.insertAll(_cursor, List.filled(count, ' '));
+      case 'X': // erase characters
+        for (var i = _cursor; i < _cursor + count && i < _line.length; i++) {
+          _line[i] = ' ';
+        }
+    }
   }
 }
 
@@ -79,7 +228,8 @@ class SessionLogSettings {
 /// Keystrokes are never written here. Each file is claimed exclusively so two
 /// sessions started in the same second cannot overwrite one another.
 class SessionLogRecorder {
-  SessionLogRecorder._(this.path, this._file, this.onError);
+  SessionLogRecorder._(this.path, this._file, this.onError, int Function()? columns)
+    : _cleaner = TerminalTextCleaner(columns: columns);
 
   final String path;
   final RandomAccessFile _file;
@@ -94,6 +244,7 @@ class SessionLogRecorder {
     required String host,
     DateTime? now,
     void Function(Object error)? onError,
+    int Function()? columns,
   }) async {
     final time = now ?? DateTime.now();
     final safeHost = _safeHost(host);
@@ -119,6 +270,7 @@ class SessionLogRecorder {
           file.path,
           await file.open(mode: FileMode.append),
           onError,
+          columns,
         );
       } catch (_) {
         await file.delete();
@@ -151,7 +303,7 @@ class SessionLogRecorder {
     return cleaned;
   }
 
-  final _cleaner = TerminalTextCleaner();
+  final TerminalTextCleaner _cleaner;
 
   void write(String output) {
     if (_stopping || _failed || output.isEmpty) return;
@@ -172,6 +324,19 @@ class SessionLogRecorder {
 
   Future<void> _close() async {
     _stopping = true;
+    // The prompt the session stopped at, which has no line break yet.
+    final last = _cleaner.flush();
+    if (last.isNotEmpty && !_failed) {
+      _writes = _writes.then((_) async {
+        if (_failed) return;
+        try {
+          await _file.writeString(last);
+        } catch (error) {
+          _failed = true;
+          onError?.call(error);
+        }
+      });
+    }
     await _writes;
     try {
       if (!_failed) await _file.flush();

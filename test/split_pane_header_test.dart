@@ -2,6 +2,7 @@ import 'package:commands/providers/app_state.dart';
 import 'package:commands/services/pane_layout.dart';
 import 'package:commands/services/pty_session.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -85,6 +86,43 @@ void main() {
     expect(app.tabs.map((t) => t.id), ['a', 'c']);
     // One session left: no split, so no pane bars either.
     expect(find.byKey(const ValueKey('pane-header-a')), findsNothing);
+    await cleanUp(tester, app);
+  });
+
+  testWidgets('one click moves the keyboard to the other pane, at once', (tester) async {
+    final app = await showSplit(tester);
+
+    /// Which pane's terminal has the keyboard: the tab id of its pane.
+    String? focusedPane() {
+      final context = tester.binding.focusManager.primaryFocus?.context;
+      String? id;
+      context?.visitAncestorElements((e) {
+        final key = e.widget.key;
+        if (key is ValueKey<String> && (key.value == 'a' || key.value == 'b')) {
+          id = key.value;
+          return false;
+        }
+        return true;
+      });
+      return id;
+    }
+
+    Future<void> pressOn(String paneId) async {
+      final pane = tester.getRect(find.byKey(ValueKey(paneId)));
+      final gesture = await tester.startGesture(pane.center, kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      // Pointer still down: the switch must not wait for the click to end
+      // or for a double click to be ruled out.
+      expect(focusedPane(), paneId);
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(focusedPane(), paneId);
+    }
+
+    await pressOn('b');
+    await pressOn('a');
+    await pressOn('b');
+
     await cleanUp(tester, app);
   });
 

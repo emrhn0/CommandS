@@ -152,6 +152,7 @@ class PtySessionController implements TerminalSessionController {
       recorder = await SessionLogRecorder.start(
         root: directory,
         host: host,
+        columns: () => terminal.viewWidth,
         onError: (error) => _recordingFailed(recorder, error),
       );
       if (_disposed || status != SessionStatus.running) {

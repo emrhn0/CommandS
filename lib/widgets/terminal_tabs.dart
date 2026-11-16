@@ -1440,8 +1440,15 @@ class _TerminalPaneState extends State<_TerminalPane> {
     final terminal = TerminalHoverScrollbar(
       controller: _scroll,
       color: app.terminalForeground,
-      child: GestureDetector(
-        onTap: () => _focusNode.requestFocus(),
+      // Focus moves on pointer-down, outside the gesture arena. A tap
+      // recognizer here competed with TerminalView's own tap, double-tap and
+      // the drag-select recognizers, so switching panes of a split by
+      // clicking took several clicks.
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) {
+          if (!_focusNode.hasFocus) _focusNode.requestFocus();
+        },
         child: TerminalViewport(style: style, background: app.terminalBackground, child: _view(app, style)),
       ),
     );
