@@ -165,7 +165,15 @@ Do not "simplify" these without reading why.
 
 ## Releasing
 
-1. Bump `appVersion` in `lib/app_version.dart`.
+1. Bump `appVersion` in `lib/app_version.dart`. Pick the number by what the
+   release brings, not by habit:
+   - **Patch** (`1.2.0` to `1.2.1`): fixes only, nothing new to learn.
+   - **Minor** (`1.2.x` to `1.3.0`): anything new a user can see or use, a
+     new feature, setting, language or a changed way of working. Several
+     such releases in a row each get their own minor number.
+   - **Major** (`1.x` to `2.0.0`): a rework that changes how the app is
+     used, or saved data that an older version can no longer read.
+   Betas take the number of the release they lead to (`v1.3.0-beta.1`).
 2. Write `release-notes/vX.Y.Z.md`: a short list of user-facing changes and
    fixes in plain English. It is shown in the app's update dialog, so it
    matters.

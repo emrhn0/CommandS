@@ -260,24 +260,30 @@ class _SessionLogSettingsState extends State<_SessionLogSettings> {
     _load();
   }
 
+  /// The chosen folder is gone (deleted or renamed): shown with an error,
+  /// and Open folder is off until another one is chosen.
+  bool _missing = false;
+
   Future<void> _load() async {
     try {
       final directory = await SessionLogSettings.directory();
-      if (mounted) setState(() => _directory = directory);
+      if (mounted) setState(() { _directory = directory; _missing = false; _error = null; });
+    } on SessionLogFolderMissing catch (missing) {
+      if (mounted) setState(() { _directory = missing.path; _missing = true; _error = missing.toString(); });
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     }
   }
 
-  /// Creates the folder first: before the first log it may not exist yet.
+  /// The default folder is made if no log has been written yet. A chosen
+  /// folder is never made again: if it has gone, that is reported instead.
   Future<void> _openFolder() async {
-    final directory = _directory;
-    if (directory == null) return;
     try {
+      final directory = await SessionLogSettings.directory();
       await Directory(directory).create(recursive: true);
       await OpenPath.open(directory);
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+    } catch (_) {
+      await _load();
     }
   }
 
@@ -285,13 +291,16 @@ class _SessionLogSettingsState extends State<_SessionLogSettings> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
+      // A folder that has gone made the Windows picker fail
+      // (0x80070002), so it is only offered as the start when it is there.
+      final start = _directory;
       final selected = await FilePicker.platform.getDirectoryPath(
         dialogTitle: tr('Choose log folder'),
-        initialDirectory: _directory,
+        initialDirectory: start != null && Directory(start).existsSync() ? start : null,
       );
       if (selected == null) return;
       await SessionLogSettings.setDirectory(selected);
-      if (mounted) setState(() { _directory = selected; _error = null; });
+      if (mounted) setState(() { _directory = selected; _missing = false; _error = null; });
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -316,7 +325,7 @@ class _SessionLogSettingsState extends State<_SessionLogSettings> {
           children: [
             OutlinedButton.icon(
               key: const ValueKey('open-log-folder'),
-              onPressed: _directory == null ? null : _openFolder,
+              onPressed: _directory == null || _missing ? null : _openFolder,
               icon: const Icon(Icons.folder_open_outlined, size: 16),
               label: Text(tr('Open folder')),
             ),

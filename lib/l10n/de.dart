@@ -33,6 +33,8 @@ const german = <String, String>{
   'SSH output is saved as UTF-8 under <host>/<YYYY-MM-DD>/<HH-mm-ss>.log.':
       'Die SSH-Ausgabe wird als UTF-8 unter <host>/<YYYY-MM-DD>/<HH-mm-ss>.log gespeichert.',
   'Choose log folder': 'Protokollordner wählen',
+  'The log folder {path} no longer exists. Choose a log folder in Settings > Session logs.':
+      'Der Protokollordner {path} existiert nicht mehr. Wählen Sie unter Einstellungen > Sitzungsprotokolle einen Protokollordner.',
   'Open folder': 'Ordner öffnen',
   'Open file': 'Datei öffnen',
   'Loading…': 'Wird geladen…',

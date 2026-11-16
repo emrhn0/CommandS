@@ -34,6 +34,8 @@ const turkish = <String, String>{
   'SSH output is saved as UTF-8 under <host>/<YYYY-MM-DD>/<HH-mm-ss>.log.':
       'SSH çıktısı UTF-8 olarak <host>/<YYYY-MM-DD>/<HH-mm-ss>.log altında saklanır.',
   'Choose log folder': 'Kayıt klasörü seç',
+  'The log folder {path} no longer exists. Choose a log folder in Settings > Session logs.':
+      '{path} kayıt klasörü artık yok. Ayarlar > Oturum kayıtları bölümünden bir kayıt klasörü seçin.',
   'Open folder': 'Klasörü aç',
   'Open file': 'Dosyayı aç',
   'Loading…': 'Yükleniyor…',

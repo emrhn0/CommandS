@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
+import '../l10n/strings.dart';
 
 /// Turns terminal output into the plain text a reader would see on screen.
 ///
@@ -183,14 +184,41 @@ class TerminalTextCleaner {
   }
 }
 
+/// The log folder picked in Settings is gone: deleted, renamed or moved.
+/// It is not made again under the old name, which would leave logs where
+/// nobody looks; a folder has to be chosen again.
+class SessionLogFolderMissing implements Exception {
+  const SessionLogFolderMissing(this.path);
+  final String path;
+
+  @override
+  String toString() => tr(
+    'The log folder {path} no longer exists. Choose a log folder in Settings > Session logs.',
+    {'path': path},
+  );
+}
+
 /// The selected root is local to this installation, never part of exports.
 class SessionLogSettings {
   static const preferenceKey = 'commands.sessionLogDirectory';
 
-  static Future<String> directory() async {
+  /// The folder picked in Settings, or null for the default one.
+  static Future<String?> chosenDirectory() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(preferenceKey);
-    if (saved != null && saved.trim().isNotEmpty) return saved;
+    return saved != null && saved.trim().isNotEmpty ? saved : null;
+  }
+
+  /// Where logs go. The default folder is made when needed; a folder picked
+  /// in Settings that has gone throws [SessionLogFolderMissing].
+  static Future<String> directory() async {
+    final saved = await chosenDirectory();
+    if (saved != null) {
+      // One quick look; synchronous, so it also works where async file
+      // I/O is held back (widget tests).
+      if (!Directory(saved).existsSync()) throw SessionLogFolderMissing(saved);
+      return saved;
+    }
     return defaultDirectory(Platform.environment);
   }
 

@@ -31,8 +31,37 @@ void main() {
 
   test('settings persist the selected directory', () async {
     final selected = '${root.path}${Platform.pathSeparator}selected';
+    await Directory(selected).create();
     await SessionLogSettings.setDirectory(selected);
     expect(await SessionLogSettings.directory(), selected);
+  });
+
+  test('a chosen log folder that was renamed or deleted is reported, not made again', () async {
+    final chosen = Directory('${root.path}${Platform.pathSeparator}logs');
+    await chosen.create();
+    await SessionLogSettings.setDirectory(chosen.path);
+    await chosen.rename('${root.path}${Platform.pathSeparator}renamed');
+    await expectLater(SessionLogSettings.directory(), throwsA(isA<SessionLogFolderMissing>()));
+    expect(await chosen.exists(), isFalse);
+  });
+
+  test('automatic recording into a folder that has gone fails without making it again', () async {
+    final chosen = '${root.path}${Platform.pathSeparator}gone';
+    await SessionLogSettings.setDirectory(chosen);
+    final session = PtySessionController(
+      host: '192.0.2.10',
+      port: 22,
+      recordByDefault: true,
+      startImmediately: false,
+    );
+    session.debugSetStatus(SessionStatus.running);
+    for (var i = 0; i < 50 && session.recordingError.value == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(session.recordingError.value, contains('no longer exists'));
+    expect(session.recordingPath.value, isNull);
+    expect(await Directory(chosen).exists(), isFalse);
+    session.dispose();
   });
 
   test('by default logs stay on this computer, not in Documents', () async {
@@ -344,6 +373,36 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     session.dispose();
+  });
+
+  testWidgets('settings say when the chosen log folder has gone, and do not open or make it', (tester) async {
+    const windowManager = MethodChannel('window_manager');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(windowManager, (call) async => call.method == 'isMaximized' ? false : null);
+    addTearDown(() => messenger.setMockMethodCallHandler(windowManager, null));
+    final gone = '${root.path}${Platform.pathSeparator}renamed-away';
+    SharedPreferences.setMockInitialValues({SessionLogSettings.preferenceKey: gone});
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: AppState(),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.sessionLogs)),
+      ),
+    );
+    await tester.runAsync(() async {
+      for (var i = 0; i < 50; i++) {
+        if (find.textContaining('no longer exists').evaluate().isNotEmpty) return;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pump();
+    expect(find.textContaining('no longer exists'), findsOneWidget);
+    final open = tester.widget<OutlinedButton>(
+      find.ancestor(of: find.text('Open folder'), matching: find.byWidgetPredicate((w) => w is OutlinedButton)),
+    );
+    expect(open.onPressed, isNull);
+    expect(await tester.runAsync(() => Directory(gone).exists()), isFalse);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
   });
 
   testWidgets('settings open the log folder', (tester) async {
