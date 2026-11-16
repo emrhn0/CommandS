@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/models/models.dart';
 import 'package:commands/screens/settings_screen.dart';
+import 'package:commands/services/open_path.dart';
 import 'package:commands/services/pane_layout.dart';
 import 'package:commands/services/pty_session.dart';
 import 'package:commands/services/session_log.dart';
 import 'package:commands/services/storage_service.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -248,8 +250,8 @@ void main() {
           .onPressed,
       isNotNull,
     );
-    session.recordingPath.value =
-        '${root.path}${Platform.pathSeparator}example.log';
+    final logPath = '${root.path}${Platform.pathSeparator}example.log';
+    session.recordingPath.value = logPath;
     await tester.pump();
     expect(find.text('Stop recording'), findsOneWidget);
     expect(find.byIcon(Icons.circle), findsOneWidget);
@@ -259,6 +261,88 @@ void main() {
     expect(find.text('Record session'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     session.dispose();
+  });
+
+  testWidgets('the saved-log message opens the log file, then goes away by itself', (tester) async {
+    final opened = <String>[];
+    final original = OpenPath.launcher;
+    OpenPath.launcher = (executable, arguments) async => opened.add(arguments.single);
+    addTearDown(() => OpenPath.launcher = original);
+    final app = AppState();
+    await tester.pump();
+    final session = PtySessionController(
+      host: '192.0.2.10',
+      port: 22,
+      tabTitle: 'DEVICE-01',
+      startImmediately: false,
+    )..status = SessionStatus.running;
+    app.tabs.add(OpenTab(id: 'ssh', controller: session));
+    app.setActiveTab(0);
+    await tester.binding.setSurfaceSize(const Size(1200, 550));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: app,
+        child: const MaterialApp(home: Scaffold(body: TerminalTabsArea())),
+      ),
+    );
+    final logPath = '${root.path}${Platform.pathSeparator}example.log';
+
+    // Not used: gone after a few seconds.
+    session.recordingPath.value = logPath;
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('session-log-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Open file'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Open file'), findsNothing);
+    expect(opened, isEmpty);
+
+    // Used: opens the very file that was saved.
+    session.recordingPath.value = logPath;
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('session-log-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Open file'));
+    await tester.pump();
+    expect(opened, [logPath]);
+
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
+  testWidgets('settings open the log folder', (tester) async {
+    const windowManager = MethodChannel('window_manager');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(windowManager, (call) async => call.method == 'isMaximized' ? false : null);
+    addTearDown(() => messenger.setMockMethodCallHandler(windowManager, null));
+    final opened = <String>[];
+    final original = OpenPath.launcher;
+    OpenPath.launcher = (executable, arguments) async => opened.add(arguments.single);
+    addTearDown(() => OpenPath.launcher = original);
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: AppState(),
+        child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.sessionLogs)),
+      ),
+    );
+    await tester.runAsync(() async {
+      for (var i = 0; i < 50; i++) {
+        if (find.text(root.path).evaluate().isNotEmpty) return;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pump();
+    expect(find.text('Open folder'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('open-log-folder')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.pump();
+    expect(opened, [root.path]);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
   });
 
   testWidgets('split SSH sessions offer a choice of recording target', (

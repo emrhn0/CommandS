@@ -9,6 +9,7 @@ import 'package:xterm/xterm.dart';
 import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
 import '../services/mcp_server.dart';
+import '../services/open_path.dart';
 import '../services/pane_layout.dart';
 import '../services/pty_session.dart';
 import '../services/rdp_session.dart';
@@ -245,6 +246,14 @@ class _SessionLogButtonState extends State<_SessionLogButton> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(tr('Session log saved to {path}', {'path': current})),
+            // A SnackBar with an action stays until dismissed by default;
+            // this one goes away on its own when it is not used.
+            persist: false,
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: tr('Open file'),
+              onPressed: () => OpenPath.open(current),
+            ),
           ));
         }
       } else {

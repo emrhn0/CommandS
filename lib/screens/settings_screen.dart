@@ -8,6 +8,7 @@ import '../app_version.dart';
 import '../providers/app_state.dart';
 import '../services/feedback_service.dart';
 import '../services/mcp_server.dart';
+import '../services/open_path.dart';
 import '../services/session_log.dart';
 import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
@@ -268,6 +269,18 @@ class _SessionLogSettingsState extends State<_SessionLogSettings> {
     }
   }
 
+  /// Creates the folder first: before the first log it may not exist yet.
+  Future<void> _openFolder() async {
+    final directory = _directory;
+    if (directory == null) return;
+    try {
+      await Directory(directory).create(recursive: true);
+      await OpenPath.open(directory);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    }
+  }
+
   Future<void> _choose() async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -297,10 +310,22 @@ class _SessionLogSettingsState extends State<_SessionLogSettings> {
         const SizedBox(height: 10),
         SelectableText(_directory ?? tr('Loading…'), style: const TextStyle(fontSize: 12)),
         const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: _busy ? null : _choose,
-          icon: const Icon(Icons.folder_open_outlined, size: 16),
-          label: Text(tr('Choose log folder')),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('open-log-folder'),
+              onPressed: _directory == null ? null : _openFolder,
+              icon: const Icon(Icons.folder_open_outlined, size: 16),
+              label: Text(tr('Open folder')),
+            ),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _choose,
+              icon: const Icon(Icons.drive_folder_upload_outlined, size: 16),
+              label: Text(tr('Choose log folder')),
+            ),
+          ],
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
