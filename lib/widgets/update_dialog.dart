@@ -17,9 +17,9 @@ import '../l10n/strings.dart';
 /// is the one thing here the user has to answer, and it should not be waiting
 /// for them before the app has finished appearing.
 ///
-/// Then again every hour while the app stays open, as a release can come out
-/// while someone is working. "Remind me later" brings the prompt back an hour
-/// after it was answered.
+/// Then again every minute while the app stays open, as a release can come
+/// out while someone is working. "Remind me later" brings the prompt for the
+/// same version back an hour after it was answered.
 class UpdateGate extends StatefulWidget {
   const UpdateGate({super.key, required this.child, @visibleForTesting this.checker = UpdateService.check});
   final Widget child;
@@ -31,13 +31,18 @@ class UpdateGate extends StatefulWidget {
 
 class _UpdateGateState extends State<UpdateGate> {
   static const _settle = Duration(seconds: 3);
-  static const _interval = Duration(minutes: 5);
 
-  /// How soon to look again when the prompt could not be shown, because
-  /// another dialog was open.
-  static const _busyRetry = Duration(minutes: 1);
+  /// A new release shows up within a minute. The check reads the releases
+  /// feed, which the API's hourly limit does not cover.
+  static const _interval = Duration(minutes: 1);
+
+  /// After "Remind me later", the same version is not asked about again for
+  /// this long. A newer one is, at once.
+  static const _snooze = Duration(hours: 1);
 
   Timer? _next;
+  String? _snoozedVersion;
+  Timer? _snoozeEnd;
 
   @override
   void initState() {
@@ -51,6 +56,7 @@ class _UpdateGateState extends State<UpdateGate> {
   @override
   void dispose() {
     _next?.cancel();
+    _snoozeEnd?.cancel();
     super.dispose();
   }
 
@@ -58,23 +64,26 @@ class _UpdateGateState extends State<UpdateGate> {
   /// "Remind me later" starts when it was pressed, and a prompt left open never
   /// has a second one opened over it.
   Future<void> _round() async {
-    var wait = _interval;
     final info = await widget.checker();
     if (!mounted) return;
     if (info != null) {
       UpdateService.available.value = info;
-      if (!await UpdateService.isSkipped(info.version)) {
+      final snoozed = info.version == _snoozedVersion;
+      if (!snoozed && !await UpdateService.isSkipped(info.version)) {
         if (!mounted) return;
-        // Not over a dialog the user is in the middle of.
+        // Not over a dialog the user is in the middle of: the next round,
+        // a minute on, tries again.
         if (ModalRoute.of(context)?.isCurrent ?? true) {
           await showUpdateDialog(context, info);
           if (!mounted) return;
-        } else {
-          wait = _busyRetry;
+          // Closed without updating or skipping: "Remind me later".
+          _snoozedVersion = info.version;
+          _snoozeEnd?.cancel();
+          _snoozeEnd = Timer(_snooze, () => _snoozedVersion = null);
         }
       }
     }
-    _next = Timer(wait, _round);
+    _next = Timer(_interval, _round);
   }
 
   @override

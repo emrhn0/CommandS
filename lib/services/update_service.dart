@@ -111,7 +111,8 @@ class UpdateService {
   static Future<ReleaseChannel> _chosenChannel() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('commands.update.channel');
-    return saved == null ? buildChannel : releaseChannelFromString(saved);
+    // Betas only for someone who turned them on, a beta install included.
+    return releaseChannelFromString(saved);
   }
 
   /// The tags of the latest published releases, and one release in full.

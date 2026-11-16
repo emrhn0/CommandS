@@ -44,22 +44,22 @@ void main() {
 
   final prompt = find.text('Remind me later');
 
-  testWidgets('a release that comes out while the app is open is offered within five minutes', (tester) async {
+  testWidgets('a release that comes out while the app is open is offered within a minute', (tester) async {
     answer = null;
     await pumpGate(tester);
     expect(checks, 1, reason: 'the launch check');
     expect(prompt, findsNothing);
 
     answer = _release;
-    await wait(tester, const Duration(minutes: 4));
-    expect(checks, 1, reason: 'not before five minutes');
-    await wait(tester, const Duration(minutes: 2));
+    await wait(tester, const Duration(seconds: 50));
+    expect(checks, 1, reason: 'not before a minute');
+    await wait(tester, const Duration(seconds: 15));
     expect(checks, 2);
     expect(prompt, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('"Remind me later" brings it back five minutes later, not sooner', (tester) async {
+  testWidgets('"Remind me later" brings it back an hour later, not sooner', (tester) async {
     answer = _release;
     await pumpGate(tester);
     await wait(tester, Duration.zero);
@@ -67,9 +67,34 @@ void main() {
     await tester.tap(prompt);
     await tester.pumpAndSettle();
     expect(prompt, findsNothing);
-    await wait(tester, const Duration(minutes: 4));
+    // Still checked every minute, but the same version stays quiet.
+    for (var i = 0; i < 58; i++) {
+      await wait(tester, const Duration(minutes: 1));
+    }
     expect(prompt, findsNothing);
-    await wait(tester, const Duration(minutes: 2));
+    expect(checks, greaterThan(50));
+    await wait(tester, const Duration(minutes: 3));
+    expect(prompt, findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('after "Remind me later", a newer version is offered at once', (tester) async {
+    answer = _release;
+    await pumpGate(tester);
+    await wait(tester, Duration.zero);
+    await tester.tap(prompt);
+    await tester.pumpAndSettle();
+    answer = const UpdateInfo(
+      version: 'v99.0.1',
+      releaseUrl: 'https://example.com/release',
+      notes: 'Newer',
+      assetName: 'setup.exe',
+      assetUrl: 'https://example.com/setup.exe',
+      assetSize: 1,
+      checksumsUrl: null,
+      method: UpdateMethod.windowsInstaller,
+    );
+    await wait(tester, const Duration(seconds: 65));
     expect(prompt, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -105,11 +130,11 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
     answer = _release;
-    await wait(tester, const Duration(minutes: 6));
+    await wait(tester, const Duration(minutes: 3));
     expect(prompt, findsNothing);
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
-    await wait(tester, const Duration(minutes: 2));
+    await wait(tester, const Duration(seconds: 65));
     expect(prompt, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });

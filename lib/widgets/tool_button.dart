@@ -10,7 +10,11 @@ class ToolButton extends StatefulWidget {
     required this.onPressed,
     this.size = 30,
     this.danger = false,
+    this.active = false,
   });
+
+  /// Drawn lit while the mode it turns on is on (the tree's Select).
+  final bool active;
 
   final IconData icon;
   final String tooltip;
@@ -34,7 +38,7 @@ class ToolButtonState extends State<ToolButton> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final enabled = widget.onPressed != null;
-    final lit = enabled && _hover;
+    final lit = enabled && (_hover || widget.active);
     final flat = widget.size < 30;
     final tint = widget.danger ? scheme.error : scheme.primary;
     return Tooltip(

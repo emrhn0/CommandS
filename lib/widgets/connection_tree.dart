@@ -68,6 +68,10 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   // Ctrl/Shift+click multi-select, RDM-style — Ctrl+click.dart's not a typo,
   // it toggles individual rows; Shift+click extends from the last click.
   final Set<String> _selected = {};
+
+  /// Select mode (the Select button): every row has a box, a click ticks it,
+  /// and the selection bar stays until the mode is turned off.
+  bool _selectMode = false;
   String? _lastClickedId;
 
   final _scroll = ScrollController();
@@ -356,7 +360,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   /// A click anywhere else in the app drops the selection, as in Explorer. Not
   /// while a menu or dialog is open: those act on the selection.
   void _clearIfNothingOnTop() {
-    if (_selected.isEmpty || !mounted) return;
+    if (_selected.isEmpty || !mounted || _selectMode) return;
     if (ModalRoute.of(context)?.isCurrent ?? true) _clearSelection();
   }
 
@@ -426,6 +430,10 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   void _handleRowSelect(_Row row, List<_Row> rows) {
     final id = _rowId(row);
     if (id == null) return;
+    if (_selectMode) {
+      _toggleTick(id, context.read<AppState>());
+      return;
+    }
     final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
 
@@ -489,46 +497,123 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
 
   void _clearSelection() => setState(() => _selected.clear());
 
-  void _selectAll(AppState app) {
+  /// Every folder, connection and layout.
+  Set<String> _allIds(AppState app) => {
+    ...app.folders.map((f) => f.id),
+    ...app.connections.map((c) => c.id),
+    ...app.layouts.map((l) => l.id),
+  };
+
+  void _selectAll(AppState app) => setState(() => _selected..clear()..addAll(_allIds(app)));
+
+  /// The bar's button: everything, or nothing once everything is ticked.
+  void _toggleAll(AppState app) {
+    if (_selected.containsAll(_allIds(app))) {
+      _clearSelection();
+    } else {
+      _selectAll(app);
+    }
+  }
+
+  /// The Select button: on with every box empty, off again with nothing
+  /// selected.
+  void _toggleSelectMode() => setState(() {
+    _selectMode = !_selectMode;
+    _selected.clear();
+  });
+
+  /// The folder [id] and what is inside it, at any depth.
+  Set<String> _withContents(String id, AppState app) {
+    if (!app.folders.any((f) => f.id == id)) return {id};
+    final tree = app.folderTree(id);
+    return {
+      ...tree,
+      for (final c in app.connections) if (c.folderId != null && tree.contains(c.folderId)) c.id,
+      for (final l in app.layouts) if (l.folderId != null && tree.contains(l.folderId)) l.id,
+    };
+  }
+
+  /// The folders that hold [id], up to the top level.
+  Iterable<String> _ancestors(String id, AppState app) sync* {
+    final parentOf = {for (final f in app.folders) f.id: f.parentId};
+    var parent = parentOf.containsKey(id)
+        ? parentOf[id]
+        : app.connections.where((c) => c.id == id).firstOrNull?.folderId ??
+            app.layouts.where((l) => l.id == id).firstOrNull?.folderId;
+    final seen = <String>{};
+    while (parent != null && seen.add(parent)) {
+      yield parent;
+      parent = parentOf[parent];
+    }
+  }
+
+  /// A box: a folder takes everything inside it along; unticking something
+  /// also unticks the folders around it, which are no longer whole.
+  void _toggleTick(String id, AppState app) {
     setState(() {
-      _selected
-        ..clear()
-        ..addAll(app.connections.map((c) => c.id))
-        ..addAll(app.folders.map((f) => f.id));
+      final group = _withContents(id, app);
+      if (_selected.contains(id)) {
+        _selected.removeAll(group);
+        _selected.removeAll(_ancestors(id, app));
+      } else {
+        _selected.addAll(group);
+      }
+      _lastClickedId = id;
     });
   }
 
+  /// The selected items that are not already inside a selected folder: what
+  /// a move or a delete acts on, so a folder's contents go along with it
+  /// instead of being moved or deleted one by one.
+  ({List<String> folders, List<String> connections, List<String> layouts}) _topSelected(AppState app) {
+    final folderIds = _selected.where((id) => app.folders.any((f) => f.id == id)).toSet();
+    bool covered(String id) => _ancestors(id, app).any(folderIds.contains);
+    return (
+      folders: folderIds.where((id) => !covered(id)).toList(),
+      connections: [for (final c in app.connections) if (_selected.contains(c.id) && !covered(c.id)) c.id],
+      layouts: [for (final l in app.layouts) if (_selected.contains(l.id) && !covered(l.id)) l.id],
+    );
+  }
+
   Future<void> _deleteSelected(AppState app) async {
-    final folderIds = _selected.where((id) => app.folders.any((f) => f.id == id)).toList();
-    final connIds = _selected.where((id) => app.connections.any((c) => c.id == id)).toList();
+    final top = _topSelected(app);
+    // Everything that goes, the contents of the folders included.
+    final gone = <String>{
+      for (final id in [...top.folders, ...top.connections, ...top.layouts]) ..._withContents(id, app),
+    };
+    final folders = app.folders.where((f) => gone.contains(f.id)).length;
+    final conns = app.connections.where((c) => gone.contains(c.id)).length;
+    final layouts = app.layouts.where((l) => gone.contains(l.id)).length;
+    if (folders + conns + layouts == 0) return;
     final parts = <String>[
-      if (connIds.isNotEmpty) trCount(connIds.length, '{n} connection', '{n} connections'),
-      if (folderIds.isNotEmpty) trCount(folderIds.length, '{n} folder', '{n} folders'),
+      if (folders > 0) trCount(folders, '{n} folder', '{n} folders'),
+      if (conns > 0) trCount(conns, '{n} connection', '{n} connections'),
+      if (layouts > 0) trCount(layouts, '{n} layout', '{n} layouts'),
     ];
     final confirmed = await showConfirmDialog(
       context,
       title: tr('Delete {what}?', {'what': parts.join(tr(' and '))}),
-      message: folderIds.isEmpty
+      message: top.folders.isEmpty
           ? tr('This cannot be undone.')
-          : tr(
-              "This cannot be undone. Deleted folders' contents are NOT deleted — they move to root, unfiled.",
-            ),
+          : tr('This cannot be undone. Folders are deleted with everything in them.'),
       confirmLabel: 'Delete',
       destructive: true,
     );
     if (!confirmed) return;
-    for (final id in connIds) {
-      await app.deleteConnection(id);
-    }
-    for (final id in folderIds) {
-      await app.deleteFolder(id);
-    }
+    await app.deleteItems(folderIds: top.folders, connectionIds: top.connections, layoutIds: top.layouts);
     _clearSelection();
   }
 
+  /// Issue: sort the selected folders A-Z (Turkish alphabet), each level on
+  /// its own; nothing changes parent.
+  Future<void> _sortSelected(AppState app) async {
+    await app.sortFoldersByName(_selected.where((id) => app.folders.any((f) => f.id == id)));
+  }
+
   Future<void> _moveSelected(AppState app) async {
-    final folderIds = _selected.where((id) => app.folders.any((f) => f.id == id)).toList();
-    final connIds = _selected.where((id) => app.connections.any((c) => c.id == id)).toList();
+    final top = _topSelected(app);
+    final folderIds = top.folders;
+    final connIds = top.connections;
     final choice = await showFolderPicker(
       context,
       folders: app.folders,
@@ -543,6 +628,9 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     }
     for (final id in folderIds) {
       await app.moveFolderToFolder(id, destination);
+    }
+    for (final id in top.layouts) {
+      await app.moveLayoutToFolder(id, destination);
     }
     _clearSelection();
   }
@@ -602,9 +690,13 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
               ),
               const SizedBox(width: 6),
               ToolButton(
-                icon: Icons.library_add_check_rounded,
-                tooltip: tr('Select all'),
-                onPressed: app.connections.isEmpty ? null : () => _selectAll(app),
+                key: const ValueKey('select-mode'),
+                icon: Icons.checklist_rounded,
+                tooltip: tr('Select'),
+                active: _selectMode,
+                onPressed: app.connections.isEmpty && app.folders.isEmpty && !_selectMode
+                    ? null
+                    : _toggleSelectMode,
               ),
               const SizedBox(width: 4),
               ToolButton(
@@ -630,14 +722,16 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
                     alignment: Alignment.topCenter,
                     child: FadeTransition(opacity: anim, child: child),
                   ),
-                  child: _selected.length > 1
+                  child: _selectMode || _selected.length > 1
                       ? _SelectionBar(
                           count: _selected.length,
-                          total: app.connections.length + app.folders.length,
+                          allSelected: _selected.isNotEmpty && _selected.containsAll(_allIds(app)),
+                          canSort: _selected.where((id) => app.folders.any((f) => f.id == id)).length > 1,
                           onDelete: () => _deleteSelected(app),
                           onMove: () => _moveSelected(app),
-                          onSelectAll: () => _selectAll(app),
-                          onCancel: _clearSelection,
+                          onSort: () => _sortSelected(app),
+                          onToggleAll: () => _toggleAll(app),
+                          onCancel: () => _selectMode ? _toggleSelectMode() : _clearSelection(),
                         )
                       : const SizedBox(width: double.infinity),
                 ),
@@ -688,7 +782,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
       onPointerMove: _onDragPointerMove,
       // The empty space below the rows is "elsewhere" too.
       onPointerDown: (e) {
-        if (e.buttons == kPrimaryButton && _belowRows(e.position)) _clearSelection();
+        if (e.buttons == kPrimaryButton && _belowRows(e.position) && !_selectMode) _clearSelection();
       },
       child: DragTarget<_DragItems>(
         key: _listKey,
@@ -738,7 +832,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     if (row.folder != null) {
       final expanded = _expanded.contains(row.folder!.id);
       void toggle() => setState(() {
-        _selected.clear();
+        if (!_selectMode) _selected.clear();
         if (expanded) {
           _expanded.remove(row.folder!.id);
         } else {
@@ -751,9 +845,10 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
         openStatus: openByFolder[row.folder!.id],
         expanded: expanded,
         selected: _selected.contains(row.folder!.id),
+        ticked: _selectMode ? _selected.contains(row.folder!.id) : null,
         onSelect: () => _handleRowSelect(row, rows),
         onSecondary: () => _handleRowSecondary(row),
-        onOpen: toggle,
+        onOpen: _selectMode ? () {} : toggle,
         onToggle: toggle,
       );
     }
@@ -762,6 +857,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
         layout: row.layout!,
         depth: row.depth,
         selected: _selected.contains(row.layout!.id),
+        ticked: _selectMode ? _selected.contains(row.layout!.id) : null,
         onSelect: () => _handleRowSelect(row, rows),
         onSecondary: () => _handleRowSecondary(row),
       );
@@ -770,9 +866,10 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
       conn: row.connection!,
       depth: row.depth,
       selected: _selected.contains(row.connection!.id),
+      ticked: _selectMode ? _selected.contains(row.connection!.id) : null,
       onSelect: () => _handleRowSelect(row, rows),
       onSecondary: () => _handleRowSecondary(row),
-      onOpen: () => _connect(row.connection!),
+      onOpen: _selectMode ? () {} : () => _connect(row.connection!),
     );
   }
 
@@ -805,6 +902,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
             layout: layoutMatches[i],
             depth: 0,
             selected: _selected.contains(layoutMatches[i].id),
+            ticked: _selectMode ? _selected.contains(layoutMatches[i].id) : null,
             onSelect: () => _handleRowSelect(rows[i], rows),
             onSecondary: () => _handleRowSecondary(rows[i]),
           );
@@ -814,9 +912,10 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
           conn: matches[j],
           depth: 0,
           selected: _selected.contains(matches[j].id),
+          ticked: _selectMode ? _selected.contains(matches[j].id) : null,
           onSelect: () => _handleRowSelect(rows[i], rows),
           onSecondary: () => _handleRowSecondary(rows[i]),
-          onOpen: () => _connect(matches[j]),
+          onOpen: _selectMode ? () {} : () => _connect(matches[j]),
         );
       },
     );
@@ -1006,17 +1105,23 @@ class _DragFeedback extends StatelessWidget {
 class _SelectionBar extends StatelessWidget {
   const _SelectionBar({
     required this.count,
-    required this.total,
+    required this.allSelected,
+    required this.canSort,
     required this.onDelete,
     required this.onMove,
-    required this.onSelectAll,
+    required this.onSort,
+    required this.onToggleAll,
     required this.onCancel,
   });
   final int count;
-  final int total;
+  final bool allSelected;
+
+  /// Two or more folders ticked: they can be sorted by name.
+  final bool canSort;
   final VoidCallback onDelete;
   final VoidCallback onMove;
-  final VoidCallback onSelectAll;
+  final VoidCallback onSort;
+  final VoidCallback onToggleAll;
   final VoidCallback onCancel;
 
   @override
@@ -1053,13 +1158,39 @@ class _SelectionBar extends StatelessWidget {
               style: TextStyle(fontSize: 11.5, color: scheme.onSurface.withValues(alpha: 0.7)),
             ),
           ),
-          if (count < total) ...[
-            ToolButton(icon: Icons.library_add_check_rounded, tooltip: tr('Select all'), onPressed: onSelectAll, size: 24),
+          ToolButton(
+            key: const ValueKey('select-all'),
+            icon: allSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
+            tooltip: allSelected ? tr('Deselect all') : tr('Select all'),
+            onPressed: onToggleAll,
+            size: 24,
+          ),
+          const SizedBox(width: 2),
+          if (canSort) ...[
+            ToolButton(
+              key: const ValueKey('sort-folders'),
+              icon: Icons.sort_by_alpha_rounded,
+              tooltip: tr('Sort A–Z'),
+              onPressed: onSort,
+              size: 24,
+            ),
             const SizedBox(width: 2),
           ],
-          ToolButton(icon: Icons.drive_file_move_rounded, tooltip: tr('Move to folder'), onPressed: onMove, size: 24),
+          ToolButton(
+            icon: Icons.drive_file_move_rounded,
+            tooltip: tr('Move to folder'),
+            onPressed: count == 0 ? null : onMove,
+            size: 24,
+          ),
           const SizedBox(width: 2),
-          ToolButton(icon: Icons.delete_rounded, tooltip: tr('Delete'), onPressed: onDelete, size: 24, danger: true),
+          ToolButton(
+            key: const ValueKey('delete-selected'),
+            icon: Icons.delete_rounded,
+            tooltip: tr('Delete'),
+            onPressed: count == 0 ? null : onDelete,
+            size: 24,
+            danger: true,
+          ),
           const SizedBox(width: 2),
           ToolButton(icon: Icons.close_rounded, tooltip: tr('Clear selection'), onPressed: onCancel, size: 24),
         ],
@@ -1102,7 +1233,9 @@ class _FolderRow extends StatefulWidget {
     required this.onOpen,
     required this.onToggle,
     this.openStatus,
+    this.ticked,
   });
+  final bool? ticked;
   final ConnectionFolder folder;
   final int depth;
   final bool expanded;
@@ -1131,6 +1264,7 @@ class _FolderRowState extends State<_FolderRow> {
       rowId: widget.folder.id,
       depth: widget.depth,
       selected: widget.selected,
+      ticked: widget.ticked,
       onSelect: widget.onSelect,
       onSecondary: widget.onSecondary,
       onOpen: widget.onOpen,
@@ -1176,9 +1310,12 @@ class _FolderRowState extends State<_FolderRow> {
   }
 
   Future<void> _confirmDeleteFolder(BuildContext context, AppState app) async {
+    // Everything inside, at any depth: it goes with the folder.
+    final tree = app.folderTree(widget.folder.id);
     final childCount =
-        app.connections.where((c) => c.folderId == widget.folder.id).length +
-        app.folders.where((f) => f.parentId == widget.folder.id).length;
+        tree.length - 1 +
+        app.connections.where((c) => c.folderId != null && tree.contains(c.folderId)).length +
+        app.layouts.where((l) => l.folderId != null && tree.contains(l.folderId)).length;
     final confirmed = await showConfirmDialog(
       context,
       title: tr('Delete "{name}"?', {'name': widget.folder.name}),
@@ -1186,13 +1323,13 @@ class _FolderRowState extends State<_FolderRow> {
           ? tr('This folder is empty.')
           : trCount(
               childCount,
-              'It contains {n} item. It will NOT be deleted — it moves to the root, unfiled.',
-              'It contains {n} items. They will NOT be deleted — they move to the root, unfiled.',
+              'It contains {n} item. It will be deleted too. This cannot be undone.',
+              'It contains {n} items. They will be deleted too. This cannot be undone.',
             ),
       confirmLabel: 'Delete folder',
       destructive: true,
     );
-    if (confirmed) app.deleteFolder(widget.folder.id);
+    if (confirmed) await app.deleteItems(folderIds: [widget.folder.id]);
   }
 }
 
@@ -1224,7 +1361,9 @@ class _ConnectionRow extends StatelessWidget {
     required this.onSelect,
     required this.onSecondary,
     required this.onOpen,
+    this.ticked,
   });
+  final bool? ticked;
   final SavedConnection conn;
   final int depth;
   final bool selected;
@@ -1257,6 +1396,7 @@ class _ConnectionRow extends StatelessWidget {
       rowId: conn.id,
       depth: depth,
       selected: selected,
+      ticked: ticked,
       onSelect: onSelect,
       onSecondary: onSecondary,
       onOpen: onOpen,
@@ -1324,7 +1464,9 @@ class _LayoutRow extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     required this.onSecondary,
+    this.ticked,
   });
+  final bool? ticked;
   final SavedLayout layout;
   final int depth;
   final bool selected;
@@ -1352,6 +1494,7 @@ class _LayoutRow extends StatelessWidget {
       rowId: layout.id,
       depth: depth,
       selected: selected,
+      ticked: ticked,
       onSelect: onSelect,
       onSecondary: onSecondary,
       onOpen: () => _open(context),
@@ -1411,6 +1554,7 @@ class _TreeRow extends StatefulWidget {
     required this.onSecondary,
     required this.onOpen,
     required this.icon,
+    this.ticked,
     this.leading,
     required this.title,
     required this.menuItems,
@@ -1427,6 +1571,9 @@ class _TreeRow extends StatefulWidget {
   final String rowId;
   final int depth;
   final bool selected;
+
+  /// In select mode, the row's box: ticked or not. Null outside it.
+  final bool? ticked;
 
   /// Mouse button down anywhere on the row: select it (Ctrl/Shift extend).
   final VoidCallback onSelect;
@@ -1584,6 +1731,22 @@ class _TreeRowState extends State<_TreeRow> {
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
+                  // Select mode's box. The row takes the click, so the box
+                  // only shows it; one column for every depth, so they line up.
+                  if (widget.ticked != null)
+                    IgnorePointer(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: Checkbox(
+                          key: ValueKey('tick-${widget.rowId}'),
+                          value: widget.ticked,
+                          onChanged: (_) {},
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ),
                   // Indentation alone shows nesting, as in Explorer; guide lines
                   // made the panel busy without saying anything the indent and
                   // the chevrons do not.

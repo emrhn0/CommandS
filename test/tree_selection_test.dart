@@ -3,6 +3,7 @@ import 'package:commands/providers/app_state.dart';
 import 'package:commands/widgets/connection_tree.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -51,7 +52,9 @@ void main() {
 
   /// Selects everything from the keyboard, so nothing was clicked in the list.
   Future<void> selectAll(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.library_add_check_rounded));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
     expect(find.text('3'), findsOneWidget, reason: 'the selection bar counts 3');
   }

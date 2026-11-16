@@ -79,6 +79,14 @@ const german = <String, String>{
   'New folder': 'Neuer Ordner',
   'No matches': 'Keine Treffer',
   'Move to folder': 'In Ordner verschieben',
+  'Select': 'Auswählen',
+  'Deselect all': 'Auswahl aufheben',
+  'Sort A–Z': 'A–Z sortieren',
+  '{n} layout': '{n} Layout',
+  '{n} layouts': '{n} Layouts',
+  'This cannot be undone. Folders are deleted with everything in them.': 'Dies kann nicht rückgängig gemacht werden. Ordner werden mit ihrem gesamten Inhalt gelöscht.',
+  'It contains {n} item. It will be deleted too. This cannot be undone.': 'Er enthält {n} Element. Es wird mit gelöscht. Dies kann nicht rückgängig gemacht werden.',
+  'It contains {n} items. They will be deleted too. This cannot be undone.': 'Er enthält {n} Elemente. Sie werden mit gelöscht. Dies kann nicht rückgängig gemacht werden.',
   'Clear selection': 'Auswahl aufheben',
   'Device': 'Gerät',
   'Automatic (learnt when you connect)': 'Automatisch (beim Verbinden erkannt)',
@@ -108,13 +116,7 @@ const german = <String, String>{
   'Delete {what}?': '{what} löschen?',
   'Delete "{name}"?': '„{name}“ löschen?',
   'This cannot be undone.': 'Dies kann nicht rückgängig gemacht werden.',
-  "This cannot be undone. Deleted folders' contents are NOT deleted — they move to root, unfiled.":
-      'Dies kann nicht rückgängig gemacht werden. Der Inhalt gelöschter Ordner wird NICHT gelöscht — er wird ohne Ordner auf die oberste Ebene verschoben.',
   'This folder is empty.': 'Dieser Ordner ist leer.',
-  'It contains {n} item. It will NOT be deleted — it moves to the root, unfiled.':
-      'Er enthält {n} Element. Es wird NICHT gelöscht — es wird ohne Ordner auf die oberste Ebene verschoben.',
-  'It contains {n} items. They will NOT be deleted — they move to the root, unfiled.':
-      'Er enthält {n} Elemente. Sie werden NICHT gelöscht — sie werden ohne Ordner auf die oberste Ebene verschoben.',
   'Move {n} item to folder': '{n} Element in Ordner verschieben',
   'Move {n} items to folder': '{n} Elemente in Ordner verschieben',
   'None of the connections in "{name}" exist any more.': 'Keine der Verbindungen in „{name}“ existiert mehr.',

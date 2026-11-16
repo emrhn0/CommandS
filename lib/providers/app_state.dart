@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
+import '../l10n/collate.dart';
 import '../l10n/strings.dart';
 import '../models/models.dart';
 import '../services/pane_layout.dart';
@@ -66,7 +68,9 @@ class AppState extends ChangeNotifier {
   int activeTabIndex = -1;
 
   ThemeMode themeMode = ThemeMode.light;
-  ReleaseChannel updateChannel = buildChannel;
+  /// Betas are offered only when this is turned on in Settings, a beta
+  /// install included.
+  ReleaseChannel updateChannel = ReleaseChannel.stable;
 
   /// Saved once the user picks a theme in Settings. Until then the default
   /// above applies, so changing that default changes what a fresh install
@@ -152,6 +156,7 @@ class AppState extends ChangeNotifier {
     connectionOrder = prefs.getStringList(_kConnectionOrder) ?? [];
     sidebarWidth = (prefs.getDouble(_kSidebarWidth) ?? defaultSidebarWidth).clamp(minSidebarWidth, maxSidebarWidth);
     sidebarVisible = prefs.getBool(_kSidebarVisible) ?? true;
+    updateChannel = releaseChannelFromString(prefs.getString(_kUpdateChannel));
     final bg = prefs.getInt(_kTerminalBg);
     final fg = prefs.getInt(_kTerminalFg);
     if (bg != null) terminalBackground = Color(bg);
@@ -553,6 +558,77 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_kFolderOrder, folderOrder);
+  }
+
+  /// Sorts the folders [ids] by name, Turkish alphabet, among themselves:
+  /// each level keeps its other folders where they were, and the chosen
+  /// ones take the places they held, now in A-Z order. Parents do not change.
+  Future<void> sortFoldersByName(Iterable<String> ids) async {
+    final chosen = ids.toSet();
+    final parents = {for (final f in folders) if (chosen.contains(f.id)) f.parentId};
+    var order = [...folderOrder];
+    for (final parent in parents) {
+      final level = sortFolders(folders.where((f) => f.parentId == parent).toList());
+      final picked = level.where((f) => chosen.contains(f.id)).toList()
+        ..sort((a, b) => compareTurkish(a.name, b.name));
+      if (picked.length < 2) continue;
+      var next = 0;
+      final arranged = [for (final f in level) chosen.contains(f.id) ? picked[next++].id : f.id];
+      order = [...order.where((id) => !arranged.contains(id)), ...arranged];
+    }
+    if (listEquals(order, folderOrder)) return;
+    folderOrder = order;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kFolderOrder, folderOrder);
+  }
+
+  /// [folderId] and every folder inside it, at any depth.
+  Set<String> folderTree(String folderId) {
+    final out = {folderId};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final f in folders) {
+        if (f.parentId != null && out.contains(f.parentId) && out.add(f.id)) grew = true;
+      }
+    }
+    return out;
+  }
+
+  /// Deletes the folders [folderIds] with everything inside them -- folders
+  /// at any depth, their connections and saved layouts -- and the
+  /// connections and layouts [connectionIds] and [layoutIds]. Open tabs stay
+  /// open. One save at the end.
+  Future<void> deleteItems({
+    Iterable<String> folderIds = const [],
+    Iterable<String> connectionIds = const [],
+    Iterable<String> layoutIds = const [],
+  }) async {
+    final goneFolders = <String>{for (final id in folderIds) ...folderTree(id)};
+    final goneConnections = {
+      ...connectionIds,
+      for (final c in connections) if (c.folderId != null && goneFolders.contains(c.folderId)) c.id,
+    };
+    final goneLayouts = {
+      ...layoutIds,
+      for (final l in layouts) if (l.folderId != null && goneFolders.contains(l.folderId)) l.id,
+    };
+    for (final id in goneConnections) {
+      _hostnameWatchers.remove(id)?.dispose();
+    }
+    folders.removeWhere((f) => goneFolders.contains(f.id));
+    connections.removeWhere((c) => goneConnections.contains(c.id));
+    layouts.removeWhere((l) => goneLayouts.contains(l.id));
+    folderOrder = folderOrder.where((id) => !goneFolders.contains(id)).toList();
+    connectionOrder = connectionOrder.where((id) => !goneConnections.contains(id)).toList();
+    await _storage.saveFolders(folders);
+    await _storage.saveConnections(connections);
+    await _storage.saveLayouts(layouts);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kFolderOrder, folderOrder);
+    await prefs.setStringList(_kConnectionOrder, connectionOrder);
+    notifyListeners();
   }
 
   static const double defaultSidebarWidth = 260;
