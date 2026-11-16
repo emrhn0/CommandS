@@ -172,6 +172,7 @@ const turkish = <String, String>{
   'The remote session was closed. Reconnect to start a new one.':
       'Uzak oturum kapatıldı. Yeni bir oturum için yeniden bağlanın.',
   'Reconnect': 'Yeniden bağlan',
+  'Duplicate': 'Çoğalt',
   'Reconnect to fill the current pane size': 'Panelin boyutuna sığması için yeniden bağlan',
   'Send Ctrl+Alt+Del': 'Ctrl+Alt+Del gönder',
   'RDP session could not start': 'RDP oturumu başlatılamadı',

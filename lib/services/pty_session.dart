@@ -75,6 +75,19 @@ class PtySessionController implements TerminalSessionController {
   String _username;
   final String _password;
 
+  /// Settings for a second, independent tab. The username may have been
+  /// learned from `login as:` since this session was opened.
+  SavedConnection connectionForDuplicate({String? id}) => SavedConnection(
+    id: id,
+    name: tabTitle ?? host,
+    host: host,
+    port: port,
+    username: _username,
+    rememberPassword: _password.isNotEmpty,
+    password: _password,
+    recordSessionByDefault: recordByDefault,
+  );
+
   @override
   late final Terminal terminal;
   Pty? _pty;
