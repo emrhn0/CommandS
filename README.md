@@ -1,141 +1,126 @@
 # CommandS
 
-An original, native SSH/RDP connection manager for Windows and macOS. No
-WebView: built with Flutter, rendered natively.
+A connection manager for SSH, RDP and serial consoles, for Windows and macOS.
+Keep every device in one folder tree and open it in a tab with a double click.
 
-## Features
+It is built to be fast and to stay out of the way. It is a native app, not a
+web page in a window. Busy terminals scroll without stutter, even with
+several sessions side by side, and a tree of thousands of connections stays
+quick. Underneath it uses the clients that have proven themselves for
+years: OpenSSH for SSH, and Microsoft's own Remote Desktop engine for RDP.
+Connections behave the way you already know from those clients, without
+their quirks.
 
-- Full folder tree always visible on the left, collapsed by default,
-  virtualized for large lists. Add connections through a popup dialog, not
-  an always-open form.
-- SSH sessions run through **OpenSSH** (the client Windows ships, or the
-  system `ssh` on macOS), inside a real pseudo-terminal (ConPTY on
-  Windows) rendered by our own [xterm.dart](https://pub.dev/packages/xterm)
-  view — not a hand-rolled SSH client. Network gear (Cisco, Aruba, older
-  firmware) negotiates auth methods and algorithms a young pure-Dart client
-  trips over; OpenSSH handles them, with legacy algorithms enabled only as
-  a fallback. The terminal size follows the pane (split view included), and
-  the keyboard behaves as in PuTTY: arrow-key history, Ctrl+A/Ctrl+V sent to
-  the session, Shift+Insert paste, select-to-copy, right-click paste.
-- Serial consoles (a network device's console cable): the quick connect box defaults
-  to **Serial** — type the COM port number (`3` for COM3, `3:115200` for
-  another speed; 9600 8N1 otherwise). The port is opened by the app itself,
-  so keys reach the device as typed. macOS uses the system `screen` on the
-  `/dev` device.
-- The connection tree works like Windows Explorer: a click selects, a double
-  click connects (or opens a folder); Ctrl/Shift select several. Drag
-  connections and folders into any folder, or onto a folder's top or bottom
-  edge to put folders in your own order. Drag the panel's right edge to
-  widen it.
-- Terminal colours from swatches, a colour code, or a palette (saturation
-  square and hue bar) that fills in the code.
-- Settings > Support & feedback: send a suggestion or a problem report
-  anonymously (only the message, the app version and the OS are sent).
-- Tabbed sessions — each tab is independent and live; switching tabs never
-  drops the connection. Right-click a tab to reconnect it, or to save a
-  quick connection. Split view shows several sessions side by side as one
-  tab.
-- RDP sessions on Windows are drawn **inside a tab**, through Microsoft's own
-  Remote Desktop ActiveX control (`mstscax.dll`) hosted in-process — the same
-  engine `mstsc.exe` is a shell over, so fidelity, input and performance are
-  the real client's. Credentials go straight to the control (nothing is
-  written to Windows Credential Manager), there is no `.rdp` file and so no
-  "unknown publisher" warning, and resizing a pane renegotiates the remote
-  desktop at its exact pixel size instead of stretching the old one.
-  Ctrl+Alt+Del can be sent from the session bar.
-- RDP on macOS opens in the best client installed. FreeRDP
-  (`brew install freerdp`) is preferred and is handed the whole connection
-  including the saved password, so nothing is typed; otherwise the Microsoft
-  client ("Windows App", or the older "Microsoft Remote Desktop") is launched
-  with the host and username filled in, and the tab offers the password for
-  pasting. Either way the session is its own window: macOS has no embeddable
-  RDP component, and AppKit does not let one app place another app's window
-  inside its own, so drawing the session in the tab means speaking RDP
-  in-process — planned, not here yet.
-- PuTTY-style in-terminal `login as:` / `password:` prompts when a
-  connection is opened with host only.
-- Folder-organized saved connections (create/rename/delete folders;
-  deleting a folder keeps its connections, just unfiled). Multi-select
-  with Ctrl/Shift-click for bulk move/delete, and cloning a connection.
-- Import your own JSON/XML/CSV export, or an export from other popular
-  connection managers (nested groups become folders; some of those tools
-  encrypt saved passwords with their own vault key that can't be
-  decrypted from the exported file alone and must be re-entered — a CSV
-  export with credentials visible, where the source tool offers one,
-  carries them across intact).
-- Customizable terminal colors, saved per install.
-- Monochrome, sharp-edged theme — black on white in light mode, white on black in dark mode.
+**[Download the latest release](https://github.com/emrhn0/CommandS/releases/latest)**
 
-## ChatGPT Work (MCP)
+| | |
+|---|---|
+| Windows 10 / 11 | `CommandS_x.y.z_windows_Setup.exe`, or the portable zip |
+| macOS | `CommandS_x.y.z_macOS.zip`: unzip and drag to Applications |
 
-In **Settings > MCP integration**, turn on MCP access and copy the displayed
-URL. CommandS listens only on `127.0.0.1:8765`; the random path in the URL is
-a secret, so keep the full URL private. The server is off by default and
-remembers the setting across launches.
+The app checks for updates itself. On Windows it installs them with one
+click; on macOS it opens the download page.
 
-- **ChatGPT Work desktop:** add a local Streamable HTTP MCP server using the
-  displayed URL.
-- **Hosted ChatGPT Work:** run an [OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
-  on the same computer, targeting the displayed URL, then connect its tunnel
-  ID to a private ChatGPT Work plugin. The desktop app and tunnel must be
-  running for commands to reach CommandS.
+## What it does
 
-Only SSH connections you allow one by one (right-click a connection) are
-offered, under anonymous names such as `DEVICE-01`. Every command asks you in
-CommandS before it runs; no answer within two minutes is a no. Terminal output
-is sent as it is, so it can still show device names and addresses.
+- **SSH** in tabs, through the OpenSSH client your system already has.
+  Works with old network gear too. The keyboard, copy and paste behave as in
+  PuTTY.
+- **RDP** on Windows runs inside a tab. On macOS it opens in FreeRDP or
+  Microsoft's Windows App.
+- **Serial consoles**: type the COM port number in quick connect (`3` for
+  COM3, `3:115200` for another speed).
+- **Split view**: several sessions side by side, each with its own small tab
+  bar. Save an arrangement as a layout and open it again later.
+- **Folder tree** that works like Explorer: click to select, double click to
+  connect, drag to reorganise.
+- **SFTP file manager** next to any SSH session.
+- **Session logs**: record a session to a plain text file, and open it from
+  the message shown when recording stops.
+- **Import** from JSON, XML or CSV, including exports from Remote Desktop
+  Manager. **Export** whenever you like.
+- **Themes**, terminal fonts and colours. English, Turkish and German.
 
-The tools list the allowed connections, open one in a CommandS tab, send one
-command line followed by Enter, and read terminal output. `send_command`
-returns a cursor; pass it to `read_output`, then keep using each returned
-cursor. Terminal output arrives asynchronously, so an empty read does not
-mean the remote command has finished. The tools do not expose stored hosts or
-credentials, and they do not support RDP or serial sessions. The connected
-agent can execute commands with the selected SSH connection's privileges.
+## What's different
 
-When configuring the tunnel client, set `MCP_SERVER_URL` to the displayed URL
-from a local secret store. Configure the tunnel ID and runtime key as described
-in the [tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
+Things you will not find in most SSH and RDP managers:
 
-## Development
+- **AI agents in your sessions (MCP).** Let Claude, ChatGPT, Cursor or
+  another AI assistant read output and run commands on the connections you
+  pick, and nothing else. Commands that change something wait for your
+  approval in CommandS. See [AI agents](#ai-agents-mcp).
+- **Clean session logs.** A recording keeps what the session showed, as
+  plain text: no colour codes, and no letters you typed and then erased.
+  Each command is logged as it stood when you pressed Enter.
+- **The device recognises itself.** CommandS reads what a device prints when
+  you connect and shows its logo in the tree (Cisco, Fortinet, Palo Alto,
+  Aruba, Huawei, VMware, Linux, Windows). A connection saved without a name
+  takes the device's hostname. Nothing is ever sent to the device for this.
+- **RDP in a tab, with nothing left behind.** No `.rdp` files, no
+  "unknown publisher" warning, nothing stored in Windows Credential Manager.
+  Resizing the pane resizes the remote desktop to fit exactly, instead of
+  stretching it.
+- **Verified file transfers.** The SFTP file manager checks every transfer
+  with SHA-256, so a copied backup or image is known to be intact.
+- **sudo without typing the password.** When a server asks for the sudo
+  password, CommandS offers to fill in the saved one.
+- **Split view that remembers.** Arrange several sessions on one screen and
+  save the arrangement as a layout, to bring the same sessions back in the
+  same places later.
+- **Free**, with no account, no sign-in and no subscription.
+
+## Passwords and privacy
+
+- Saved passwords are encrypted on your computer (Windows DPAPI, macOS
+  Keychain). They are never written to a command line or a temporary file.
+- Your connections are kept only on your computer. The app goes online
+  only to check GitHub for updates, and when you send feedback, which is
+  anonymous: only your message, the app version and the operating system.
+
+## AI agents (MCP)
+
+CommandS can let an AI assistant work in your SSH sessions: Claude, ChatGPT,
+Cursor, or any app that supports MCP servers over HTTP.
+
+1. Open **Settings > MCP integration** and turn it on.
+2. Tick the connections the agent may use. Nothing else is shown to it.
+3. Add the URL shown there to your AI app as an MCP server. For example, in
+   Claude Code:
+
+   ```
+   claude mcp add --transport http commands <URL from Settings>
+   ```
+
+- Off by default, and reachable only from your own computer.
+- The agent sees each allowed connection's name, address, port and
+  username, never its password.
+- On network devices, `show` and `display` commands run at once. Every
+  other command asks you first.
+- Terminal output is sent to the agent as it is.
+- Keep the URL private: any program on your computer that has it can use
+  the allowed connections. **New address** in Settings replaces it.
+
+## Beta versions
+
+Pick **Beta** in **Settings > Updates** to try new features early. A beta
+installs over the normal version and keeps your connections and settings.
+
+## Feedback
+
+Use **Settings > Support & feedback**, or
+[open an issue](https://github.com/emrhn0/CommandS/issues).
+
+## Building from source
 
 ```
 flutter pub get
 flutter run -d windows   # or -d macos
 ```
 
-Windows builds use the OpenSSH client that ships with Windows 10/11
-(Settings > Apps > Optional features > OpenSSH Client, on by default).
-Where it is missing they fall back to PuTTY's `plink.exe`, which the
-release installer bundles. macOS/Linux use the system `ssh`.
-
-The macOS build ships **without App Sandbox**. An SSH client has to open
-outbound connections and read the user's own `~/.ssh` (keys, `known_hosts`,
-`config`, the agent socket); a sandboxed build gets a private container
-instead and connects to nothing. Releases go out through GitHub, not the Mac
-App Store, so the sandbox costs everything and buys nothing here. Upgrading
-from 1.0.23 or earlier moves saved connections out of the old container
-automatically, once, on first launch.
-
-## Releases
-
-Push a `vX.Y.Z` tag to trigger `.github/workflows/release.yml`, which builds
-Windows (installer + portable zip, `plink.exe` bundled) and macOS (zipped
-.app) and publishes a GitHub Release.
-
-A `vX.Y.Z-beta.N` tag publishes a GitHub prerelease, without changing the
-latest release. A beta is the same app at a newer version: it installs over
-the normal one and keeps its connections, settings and password key. It is
-taken by hand (its download, or Settings > Updates with Beta picked). The
-automatic check offers normal releases only, so a beta install moves on to
-the next normal release.
-
-```
-git tag v0.1.0
-git push origin v0.1.0
-```
+See [AGENTS.md](AGENTS.md) for how the code is organised and how releases
+are made.
 
 ## Third-party
 
-PuTTY's `plink.exe` is bundled with the Windows installer/portable build,
-under the MIT licence — see `third_party/PUTTY-LICENCE.txt`.
+The Windows build bundles PuTTY's `plink.exe` as a fallback SSH client,
+under the MIT licence: see [third_party/PUTTY-LICENCE.txt](third_party/PUTTY-LICENCE.txt).
