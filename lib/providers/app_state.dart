@@ -519,6 +519,28 @@ class AppState extends ChangeNotifier {
     if (changedFolder) await _storage.saveConnections(connections);
   }
 
+  /// Sorts selected connections by name within each folder, keeping the
+  /// other connections in their places and preserving each folder assignment.
+  Future<void> sortConnectionsByName(Iterable<String> ids) async {
+    final chosen = ids.toSet();
+    final folderIds = {for (final c in connections) if (chosen.contains(c.id)) c.folderId};
+    var order = [...connectionOrder];
+    for (final folderId in folderIds) {
+      final level = sortConnections(connections.where((c) => c.folderId == folderId).toList());
+      final picked = level.where((c) => chosen.contains(c.id)).toList()
+        ..sort((a, b) => compareTurkish(a.name, b.name));
+      if (picked.length < 2) continue;
+      var next = 0;
+      final arranged = [for (final c in level) chosen.contains(c.id) ? picked[next++].id : c.id];
+      order = [...order.where((id) => !arranged.contains(id)), ...arranged];
+    }
+    if (listEquals(order, connectionOrder)) return;
+    connectionOrder = order;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kConnectionOrder, connectionOrder);
+  }
+
   // ---- Folder order and sidebar width ----
 
   /// Folder ids in the order the user arranged them by dragging. Folders not

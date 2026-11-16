@@ -604,10 +604,22 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     _clearSelection();
   }
 
-  /// Issue: sort the selected folders A-Z (Turkish alphabet), each level on
-  /// its own; nothing changes parent.
+  /// Sort selected folders and hosts A-Z within their respective levels.
   Future<void> _sortSelected(AppState app) async {
     await app.sortFoldersByName(_selected.where((id) => app.folders.any((f) => f.id == id)));
+    await app.sortConnectionsByName(_selected.where((id) => app.connections.any((c) => c.id == id)));
+  }
+
+  bool _canSortSelected(AppState app) {
+    final parents = <String?>{};
+    for (final folder in app.folders) {
+      if (_selected.contains(folder.id) && !parents.add(folder.parentId)) return true;
+    }
+    final folderIds = <String?>{};
+    for (final connection in app.connections) {
+      if (_selected.contains(connection.id) && !folderIds.add(connection.folderId)) return true;
+    }
+    return false;
   }
 
   Future<void> _moveSelected(AppState app) async {
@@ -726,7 +738,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
                       ? _SelectionBar(
                           count: _selected.length,
                           allSelected: _selected.isNotEmpty && _selected.containsAll(_allIds(app)),
-                          canSort: _selected.where((id) => app.folders.any((f) => f.id == id)).length > 1,
+                          canSort: _canSortSelected(app),
                           onDelete: () => _deleteSelected(app),
                           onMove: () => _moveSelected(app),
                           onSort: () => _sortSelected(app),
@@ -1116,7 +1128,7 @@ class _SelectionBar extends StatelessWidget {
   final int count;
   final bool allSelected;
 
-  /// Two or more folders ticked: they can be sorted by name.
+  /// At least two selected folders share a parent or two hosts share a folder.
   final bool canSort;
   final VoidCallback onDelete;
   final VoidCallback onMove;
@@ -1168,7 +1180,7 @@ class _SelectionBar extends StatelessWidget {
           const SizedBox(width: 2),
           if (canSort) ...[
             ToolButton(
-              key: const ValueKey('sort-folders'),
+              key: const ValueKey('sort-selected'),
               icon: Icons.sort_by_alpha_rounded,
               tooltip: tr('Sort A–Z'),
               onPressed: onSort,
