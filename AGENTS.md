@@ -165,15 +165,22 @@ Do not "simplify" these without reading why.
 
 ## Releasing
 
-1. Bump `appVersion` in `lib/app_version.dart`. Pick the number by what the
-   release brings, not by habit:
-   - **Patch** (`1.2.0` to `1.2.1`): fixes only, nothing new to learn.
-   - **Minor** (`1.2.x` to `1.3.0`): anything new a user can see or use, a
-     new feature, setting, language or a changed way of working. Several
-     such releases in a row each get their own minor number.
-   - **Major** (`1.x` to `2.0.0`): a rework that changes how the app is
-     used, or saved data that an older version can no longer read.
-   Betas take the number of the release they lead to (`v1.3.0-beta.1`).
+1. Bump `appVersion` in `lib/app_version.dart`, following
+   [Semantic Versioning 2.0.0](https://semver.org/) (`MAJOR.MINOR.PATCH`).
+   For an app, the "public API" is what other versions and tools rely on:
+   saved connections and settings, the export/import formats, the MCP tools
+   an agent calls, and the systems it runs on.
+   - **PATCH** (`1.2.0` to `1.2.1`): backward-compatible bug fixes only.
+   - **MINOR** (`1.2.1` to `1.3.0`, PATCH back to 0): new backward-compatible
+     functionality, such as a feature, setting or language, or marking
+     something as deprecated. Fixes released alongside go in the same bump.
+   - **MAJOR** (`1.3.0` to `2.0.0`, MINOR and PATCH back to 0): an
+     incompatible change, such as saved data or an export an older version
+     cannot read, an MCP tool removed or changed in a breaking way, or a
+     supported OS dropped.
+   - A released version is never changed; any change ships as a new one.
+   - A beta is a SemVer pre-release of the version it leads to:
+     `v1.3.0-beta.1`, `-beta.2`... It ranks below `v1.3.0`.
 2. Write `release-notes/vX.Y.Z.md`: a short list of user-facing changes and
    fixes in plain English. It is shown in the app's update dialog, so it
    matters.
