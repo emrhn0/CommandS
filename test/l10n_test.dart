@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:commands/l10n/de.dart';
 import 'package:commands/l10n/strings.dart';
 import 'package:commands/l10n/tr.dart';
 import 'package:commands/providers/app_state.dart';
@@ -61,12 +62,34 @@ void main() {
     expect(missing, isEmpty, reason: 'add these to lib/l10n/tr.dart');
   });
 
+  test('every string sent to tr() has a German translation', () {
+    final used = _translatedLiterals();
+    const same = {'SSH', 'RDP', 'JSON', 'XML', 'Port', 'CommandS', 'CSV (Excel/Sheets)'};
+    final missing =
+        used.where((s) => !german.containsKey(s) && !same.contains(s) && !s.startsWith(r'${')).toList()..sort();
+    expect(missing, isEmpty, reason: 'add these to lib/l10n/de.dart');
+    // Same keys as Turkish, so neither falls behind the other.
+    expect(german.keys.toSet().difference(turkish.keys.toSet()), isEmpty);
+    expect(turkish.keys.toSet().difference(german.keys.toSet()), isEmpty);
+  });
+
   test('placeholders survive translation', () {
-    for (final e in turkish.entries) {
-      final want = RegExp(r'\{\w+\}').allMatches(e.key).map((m) => m.group(0)).toSet();
-      final have = RegExp(r'\{\w+\}').allMatches(e.value).map((m) => m.group(0)).toSet();
-      expect(have, want, reason: e.key);
+    for (final table in [turkish, german]) {
+      for (final e in table.entries) {
+        final want = RegExp(r'\{\w+\}').allMatches(e.key).map((m) => m.group(0)).toSet();
+        final have = RegExp(r'\{\w+\}').allMatches(e.value).map((m) => m.group(0)).toSet();
+        expect(have, want, reason: e.key);
+      }
     }
+  });
+
+  test('German is offered and used by tr()', () {
+    expect(AppLanguage.values.map((l) => l.label), contains('Deutsch'));
+    expect(AppLanguage.fromCode('de'), AppLanguage.de);
+    currentLanguage = AppLanguage.de;
+    addTearDown(() => currentLanguage = AppLanguage.en);
+    expect(tr('Open file'), 'Datei öffnen');
+    expect(trCount(3, '{n} connection', '{n} connections'), '3 Verbindungen');
   });
 
   testWidgets('choosing Türkçe in Settings redraws the app in Turkish, and is remembered', (tester) async {

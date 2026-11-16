@@ -1,12 +1,14 @@
 import 'package:flutter/widgets.dart';
 
+import 'de.dart';
 import 'tr.dart';
 
 /// The languages the app's own text comes in. English is the default; the
 /// rest of the UI's wording is looked up from English.
 enum AppLanguage {
   en('English'),
-  tr('Türkçe');
+  tr('Türkçe'),
+  de('Deutsch');
 
   const AppLanguage(this.label);
 
@@ -26,7 +28,12 @@ AppLanguage currentLanguage = AppLanguage.en;
 /// `{name}` placeholders are filled from [args] after translating, so the
 /// translation can put them where its grammar needs them.
 String tr(String english, [Map<String, Object?> args = const {}]) {
-  var s = currentLanguage == AppLanguage.tr ? (turkish[english] ?? english) : english;
+  final table = switch (currentLanguage) {
+    AppLanguage.en => null,
+    AppLanguage.tr => turkish,
+    AppLanguage.de => german,
+  };
+  var s = table?[english] ?? english;
   args.forEach((k, v) => s = s.replaceAll('{$k}', '$v'));
   return s;
 }
