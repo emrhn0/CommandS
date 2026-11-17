@@ -19,6 +19,8 @@ class _FakeSftp implements SftpClient {
   };
   final uploads = <String>[];
   final downloads = <String>[];
+  final verifications = <String>[];
+  bool failVerify = false;
   bool failList = false;
   bool disposed = false;
 
@@ -36,9 +38,9 @@ class _FakeSftp implements SftpClient {
     String remotePath, {
     SftpProgressCallback? onProgress,
   }) async {
-    onProgress?.call(const SftpProgress(4, 8, 2048));
+    onProgress?.call(const SftpProgress(4, 8, 250000));
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    onProgress?.call(const SftpProgress(8, 8, 2048, verifying: true));
+    onProgress?.call(const SftpProgress(8, 8, 250000));
     uploads.add('$localPath -> $remotePath');
     folders['/home/user']!.add(
       SftpEntry(remotePath.split('/').last, isDirectory: false, size: 8),
@@ -53,12 +55,18 @@ class _FakeSftp implements SftpClient {
   }) async {
     onProgress?.call(const SftpProgress(6, 12, 1024));
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    onProgress?.call(const SftpProgress(12, 12, 1024, verifying: true));
+    onProgress?.call(const SftpProgress(12, 12, 125000));
     downloads.add('$remotePath -> $localPath');
   }
 
   @override
   Future<void> mkdir(String path) async {}
+  @override
+  Future<void> verify(String localPath, String remotePath) async {
+    verifications.add('$localPath -> $remotePath');
+    if (failVerify) throw const SftpException('SHA-256 verification failed');
+  }
+
   @override
   void dispose() => disposed = true;
 }
@@ -84,7 +92,12 @@ class _FakeLocal implements LocalFileBrowser {
   }
 }
 
-Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp, {List<SftpTransfer>? transfers, _FakeLocal? local}) async {
+Future<void> _pumpBrowser(
+  WidgetTester tester,
+  _FakeSftp sftp, {
+  List<SftpTransfer>? transfers,
+  _FakeLocal? local,
+}) async {
   await tester.binding.setSurfaceSize(const Size(900, 700));
   await tester.pumpWidget(
     MaterialApp(
@@ -104,6 +117,20 @@ Future<void> _pumpBrowser(WidgetTester tester, _FakeSftp sftp, {List<SftpTransfe
 }
 
 void main() {
+  test('completed transfer keeps verify paths across window serialization', () {
+    final transfer = SftpTransfer(
+      'sample.bin',
+      'upload',
+      status: 'Completed',
+      localPath: 'C:/Files/sample.bin',
+      remotePath: '/home/user/sample.bin',
+    );
+    final restored = SftpTransfer.fromJson(transfer.toJson());
+    expect(restored.localPath, transfer.localPath);
+    expect(restored.remotePath, transfer.remotePath);
+    expect(restored.status, 'Completed');
+  });
+
   testWidgets('transfer history survives rebuilding the panel', (tester) async {
     final sftp = _FakeSftp();
     final history = <SftpTransfer>[];
@@ -112,14 +139,16 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('sftp-upload')));
     await tester.pumpAndSettle();
-    expect(find.text('Verified'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await _pumpBrowser(tester, sftp, transfers: history);
-    expect(find.text('Verified'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
     expect(find.text('No transfers yet'), findsNothing);
   });
 
-  testWidgets('creates a local folder and refresh shows filesystem changes', (tester) async {
+  testWidgets('creates a local folder and refresh shows filesystem changes', (
+    tester,
+  ) async {
     final local = _FakeLocal();
     await _pumpBrowser(tester, _FakeSftp(), local: local);
     await tester.tap(find.byTooltip('New local folder'));
@@ -130,13 +159,17 @@ void main() {
     expect(local.created, ['C:/Files/new folder']);
     expect(find.text('new folder'), findsOneWidget);
 
-    local.entries.add(const LocalFileEntry('external.txt', isDirectory: false, size: 4));
+    local.entries.add(
+      const LocalFileEntry('external.txt', isDirectory: false, size: 4),
+    );
     await tester.tap(find.byTooltip('Refresh').last);
     await tester.pumpAndSettle();
     expect(find.text('external.txt'), findsOneWidget);
   });
 
-  testWidgets('rejects a local folder name with a path separator', (tester) async {
+  testWidgets('rejects a local folder name with a path separator', (
+    tester,
+  ) async {
     final local = _FakeLocal();
     await _pumpBrowser(tester, _FakeSftp(), local: local);
     await tester.tap(find.byTooltip('New local folder'));
@@ -149,13 +182,21 @@ void main() {
   });
 
   test('disk browser creates a folder and rejects an existing name', () async {
-    final root = await Directory.systemTemp.createTemp('commands_local_folder_test_');
+    final root = await Directory.systemTemp.createTemp(
+      'commands_local_folder_test_',
+    );
     final browser = DiskFileBrowser();
     try {
       final path = browser.join(root.path, 'new folder');
       await browser.mkdir(path);
-      expect((await browser.list(root.path)).map((e) => e.name), contains('new folder'));
-      await expectLater(browser.mkdir(path), throwsA(isA<FileSystemException>()));
+      expect(
+        (await browser.list(root.path)).map((e) => e.name),
+        contains('new folder'),
+      );
+      await expectLater(
+        browser.mkdir(path),
+        throwsA(isA<FileSystemException>()),
+      );
     } finally {
       await root.delete(recursive: true);
     }
@@ -181,10 +222,16 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('sftp-upload')));
     await tester.pump(const Duration(milliseconds: 1));
-    expect(find.text('50% · 2.0 KB/s'), findsOneWidget);
+    expect(find.text('50% · 2.0 Mbps'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(sftp.uploads, ['C:/Files/local.txt -> /home/user/local.txt']);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(sftp.verifications, isEmpty);
+    expect(find.byTooltip('Completed'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('sftp-verify-local.txt')));
+    await tester.pumpAndSettle();
     expect(find.text('Verified'), findsOneWidget);
+    expect(sftp.verifications, ['C:/Files/local.txt -> /home/user/local.txt']);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     expect(sftp.disposed, isTrue);
@@ -209,6 +256,27 @@ void main() {
     await tester.tap(find.text('Replace'));
     await tester.pumpAndSettle();
     expect(sftp.downloads, ['/home/user/report.txt -> C:/Files/report.txt']);
+  });
+
+  testWidgets('verification failure shows error without retrying transfer', (
+    tester,
+  ) async {
+    final sftp = _FakeSftp()..failVerify = true;
+    await _pumpBrowser(tester, sftp);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-local.txt')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('sftp-upload')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sftp-verify-local.txt')));
+    await tester.pumpAndSettle();
+    expect(find.text('Verification failed'), findsOneWidget);
+    expect(find.byTooltip('SHA-256 verification failed'), findsOneWidget);
+    expect(sftp.uploads, hasLength(1));
+    sftp.failVerify = false;
+    await tester.tap(find.byKey(const ValueKey('sftp-verify-local.txt')));
+    await tester.pumpAndSettle();
+    expect(find.text('Verified'), findsOneWidget);
+    expect(sftp.uploads, hasLength(1));
   });
 
   testWidgets('shows SFTP errors and offers password retry', (tester) async {

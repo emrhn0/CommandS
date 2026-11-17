@@ -34,6 +34,8 @@ class _FakeSftp implements SftpClient {
   @override
   Future<void> mkdir(String path) async {}
   @override
+  Future<void> verify(String localPath, String remotePath) async {}
+  @override
   void dispose() {}
 }
 
@@ -85,8 +87,13 @@ void main() {
 
   test('transfer history crosses the window argument boundary', () {
     final withHistory = SftpWindowArguments(
-      title: 'DEVICE-01', host: '192.0.2.10', port: 22,
-      username: 'user1', password: '', sshOptions: const [], dark: false,
+      title: 'DEVICE-01',
+      host: '192.0.2.10',
+      port: 22,
+      username: 'user1',
+      password: '',
+      sshOptions: const [],
+      dark: false,
       transfers: [SftpTransfer('report.txt', 'upload', status: 'Completed')],
     );
     final decoded = SftpWindowArguments.decode(withHistory.encode())!;
@@ -96,41 +103,58 @@ void main() {
     final panelHistory = <SftpTransfer>[];
     SftpTransfer.restore(panelHistory, [
       <Object?, Object?>{
-        'name': 'report.txt', 'direction': 'upload',
+        'name': 'report.txt',
+        'direction': 'upload',
         'status': 'Completed',
       },
     ]);
     expect(panelHistory.single.name, 'report.txt');
     // A verified transfer stays verified across windows.
     SftpTransfer.restore(panelHistory, [
-      <Object?, Object?>{'name': 'report.txt', 'direction': 'upload', 'status': 'Verified'},
+      <Object?, Object?>{
+        'name': 'report.txt',
+        'direction': 'upload',
+        'status': 'Verified',
+      },
     ]);
     expect(panelHistory.single.status, 'Verified');
   });
 
   testWidgets('a window shows the existing session history', (tester) async {
     final withHistory = SftpWindowArguments(
-      title: 'DEVICE-01', host: '192.0.2.10', port: 22,
-      username: 'user1', password: '', sshOptions: const [], dark: false,
+      title: 'DEVICE-01',
+      host: '192.0.2.10',
+      port: 22,
+      username: 'user1',
+      password: '',
+      sshOptions: const [],
+      dark: false,
       transfers: [SftpTransfer('report.txt', 'download', status: 'Completed')],
     );
     await tester.binding.setSurfaceSize(const Size(1200, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(SftpWindowApp(
-      args: withHistory, createClient: (_) async => _FakeSftp(),
-      localBrowser: _FakeLocal(), onShrink: () {},
-    ));
+    await tester.pumpWidget(
+      SftpWindowApp(
+        args: withHistory,
+        createClient: (_) async => _FakeSftp(),
+        localBrowser: _FakeLocal(),
+        onShrink: () {},
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('report.txt'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('No transfers yet'), findsNothing);
   });
 
-  testWidgets('the window shows both sides, and the shrink button closes it', (tester) async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('window_manager'),
-      (call) async => call.method.startsWith('is') ? false : null,
-    );
+  testWidgets('the window shows both sides, and the shrink button closes it', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('window_manager'),
+          (call) async => call.method.startsWith('is') ? false : null,
+        );
     var closed = false;
     await tester.binding.setSurfaceSize(const Size(1200, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
