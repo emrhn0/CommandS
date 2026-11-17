@@ -246,6 +246,10 @@ void main() {
     await tester.tap(find.text('Open all connections'));
     await tester.pumpAndSettle();
     expect(app.tabs.map((t) => t.controller.tabTitle), ['DEVICE-01', 'DEVICE-02']);
+    // All made at once, the first one on screen.
+    expect(app.activeTabIndex, 0);
+    expect(app.paneLayout, isA<PaneLeaf>());
+    expect((app.paneLayout! as PaneLeaf).tabId, app.tabs.first.id);
     await tester.pumpWidget(const SizedBox());
     for (final t in app.tabs) {
       t.controller.dispose();

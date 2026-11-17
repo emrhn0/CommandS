@@ -50,6 +50,9 @@ class RdpPlugin {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
   std::map<int, RdpAxHost*> hosts_;
   int next_id_ = 1;
+  // Whether sessions are stepped aside for a menu or dialog right now; new
+  // sessions start that way too.
+  bool suspended_ = false;
 };
 
 }  // namespace commands

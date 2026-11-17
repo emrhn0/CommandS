@@ -113,7 +113,8 @@ class RdpSessionController implements SessionController {
       }
       _hostId = id;
       RdpChannel.instance.register(id, _onNativeEvent, frame: frozenFrame);
-      if (!_active) await RdpChannel.instance.setVisible(id, false);
+      // The window starts hidden: shown only if its pane is on screen now.
+      await RdpChannel.instance.setVisible(id, _active);
       _dynamicResolution = await RdpChannel.instance.connect(
         id: id,
         host: conn.host,

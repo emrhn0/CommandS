@@ -665,11 +665,18 @@ class AppState extends ChangeNotifier {
 
   /// Opens every connection in [folderId] and its subfolders, each in a tab
   /// of its own. Returns how many were opened.
+  ///
+  /// The tabs are made in one go and only the first is shown: switching the
+  /// screen to each in turn mounted and dropped one Remote Desktop pane after
+  /// another while their sessions were still being created.
   Future<int> openFolder(String folderId) async {
     final all = connectionsUnder(folderId);
-    for (final conn in all) {
-      await openConnection(conn);
-    }
+    if (all.isEmpty) return 0;
+    final opened = [for (final conn in all) _openTab(conn)];
+    activeTabIndex = tabs.indexOf(opened.first);
+    paneLayout = PaneLeaf(opened.first.id);
+    activeGroupId = null;
+    notifyListeners();
     return all.length;
   }
 

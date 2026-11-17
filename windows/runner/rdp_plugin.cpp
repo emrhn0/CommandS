@@ -128,6 +128,7 @@ void RdpPlugin::HandleMethodCall(
   // is in scope, so it is handled before the per-session id lookup below.
   if (method == "setSuspended") {
     const bool suspended = GetBool(map, "suspended", false);
+    suspended_ = suspended;
     for (auto& entry : hosts_) entry.second->SetSuspended(suspended);
     result->Success();
     return;
@@ -163,6 +164,9 @@ void RdpPlugin::HandleMethodCall(
       result->Error("rdp_create_failed", Utf8(error));
       return;
     }
+    // A session created while a menu or dialog has the others stepped aside
+    // (Open all connections is chosen from a menu) steps aside with them.
+    host->SetSuspended(suspended_);
     hosts_[id] = host;
     result->Success(EncodableValue(id));
     return;

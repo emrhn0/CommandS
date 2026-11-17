@@ -288,11 +288,13 @@ bool RdpAxHost::Create(HWND owner, const RECT& bounds, std::wstring* error) {
     return false;
   }
 
-  // Not just ShowWindow: a freshly created child window's z-order relative to
-  // its siblings is whatever Windows felt like, and Flutter's view is a
-  // sibling covering the same area. Showing without raising leaves the session
-  // behind it -- visible as a connected session that draws nothing but black.
-  SetVisible(true);
+  // Hidden until Dart says the pane is on screen (setVisible). Shown here, a
+  // session opened behind another tab -- several at once, from Open all
+  // connections -- stood over the app until Dart caught up and hid it.
+  // SetVisible(true) later raises it above Flutter's view, which a plain
+  // ShowWindow would leave it behind.
+  visible_ = false;
+  UpdateVisibility();
   return true;
 }
 
