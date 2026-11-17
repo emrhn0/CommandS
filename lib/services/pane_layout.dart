@@ -14,6 +14,15 @@ class PaneLeaf extends PaneNode {
   final String tabId;
 }
 
+/// A pane with no session in it, kept as a place to drop a tab: a layout
+/// applied with an empty zone keeps that zone empty rather than letting the
+/// pane next to it grow over it.
+class PaneEmpty extends PaneNode {
+  PaneEmpty([String? id]) : id = id ?? 'empty-${_serial++}';
+  final String id;
+  static int _serial = 0;
+}
+
 class PaneSplit extends PaneNode {
   PaneSplit({required this.axis, required this.first, required this.second, this.ratio = 0.5});
   final Axis axis; // horizontal = side by side; vertical = stacked
@@ -79,6 +88,7 @@ PaneNode? buildLayout(SplitPreset preset, List<String?> slots) {
 /// only one side remaining. Returns null if the whole tree emptied out.
 PaneNode? removeFromLayout(PaneNode? node, String tabId) {
   if (node == null) return null;
+  if (node is PaneEmpty) return node;
   if (node is PaneLeaf) return node.tabId == tabId ? null : node;
   final split = node as PaneSplit;
   final first = removeFromLayout(split.first, tabId);
@@ -92,7 +102,7 @@ PaneNode? removeFromLayout(PaneNode? node, String tabId) {
 
 /// All tab ids currently occupying a pane in this layout, in reading order.
 List<String> tabIdsInLayoutOrdered(PaneNode? node) {
-  if (node == null) return const [];
+  if (node == null || node is PaneEmpty) return const [];
   if (node is PaneLeaf) return [node.tabId];
   final split = node as PaneSplit;
   return [...tabIdsInLayoutOrdered(split.first), ...tabIdsInLayoutOrdered(split.second)];
@@ -101,9 +111,37 @@ List<String> tabIdsInLayoutOrdered(PaneNode? node) {
 /// All tab ids currently occupying a pane in this layout.
 Set<String> tabIdsInLayout(PaneNode? node) => tabIdsInLayoutOrdered(node).toSet();
 
-/// The most panes the tab area is split into, which is also what the Split
-/// view dialog can show.
-const int maxSplitPanes = 4;
+/// The most panes the tab area is split into: as many as a custom layout
+/// can have.
+const int maxSplitPanes = 8;
+
+/// Rewrites [node] leaf by leaf: [leaf] returns the replacement for each
+/// session or empty pane, or null to drop it (its split collapses).
+PaneNode? mapPanes(PaneNode? node, PaneNode? Function(PaneNode leaf) leaf) {
+  if (node == null) return null;
+  if (node is! PaneSplit) return leaf(node);
+  final a = mapPanes(node.first, leaf);
+  final b = mapPanes(node.second, leaf);
+  if (a == null) return b;
+  if (b == null) return a;
+  return PaneSplit(axis: node.axis, first: a, second: b, ratio: node.ratio);
+}
+
+/// [node] with the empty pane [emptyId] showing [tabId] instead.
+PaneNode? fillEmptyPane(PaneNode? node, String emptyId, String tabId) =>
+    mapPanes(node, (p) => p is PaneEmpty && p.id == emptyId ? PaneLeaf(tabId) : p);
+
+/// [node] without the empty pane [emptyId]; its neighbour takes the room.
+PaneNode? removeEmptyPane(PaneNode? node, String emptyId) =>
+    mapPanes(node, (p) => p is PaneEmpty && p.id == emptyId ? null : p);
+
+/// [node] with every empty pane gone.
+PaneNode? withoutEmptyPanes(PaneNode? node) => mapPanes(node, (p) => p is PaneEmpty ? null : p);
+
+/// [node] with the pane showing [tabId] left empty, as when that session
+/// moves to another pane of the same split.
+PaneNode? emptyPaneOf(PaneNode? node, String tabId) =>
+    mapPanes(node, (p) => p is PaneLeaf && p.tabId == tabId ? PaneEmpty() : p);
 
 /// Which side of a pane a dragged tab would land on.
 enum PaneSide { left, right, top, bottom }
@@ -136,6 +174,7 @@ Rect paneSideRect(PaneSide side) => switch (side) {
 /// A copy of the tree with the pane showing [targetTabId] split in two, and
 /// [newTabId] on [side] of it. Other splits keep their dragged dividers.
 PaneNode insertBeside(PaneNode node, String targetTabId, String newTabId, PaneSide side) {
+  if (node is PaneEmpty) return node;
   if (node is PaneLeaf) {
     if (node.tabId != targetTabId) return node;
     final added = PaneLeaf(newTabId);
@@ -270,9 +309,11 @@ ZoneNode presetShape(SplitPreset preset) {
 }
 
 /// The tiling tree for [shape] with [slots] (tab ids, null for an empty
-/// zone) in zone order. As with [buildLayout], an empty zone is left out and
-/// its split collapses onto the other side. Null if nothing was placed.
-PaneNode? buildFromShape(ZoneNode shape, List<String?> slots) {
+/// zone) in zone order. An empty zone is left out and its split collapses
+/// onto the other side, as with [buildLayout] -- or, with [keepEmpty], stays
+/// as a [PaneEmpty] to drop a tab on later. Null if nothing was placed.
+PaneNode? buildFromShape(ZoneNode shape, List<String?> slots, {bool keepEmpty = false}) {
+  if (!slots.any((s) => s != null)) return null;
   var next = 0;
   PaneNode? walk(ZoneNode node) {
     if (node is ZoneSplit) {
@@ -283,7 +324,8 @@ PaneNode? buildFromShape(ZoneNode shape, List<String?> slots) {
       return PaneSplit(axis: node.axis, first: a, second: b, ratio: node.ratio);
     }
     final i = next++;
-    return i < slots.length && slots[i] != null ? PaneLeaf(slots[i]!) : null;
+    if (i < slots.length && slots[i] != null) return PaneLeaf(slots[i]!);
+    return keepEmpty ? PaneEmpty() : null;
   }
 
   return walk(shape);

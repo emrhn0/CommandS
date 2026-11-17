@@ -71,14 +71,17 @@ void main() {
     });
 
     test('no more panes than Split view can show', () {
-      app.tabs.add(OpenTab(id: '4', controller: _FakeSession('TAB-4')));
-      app.tabs.add(OpenTab(id: '5', controller: _FakeSession('TAB-5')));
+      for (var i = 4; i <= 9; i++) {
+        app.tabs.add(OpenTab(id: '$i', controller: _FakeSession('TAB-$i')));
+      }
       app.dropTabBeside('2', '1', PaneSide.right);
-      app.dropTabBeside('3', '1', PaneSide.bottom);
-      app.dropTabBeside('4', '2', PaneSide.bottom);
-      expect(app.canDropTabBeside('5', '1'), isFalse);
-      app.dropTabBeside('5', '1', PaneSide.right);
-      expect(tabIdsInLayout(app.paneLayout), hasLength(4));
+      for (var i = 3; i <= 8; i++) {
+        app.dropTabBeside('$i', '1', PaneSide.bottom);
+      }
+      expect(tabIdsInLayout(app.paneLayout), hasLength(maxSplitPanes));
+      expect(app.canDropTabBeside('9', '1'), isFalse);
+      app.dropTabBeside('9', '1', PaneSide.right);
+      expect(tabIdsInLayout(app.paneLayout), hasLength(maxSplitPanes));
     });
 
     test('the tab on screen dropped on its own pane splits it with its neighbour', () {

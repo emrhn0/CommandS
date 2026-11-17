@@ -219,8 +219,6 @@ const german = <String, String>{
   'the top level': 'die oberste Ebene',
   'Saved to {folder}. Open it from there any time to bring these sessions back like this.':
       'In {folder} gespeichert. Öffnen Sie es dort jederzeit, um diese Sitzungen so wiederherzustellen.',
-  'Empty panes are left out. Click a tab to put it in the first empty pane.':
-      'Leere Bereiche werden weggelassen. Klicken Sie auf einen Tab, um ihn in den ersten leeren Bereich zu setzen.',
   '{n} pane holds a quick connection, which is not saved and cannot be reopened, so it is saved empty.':
       '{n} Bereich enthält eine Schnellverbindung, die nicht gespeichert ist und nicht erneut geöffnet werden kann; er wird leer gespeichert.',
   '{n} panes hold quick connections, which are not saved and cannot be reopened, so they are saved empty.':
@@ -235,6 +233,14 @@ const german = <String, String>{
   'Click where the line is to split a zone. Shift switches the line. Drag a divider to resize.': 'Klicken Sie dort, wo die Linie ist, um einen Bereich zu teilen. Umschalt dreht die Linie. Ziehen Sie einen Trenner, um die Größe zu ändern.',
   'Horizontal split': 'Waagrecht teilen',
   'Vertical split': 'Senkrecht teilen',
+  'Empty pane': 'Leerer Bereich',
+  'Close pane': 'Bereich schließen',
+  'An empty pane stays empty until you drop a tab on it. Click a tab to put it in the first empty pane.': 'Ein leerer Bereich bleibt leer, bis Sie einen Tab darauf ziehen. Klicken Sie auf einen Tab, um ihn in den ersten leeren Bereich zu setzen.',
+  'Open all connections': 'Alle Verbindungen öffnen',
+  'There are no connections in "{name}".': 'In „{name}“ gibt es keine Verbindungen.',
+  'Open {n} connections?': '{n} Verbindungen öffnen?',
+  'Every connection in "{name}" and the folders inside it opens in a tab of its own.': 'Jede Verbindung in „{name}“ und den Ordnern darin öffnet sich in einem eigenen Tab.',
+  'Open': 'Öffnen',
   'Single': 'Einzeln',
   'Side by side': 'Nebeneinander',
   'Stacked': 'Übereinander',

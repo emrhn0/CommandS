@@ -1065,6 +1065,7 @@ class _PaneTreeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final n = node;
+    if (n is PaneEmpty) return _EmptyPane(key: ValueKey(n.id), emptyId: n.id, header: headers);
     if (n is PaneLeaf) {
       final app = context.watch<AppState>();
       OpenTab? tab;
@@ -1090,6 +1091,77 @@ class _PaneTreeView extends StatelessWidget {
     }
     final split = n as PaneSplit;
     return _ResizableSplit(split: split, headers: headers);
+  }
+}
+
+/// A pane of a split with no session yet: drop a tab on it to fill it, or
+/// close it to let the pane next to it take the room.
+class _EmptyPane extends StatefulWidget {
+  const _EmptyPane({super.key, required this.emptyId, required this.header});
+  final String emptyId;
+  final bool header;
+
+  @override
+  State<_EmptyPane> createState() => _EmptyPaneState();
+}
+
+class _EmptyPaneState extends State<_EmptyPane> {
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    final dim = theme.textTheme.bodySmall?.color;
+    return DragTarget<_TabDrag>(
+      onWillAcceptWithDetails: (d) => !d.data.isGroup,
+      onAcceptWithDetails: (d) => app.dropTabInEmptyPane(widget.emptyId, d.data.tabIds.single),
+      builder: (context, candidates, _) {
+        final hovering = candidates.isNotEmpty;
+        final body = Container(
+          margin: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: hovering ? accent.withValues(alpha: 0.14) : Colors.transparent,
+            border: Border.all(color: hovering ? accent : theme.dividerColor, width: hovering ? 2 : 1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Center(
+            child: Text(
+              hovering ? tr('Drop here') : tr('Drop a tab here'),
+              style: TextStyle(fontSize: 12, color: dim),
+            ),
+          ),
+        );
+        return Column(
+          children: [
+            if (widget.header)
+              Container(
+                height: 26,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.06),
+                  border: Border(bottom: BorderSide(color: theme.dividerColor)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(tr('Empty pane'), style: TextStyle(fontSize: 11.5, color: dim)),
+                    ),
+                    Tooltip(
+                      message: tr('Close pane'),
+                      child: InkWell(
+                        key: ValueKey('empty-close-${widget.emptyId}'),
+                        onTap: () => app.closeEmptyPane(widget.emptyId),
+                        child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 13)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(child: body),
+          ],
+        );
+      },
+    );
   }
 }
 

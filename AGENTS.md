@@ -181,6 +181,14 @@ Do not "simplify" these without reading why.
    - A released version is never changed; any change ships as a new one.
    - A beta is a SemVer pre-release of the version it leads to:
      `v1.3.0-beta.1`, `-beta.2`... It ranks below `v1.3.0`.
+   - **Stay on one beta line until it is released.** The version number is
+     picked when a beta cycle starts. While that version has no normal
+     release yet, every further change, fix or feature, goes out as the
+     next beta of the same version (`v1.4.0-beta.2`, `-beta.3`...), never as
+     a beta of a newer version. Only when the normal release is out does the
+     next change pick a new number by the rules above. Jumping ahead skips a
+     version on GitHub, because a normal release removes the betas before
+     it (v1.4.0 was skipped this way; that is the one exception).
 2. Write `release-notes/vX.Y.Z.md`: a short list of user-facing changes and
    fixes in plain English. It is shown in the app's update dialog, so it
    matters.

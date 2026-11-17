@@ -645,6 +645,34 @@ class AppState extends ChangeNotifier {
     await prefs.setStringList(_kFolderOrder, folderOrder);
   }
 
+  /// The connections in [folderId] and its subfolders, in the order the
+  /// tree shows them: each folder's subfolders first, then its own
+  /// connections.
+  List<SavedConnection> connectionsUnder(String folderId) {
+    final out = <SavedConnection>[];
+    final seen = <String>{};
+    void walk(String id) {
+      if (!seen.add(id)) return;
+      for (final sub in sortFolders(folders.where((f) => f.parentId == id).toList())) {
+        walk(sub.id);
+      }
+      out.addAll(sortConnections(connections.where((c) => c.folderId == id).toList()));
+    }
+
+    walk(folderId);
+    return out;
+  }
+
+  /// Opens every connection in [folderId] and its subfolders, each in a tab
+  /// of its own. Returns how many were opened.
+  Future<int> openFolder(String folderId) async {
+    final all = connectionsUnder(folderId);
+    for (final conn in all) {
+      await openConnection(conn);
+    }
+    return all.length;
+  }
+
   /// [folderId] and every folder inside it, at any depth.
   Set<String> folderTree(String folderId) {
     final out = {folderId};
@@ -1305,11 +1333,14 @@ class AppState extends ChangeNotifier {
   void _takeFromGroups(Iterable<String> tabIds, {TabGroup? except}) {
     for (final g in [...groups]) {
       if (identical(g, except)) continue;
+      // Asked before removing: removeFromLayout edits the tree in place and
+      // can hand back the same root, so comparing roots afterwards missed a
+      // change (a split with an empty pane left holding one session).
+      if (!tabIds.any(g.tabIds.contains)) continue;
       PaneNode? rest = g.layout;
       for (final id in tabIds) {
         rest = removeFromLayout(rest, id);
       }
-      if (identical(rest, g.layout)) continue;
       if (rest == null || tabIdsInLayout(rest).length < 2) {
         groups.remove(g);
         if (activeGroupId == g.id) activeGroupId = null;
@@ -1317,6 +1348,25 @@ class AppState extends ChangeNotifier {
         g.layout = rest;
       }
     }
+  }
+
+  /// Puts the session [tabId] in the empty pane [emptyId] of the split on
+  /// screen. Coming from another pane of that split, it leaves that pane
+  /// empty in turn; coming from elsewhere, it leaves its old split.
+  void dropTabInEmptyPane(String emptyId, String tabId) {
+    var layout = paneLayout;
+    if (layout == null) return;
+    if (tabIdsInLayout(layout).contains(tabId)) {
+      layout = emptyPaneOf(layout, tabId);
+    } else {
+      _takeFromGroups([tabId], except: activeGroup);
+    }
+    applyLayout(fillEmptyPane(layout, emptyId, tabId), editActive: activeGroupId != null);
+  }
+
+  /// Closes the empty pane [emptyId]; the pane next to it takes the room.
+  void closeEmptyPane(String emptyId) {
+    applyLayout(removeEmptyPane(paneLayout, emptyId), editActive: activeGroupId != null);
   }
 
   /// Splits the group back into plain tabs; the sessions stay open.
@@ -1351,11 +1401,11 @@ class AppState extends ChangeNotifier {
       if (wasActive) {
         final still = groups.contains(group);
         // Two left and one closed: the survivor is shown on its own.
-        paneLayout = still ? group.layout : removeFromLayout(paneLayout, tab.id);
+        paneLayout = still ? group.layout : withoutEmptyPanes(removeFromLayout(paneLayout, tab.id));
         if (still) activeGroupId = group.id;
       }
     } else {
-      paneLayout = removeFromLayout(paneLayout, tab.id);
+      paneLayout = withoutEmptyPanes(removeFromLayout(paneLayout, tab.id));
     }
     if (activeTabIndex >= tabs.length) activeTabIndex = tabs.length - 1;
     if (paneLayout == null && tabs.isNotEmpty) {
@@ -1395,15 +1445,17 @@ class AppState extends ChangeNotifier {
   void applyLayout(PaneNode? layout, {String? name, bool editActive = false}) {
     if (layout == null) return;
     final ids = tabIdsInLayoutOrdered(layout);
+    if (ids.isEmpty) return;
     final index = tabs.indexWhere((t) => t.id == ids.first);
     if (index != -1) activeTabIndex = index;
     if (ids.length < 2) {
-      // Back to one pane: the session is a plain tab again.
+      // Back to one pane: the session is a plain tab again, and empty panes
+      // around it go.
       final editing = editActive ? activeGroup : null;
       if (editing != null) groups.remove(editing);
       _takeFromGroups(ids);
       activeGroupId = null;
-      paneLayout = layout;
+      paneLayout = withoutEmptyPanes(layout);
       notifyListeners();
       return;
     }

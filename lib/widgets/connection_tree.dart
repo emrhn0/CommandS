@@ -1292,13 +1292,16 @@ class _FolderRowState extends State<_FolderRow> {
       trailingCount: childCount == 0 ? null : childCount,
       bold: true,
       menuItems: const [
-        MenuAction('new', 'New connection here', Icons.add),
+        MenuAction('openAll', 'Open all connections', Icons.play_arrow_outlined),
+        MenuAction('new', 'New connection here', Icons.add, separatorBefore: true),
         MenuAction('newFolder', 'New folder here', Icons.create_new_folder_outlined),
         MenuAction('rename', 'Rename', Icons.edit_outlined),
         MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
       onMenu: (key) async {
-        if (key == 'new') {
+        if (key == 'openAll') {
+          await _openAll(context, app);
+        } else if (key == 'new') {
           showNewConnectionDialog(context, folderId: widget.folder.id);
         } else if (key == 'newFolder') {
           await _promptName(
@@ -1319,6 +1322,30 @@ class _FolderRowState extends State<_FolderRow> {
         }
       },
     );
+  }
+
+  /// Opens every connection in this folder and the folders inside it. Many
+  /// at once are asked about first: each one is a login to a device.
+  Future<void> _openAll(BuildContext context, AppState app) async {
+    final count = app.connectionsUnder(widget.folder.id).length;
+    if (count == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('There are no connections in "{name}".', {'name': widget.folder.name}))),
+      );
+      return;
+    }
+    if (count > 10) {
+      final ok = await showConfirmDialog(
+        context,
+        title: tr('Open {n} connections?', {'n': count}),
+        message: tr('Every connection in "{name}" and the folders inside it opens in a tab of its own.',
+            {'name': widget.folder.name}),
+        confirmLabel: 'Open',
+        icon: Icons.play_arrow_outlined,
+      );
+      if (!ok) return;
+    }
+    await app.openFolder(widget.folder.id);
   }
 
   Future<void> _confirmDeleteFolder(BuildContext context, AppState app) async {

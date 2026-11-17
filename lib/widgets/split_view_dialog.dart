@@ -115,8 +115,10 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
   }
 
   void _apply() {
-    final preset = _preset;
-    final tree = preset != null ? buildLayout(preset, _slots) : buildFromShape(_shape, _slots);
+    // A zone left empty stays an empty pane to drop a tab on later, rather
+    // than the pane beside it growing over it.
+    final placed = _slots.whereType<String>().length;
+    final tree = buildFromShape(_shape, _slots, keepEmpty: placed >= 2);
     context.read<AppState>().applyLayout(tree, editActive: true);
     Navigator.of(context).pop();
   }
@@ -259,7 +261,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                               'Saved to {folder}. Open it from there any time to bring these sessions back like this.',
                               {'folder': _savedTo},
                             )
-                          : tr('Empty panes are left out. Click a tab to put it in the first empty pane.'),
+                          : tr('An empty pane stays empty until you drop a tab on it. Click a tab to put it in the first empty pane.'),
                       style: TextStyle(fontSize: 11, color: dim),
                     ),
                   ),
@@ -454,25 +456,9 @@ class _SlotTarget extends StatelessWidget {
   final ValueChanged<String> onAccept;
   final VoidCallback onClear;
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = theme.colorScheme.primary;
-    final dim = theme.textTheme.bodySmall?.color;
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (d) => d.data != tab?.id,
-      onAcceptWithDetails: (d) => onAccept(d.data),
-      builder: (context, candidates, _) {
-        final hovering = candidates.isNotEmpty;
-        final t = tab;
-        final content = t == null
-            ? Center(
-                child: Text(
-                  hovering ? tr('Drop here') : tr('Drop a tab here'),
-                  style: TextStyle(fontSize: 12, color: dim),
-                ),
-              )
-            : Stack(
+  /// The usual look of a placed tab: icon, name and type stacked.
+  Widget _tallContent(OpenTab t, Color? dim) {
+    return Stack(
                 children: [
                   Center(
                     child: Padding(
@@ -506,6 +492,68 @@ class _SlotTarget extends StatelessWidget {
                     ),
                   ),
                 ],
+              );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    final dim = theme.textTheme.bodySmall?.color;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) => d.data != tab?.id,
+      onAcceptWithDetails: (d) => onAccept(d.data),
+      builder: (context, candidates, _) {
+        final hovering = candidates.isNotEmpty;
+        final t = tab;
+        // A short pane (a layout with many rows) gets one line: icon, name,
+        // type. Stacked, they did not fit and the name was cut off.
+        final Widget content = t != null
+            ? LayoutBuilder(
+                builder: (context, c) => c.maxHeight < 76
+                    ? Stack(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 10, right: 34),
+                            child: Row(
+                              children: [
+                                Icon(_isRdp(t) ? Icons.desktop_windows_outlined : Icons.terminal, size: 15),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _title(t),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(_isRdp(t) ? 'RDP' : 'SSH', style: TextStyle(fontSize: 10, color: dim)),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            top: 0,
+                            bottom: 0,
+                            right: 2,
+                            child: Center(
+                              child: IconButton(
+                                tooltip: tr('Empty this pane'),
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.close, size: 14),
+                                onPressed: onClear,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : _tallContent(t, dim),
+              )
+            : Center(
+                child: Text(
+                  hovering ? tr('Drop here') : tr('Drop a tab here'),
+                  style: TextStyle(fontSize: 12, color: dim),
+                ),
               );
         final box = AnimatedContainer(
           duration: const Duration(milliseconds: 100),
