@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -172,7 +173,7 @@ class _TabBarRow extends StatelessWidget {
             // Behind the chips, the rest of the strip: a drop there goes last.
             child: DragTarget<_TabDrag>(
               onAcceptWithDetails: (d) => _moveInStrip(app, d.data, null),
-              builder: (context, _, _) => ListView(scrollDirection: Axis.horizontal, children: chips),
+              builder: (context, _, _) => _ScrollingStrip(children: chips),
             ),
           ),
           if (app.activeGroupId != null) _SeparateButton(groupId: app.activeGroupId!),
@@ -183,6 +184,98 @@ class _TabBarRow extends StatelessWidget {
         ],
       ),
     ));
+  }
+}
+
+/// The tab chips in a row that scrolls sideways. When they do not all fit,
+/// arrows at both ends move it along, and the mouse wheel does too.
+class _ScrollingStrip extends StatefulWidget {
+  const _ScrollingStrip({required this.children});
+  final List<Widget> children;
+
+  @override
+  State<_ScrollingStrip> createState() => _ScrollingStripState();
+}
+
+class _ScrollingStripState extends State<_ScrollingStrip> {
+  final _scroll = ScrollController();
+  bool _canBack = false;
+  bool _canForward = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _update(ScrollMetrics m) {
+    final back = m.pixels > m.minScrollExtent + 0.5;
+    final forward = m.pixels < m.maxScrollExtent - 0.5;
+    if (back == _canBack && forward == _canForward) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _canBack = back;
+        _canForward = forward;
+      });
+    });
+  }
+
+  void _by(double delta) {
+    if (!_scroll.hasClients) return;
+    final p = _scroll.position;
+    final to = (p.pixels + delta).clamp(p.minScrollExtent, p.maxScrollExtent);
+    _scroll.animateTo(to, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+  }
+
+  Widget _arrow(String key, IconData icon, String tip, bool enabled, double delta) => SizedBox(
+        width: 26,
+        child: IconButton(
+          key: ValueKey(key),
+          tooltip: tip,
+          padding: EdgeInsets.zero,
+          iconSize: 18,
+          onPressed: enabled ? () => _by(delta) : null,
+          icon: Icon(icon),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final overflow = _canBack || _canForward;
+    return Row(
+      children: [
+        if (overflow) _arrow('tabs-back', Icons.chevron_left, tr('Scroll tabs left'), _canBack, -240),
+        Expanded(
+          child: NotificationListener<ScrollMetricsNotification>(
+            onNotification: (n) {
+              _update(n.metrics);
+              return false;
+            },
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                _update(n.metrics);
+                return false;
+              },
+              child: Listener(
+                // The wheel moves the strip sideways.
+                onPointerSignal: (e) {
+                  if (e is PointerScrollEvent) {
+                    final d = e.scrollDelta.dy != 0 ? e.scrollDelta.dy : e.scrollDelta.dx;
+                    if (_scroll.hasClients) {
+                      final p = _scroll.position;
+                      _scroll.jumpTo((p.pixels + d).clamp(p.minScrollExtent, p.maxScrollExtent));
+                    }
+                  }
+                },
+                child: ListView(controller: _scroll, scrollDirection: Axis.horizontal, children: widget.children),
+              ),
+            ),
+          ),
+        ),
+        if (overflow) _arrow('tabs-forward', Icons.chevron_right, tr('Scroll tabs right'), _canForward, 240),
+      ],
+    );
   }
 }
 

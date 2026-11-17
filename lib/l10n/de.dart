@@ -163,6 +163,8 @@ const german = <String, String>{
   'Show the sidebar to pick a saved connection,\nor start a new one.':
       'Blenden Sie die Seitenleiste ein, um eine gespeicherte Verbindung zu wählen,\noder legen Sie eine neue an.',
   'Split view': 'Geteilte Ansicht',
+  'Scroll tabs left': 'Tabs nach links blättern',
+  'Scroll tabs right': 'Tabs nach rechts blättern',
   'Split View': 'Geteilte Ansicht',
   'Edit split view…': 'Geteilte Ansicht bearbeiten…',
   'Separate into tabs': 'In Tabs aufteilen',

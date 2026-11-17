@@ -164,6 +164,8 @@ const turkish = <String, String>{
   'Show the sidebar to pick a saved connection,\nor start a new one.':
       'Kayıtlı bir bağlantı seçmek için kenar çubuğunu açın\nya da yeni bir bağlantı oluşturun.',
   'Split view': 'Bölünmüş görünüm',
+  'Scroll tabs left': 'Sekmeleri sola kaydır',
+  'Scroll tabs right': 'Sekmeleri sağa kaydır',
   'Split View': 'Bölünmüş Görünüm',
   'Edit split view…': 'Bölünmüş görünümü düzenle…',
   'Separate into tabs': 'Ayrı sekmelere böl',
