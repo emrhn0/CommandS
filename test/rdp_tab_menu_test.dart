@@ -18,6 +18,8 @@ void main() {
   List<Object?> frames = const [];
 
   setUp(() {
+    // Sessions start at once here, not a moment apart.
+    RdpStartQueue.instance = RdpStartQueue(spacing: Duration.zero);
     calls = [];
     frames = const [];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(

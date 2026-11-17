@@ -71,7 +71,7 @@ void main() {
     await tester.sendKeyUpEvent(keyUe, physicalKey: physicalUe);
   }
 
-  testWidgets('holding AltGr: the first Ü types nothing, the second types ~', (tester) async {
+  testWidgets('holding AltGr: the first Ü types nothing, the second types ~~, as in Windows', (tester) async {
     final original = DeadKeys.translate;
     DeadKeys.reset();
     DeadKeys.translate = fakeWindows;
@@ -84,7 +84,7 @@ void main() {
       await altGrUe(tester, '~');
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altRight);
     });
-    expect(sent.join(), '~', reason: 'no ü before it');
+    expect(sent.join(), '~~', reason: 'no ü before it');
   });
 
   testWidgets('~ then a letter types both, not a composed letter', (tester) async {
@@ -136,6 +136,9 @@ void main() {
         held: const [VK_CONTROL, VK_LCONTROL, VK_MENU, VK_RMENU],
       );
       expect(altGr, (text: '~', dead: true));
+      // Asked again right away: the same answer, nothing left pending.
+      expect(DeadKeys.keyOnLayout(ueScanCode, turkishQ, held: const [VK_CONTROL, VK_LCONTROL, VK_MENU, VK_RMENU]),
+          (text: '~', dead: true));
       expect(DeadKeys.keyOnLayout(ueScanCode, turkishQ, held: const []), (text: 'ü', dead: false));
       expect(DeadKeys.keyOnLayout(aScanCode, turkishQ, held: const []), (text: 'a', dead: false));
     } finally {
@@ -147,9 +150,10 @@ void main() {
     const deadTilde = (text: '~', dead: true);
     setUp(DeadKeys.reset);
 
-    test('AltGr+Ü: the first press types nothing, the second types ~', () {
+    test('AltGr+Ü: the first press types nothing, the second types ~~', () {
       expect(DeadKeys.decide(character: 'ü', altGr: true, key: deadTilde, plain: 'ü'), '');
-      expect(DeadKeys.decide(character: '~', altGr: true, key: deadTilde, plain: 'ü'), '~');
+      expect(DeadKeys.decide(character: '~', altGr: true, key: deadTilde, plain: 'ü'), '~~');
+      expect(DeadKeys.decide(character: 'ü', altGr: true, key: deadTilde, plain: 'ü'), '');
     });
 
     test('~ then a letter types both, not a composed letter', () {

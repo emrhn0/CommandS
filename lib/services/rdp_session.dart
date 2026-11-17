@@ -76,7 +76,10 @@ class RdpSessionController implements SessionController {
   int? _hostId;
   bool _started = false;
   bool _disposed = false;
-  bool _active = true;
+  // Shown only once a view on screen says so ([attachView]). A tab opened
+  // behind others may never be built until picked, and its session starts
+  // anyway (the fallback timer): it must stay hidden until then.
+  bool _active = false;
 
   ui.Rect? _lastBounds;
   int? _sessionWidth;
@@ -96,8 +99,15 @@ class RdpSessionController implements SessionController {
   Future<void> _begin(ui.Rect bounds, double devicePixelRatio) async {
     if (_started || _disposed) return;
     _started = true;
-    final physical = _physical(bounds, devicePixelRatio);
     _lastBounds = bounds;
+    await RdpStartQueue.instance.run(() => _create(devicePixelRatio));
+  }
+
+  Future<void> _create(double devicePixelRatio) async {
+    if (_disposed) return;
+    // The pane may have moved while this session waited its turn.
+    final bounds = _lastBounds!;
+    final physical = _physical(bounds, devicePixelRatio);
     _sessionWidth = physical.width;
     _sessionHeight = physical.height;
     try {
@@ -242,7 +252,11 @@ class RdpSessionController implements SessionController {
       return;
     }
     final id = _hostId;
-    if (id == null) return;
+    if (id == null) {
+      // Still waiting its turn to start: it starts where the pane is then.
+      _lastBounds = bounds;
+      return;
+    }
     if (bounds == _lastBounds) return;
     final previous = _lastBounds;
     _lastBounds = bounds;
@@ -669,5 +683,51 @@ class RdpModalObserver extends NavigatorObserver {
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (previousRoute != null) _apply(-1);
+  }
+}
+
+/// Starts Remote Desktop sessions one at a time, a moment apart. Several
+/// controls created and connected in the same instant (Open all connections,
+/// or tabs opened quickly one after another) left windows standing over the
+/// app in the wrong place; spaced out, each one settles first.
+class RdpStartQueue {
+  RdpStartQueue({this.spacing = const Duration(milliseconds: 1500)});
+
+  static RdpStartQueue instance = RdpStartQueue();
+
+  /// The wait after one session's start before the next one begins.
+  final Duration spacing;
+
+  final _waiting = <Future<void> Function()>[];
+  bool _running = false;
+
+  /// Runs [start] after every start queued before it, and holds the next one
+  /// back for [spacing] after it.
+  Future<void> run(Future<void> Function() start) {
+    final done = Completer<void>();
+    _waiting.add(() async {
+      try {
+        await start();
+      } catch (_) {
+        // A failed start must not hold up the ones after it.
+      }
+      done.complete();
+    });
+    _drain();
+    return done.future;
+  }
+
+  Future<void> _drain() async {
+    if (_running) return;
+    _running = true;
+    try {
+      while (_waiting.isNotEmpty) {
+        await _waiting.removeAt(0)();
+        // Also after the last one: a tab opened a moment later waits too.
+        await Future<void>.delayed(spacing);
+      }
+    } finally {
+      _running = false;
+    }
   }
 }

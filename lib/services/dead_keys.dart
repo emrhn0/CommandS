@@ -77,7 +77,8 @@ class DeadKeys {
   /// What a key press types, given what Windows says about the key:
   /// - a dead key (AltGr+Ü for ~) types nothing yet;
   /// - the key after it types the accent: on its own when it is the same
-  ///   dead key again or the space bar, else the accent then its own text
+  ///   space bar, twice when it is the same dead key again (as Windows does),
+///   else the accent then its own text
   ///   (~ then a is "~a", not the "ã" Windows would compose);
   /// - with AltGr held, a key reporting its own plain letter (the ü that
   ///   Flutter sends for AltGr+Ü) types nothing, whatever else was missed;
@@ -92,8 +93,10 @@ class DeadKeys {
     final pending = _pendingAccent;
     if (key != null && key.dead) {
       if (pending != null) {
+        // As everywhere in Windows: the dead key twice types the accent
+        // twice (and the pending one with another dead key, both).
         _pendingAccent = null;
-        return pending;
+        return '$pending${key.text}';
       }
       _pendingAccent = key.text;
       return '';
@@ -153,15 +156,32 @@ class DeadKeys {
         if (down) state[key] = 0x80;
       }
       if (capsLock ?? (held == null && GetKeyState(VK_CAPITAL) & 1 != 0)) state[VK_CAPITAL] = 0x01;
-      // Flag 4: leave the keyboard state alone (Windows 10 1607 and later).
+      // Flag 4 is meant to leave the keyboard state alone, but a dead key
+      // still stays pending in this thread and turns the next answer into
+      // "~~" or "~ü" (seen with real key presses). So nothing is left
+      // pending before or after.
+      _flush(layout, buffer);
       final result = ToUnicodeEx(vk, scanCode, state, buffer.cast(), 8, 4, layout);
+      final answer = [for (var i = 0; i < (result < 0 ? 1 : result); i++) buffer[i]];
+      if (result < 0) _flush(layout, buffer);
       if (result == 0) return null;
-      final length = result < 0 ? 1 : result;
-      final text = String.fromCharCodes([for (var i = 0; i < length; i++) buffer[i]]);
+      final text = String.fromCharCodes(answer);
       return (text: text, dead: result < 0);
     } finally {
       calloc.free(state);
       calloc.free(buffer);
+    }
+  }
+
+  /// Ends any dead key waiting in this thread: a space types it out.
+  static void _flush(int layout, Pointer<Uint16> buffer) {
+    final empty = calloc<Uint8>(256);
+    try {
+      for (var i = 0; i < 3; i++) {
+        if (ToUnicodeEx(VK_SPACE, 0x39, empty, buffer.cast(), 8, 4, layout) >= 0) break;
+      }
+    } finally {
+      calloc.free(empty);
     }
   }
 
