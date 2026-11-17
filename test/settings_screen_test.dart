@@ -54,7 +54,7 @@ void main() {
 
         // Every page, reached from the sidebar. An overflow on any fails.
         final expected = {
-          SettingsPage.general: 'Applies to NetDeck itself; sessions are not affected.',
+          SettingsPage.general: 'Applies to CommandS itself; sessions are not affected.',
           SettingsPage.theme: 'Font',
           SettingsPage.connections: 'Export connections',
           SettingsPage.sessionLogs: 'Choose log folder',
@@ -108,7 +108,7 @@ void main() {
     expect(find.text('Theme & colors'), findsWidgets);
     expect(find.text('App theme'), findsOneWidget);
     expect(find.text('SSH terminal'), findsOneWidget);
-    expect(find.text('NetDeck Light'), findsOneWidget);
+    expect(find.text('CommandS Light'), findsOneWidget);
     expect(find.text('Font'), findsWidgets);
     expect(find.byKey(const ValueKey('settings-nav-terminal')), findsNothing);
   });
@@ -189,13 +189,13 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('NetDeck Light'));
+    await tester.tap(find.text('CommandS Light'));
     await tester.pumpAndSettle();
     expect(app.themeMode, ThemeMode.light);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('commands.themeId'), 'builtin:commands-light');
 
-    await tester.tap(find.text('NetDeck Dark'));
+    await tester.tap(find.text('CommandS Dark'));
     await tester.pumpAndSettle();
     expect(app.themeMode, ThemeMode.dark);
     expect(prefs.getString('commands.themeId'), 'builtin:commands');

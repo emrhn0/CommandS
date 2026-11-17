@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 
@@ -85,6 +86,7 @@ class AppState extends ChangeNotifier {
   static const _kLanguage = 'commands.language';
   static const _kFolderOrder = 'commands.folderOrder';
   static const _kConnectionOrder = 'commands.connectionOrder';
+  static const _kRecentConnections = 'commands.recentConnections';
   static const _kSidebarWidth = 'commands.sidebarWidth';
   static const _kSidebarVisible = 'commands.sidebarVisible';
   static const _kCustomLayouts = 'commands.customLayouts';
@@ -199,6 +201,7 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     folderOrder = prefs.getStringList(_kFolderOrder) ?? [];
     connectionOrder = prefs.getStringList(_kConnectionOrder) ?? [];
+    recentConnectionIds = prefs.getStringList(_kRecentConnections) ?? [];
     sidebarWidth = (prefs.getDouble(_kSidebarWidth) ?? defaultSidebarWidth).clamp(minSidebarWidth, maxSidebarWidth);
     sidebarVisible = prefs.getBool(_kSidebarVisible) ?? true;
     customLayouts = [
@@ -967,6 +970,7 @@ class AppState extends ChangeNotifier {
   /// up; only used to report a same-tick failure (e.g. an unsafe host).
   Future<String?> openConnection(SavedConnection conn) async {
     final tab = _openTab(conn);
+    _noteRecent(conn);
     activeTabIndex = tabs.length - 1;
     // A freshly opened connection takes over the view; Split view in the
     // tab bar puts it back alongside others.
@@ -989,6 +993,27 @@ class AppState extends ChangeNotifier {
       id = folder.parentId;
     }
     return names;
+  }
+
+  /// Saved connections opened most recently, newest first, by id. Shown on
+  /// the welcome panel; ids of deleted connections are skipped when read.
+  List<String> recentConnectionIds = [];
+  static const maxRecentConnections = 6;
+
+  /// The saved connections in [recentConnectionIds] that still exist.
+  List<SavedConnection> get recentConnections => [
+        for (final id in recentConnectionIds) ?connections.where((c) => c.id == id).firstOrNull,
+      ];
+
+  /// Puts a saved connection at the front of [recentConnectionIds]. Quick
+  /// connections, which are not saved, are not remembered.
+  void _noteRecent(SavedConnection conn) {
+    if (!connections.any((c) => c.id == conn.id)) return;
+    recentConnectionIds = [
+      conn.id,
+      ...recentConnectionIds.where((id) => id != conn.id && connections.any((c) => c.id == id)),
+    ].take(maxRecentConnections).toList();
+    unawaited(SharedPreferences.getInstance().then((p) => p.setStringList(_kRecentConnections, recentConnectionIds)));
   }
 
   int _tabSerial = 0;
@@ -1401,6 +1426,7 @@ class AppState extends ChangeNotifier {
   /// screen, as if its new tab had been dropped there.
   void openConnectionInEmptyPane(String emptyId, SavedConnection conn) {
     final tab = _openTab(conn);
+    _noteRecent(conn);
     dropTabInEmptyPane(emptyId, tab.id);
   }
 

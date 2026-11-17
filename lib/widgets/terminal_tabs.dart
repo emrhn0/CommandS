@@ -22,6 +22,7 @@ import '../services/terminal_appearance.dart';
 import '../theme/app_theme.dart';
 import 'context_menu.dart';
 import 'tree_drag.dart';
+import 'welcome_panel.dart';
 import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
@@ -42,40 +43,7 @@ class TerminalTabsArea extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
 
-    if (app.tabs.isEmpty) {
-      final dim = Theme.of(context).textTheme.bodySmall?.color;
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.terminal,
-              size: 40,
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              tr('No active session'),
-              style: TextStyle(color: dim, fontSize: 15, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              sidebarVisible
-                  ? tr('Pick a saved connection on the left, use quick connect,\nor start a new one.')
-                  : tr('Show the sidebar to pick a saved connection,\nor start a new one.'),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: dim, fontSize: 12),
-            ),
-            const SizedBox(height: 18),
-            OutlinedButton.icon(
-              onPressed: () => showNewConnectionDialog(context),
-              icon: const Icon(Icons.add, size: 16),
-              label: Text(tr('New Connection')),
-            ),
-          ],
-        ),
-      );
-    }
+    if (app.tabs.isEmpty) return WelcomePanel(sidebarVisible: sidebarVisible);
 
     final layout = app.paneLayout ?? PaneLeaf(app.tabs[app.activeTabIndex.clamp(0, app.tabs.length - 1)].id);
 
@@ -1604,8 +1572,8 @@ class _MacRdpPaneState extends State<_MacRdpPane> {
     if (controller.freerdpWouldHelp) {
       return tr(
         '{host} is open in {client}, in its own window, with the host and username filled in — '
-        '{client} keeps its own credential store, so the password is the one thing NetDeck cannot '
-        'hand it. Copy it below, or run "brew install freerdp" and NetDeck will sign you in with '
+        '{client} keeps its own credential store, so the password is the one thing CommandS cannot '
+        'hand it. Copy it below, or run "brew install freerdp" and CommandS will sign you in with '
         'no prompt at all.',
         args,
       );

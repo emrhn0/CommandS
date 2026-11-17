@@ -1,9 +1,9 @@
 """Draws the app icon files from one geometry.
 
-The mark is a stack of three tabs on a rounded tile: two behind, and in
-front a terminal with a prompt (>) and a red cursor. Two drawings of it
-exist: the full one, and a heavier one for 32 px and below, where thin
-lines would blur away.
+The mark is a folded-paper lightning bolt on a rounded tile: a light upper
+fold, a darker lower fold over it, and a shadow where the two overlap. Two
+drawings of it exist: the full one, and a slightly larger bolt for 32 px and
+below, so it still fills the tile when small.
 
 Writes:
   assets/icon/commands_mark_light.svg, commands_mark_dark.svg  (title bar)
@@ -20,38 +20,38 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# The two looks: dark (the app icon, and the title bar on dark themes) and
-# light (the title bar on light themes).
+# The two looks: dark (the app icon, and the title bar on light themes) and
+# light (the title bar on dark themes). The tile runs from top to bottom.
 DARK = {
-    "tile": "#16181D", "back": "#3A3F4B", "mid": "#5B6270", "front": "#FFFFFF",
-    "prompt": "#16181D", "cursor": "#E5484D", "edge": None,
+    "tile": ("#2A1712", "#120907"), "upper": "#FF7B5C", "lower": "#C2372A", "fold": "#8C2219",
+    "edge": None,
 }
 LIGHT = {
-    "tile": "#F2F0EB", "back": "#C3C7CF", "mid": "#8A919E", "front": "#16181D",
-    "prompt": "#FFFFFF", "cursor": "#E5484D", "edge": (0, 0, 0, 36),
+    "tile": ("#FFF6F2", "#F6E2DA"), "upper": "#FF7B5C", "lower": "#C2372A", "fold": "#8C2219",
+    "edge": (0, 0, 0, 36),
 }
 
-# In a 1024 grid. Cards are (x, y, width, height); the prompt is a chevron
-# of three points; w is its line weight; rx the tile corner, crx the cards'.
-FULL = {
-    "rx": 232, "crx": 56,
-    "back": (312, 200, 512, 398), "mid": (256, 284, 512, 398), "front": (200, 370, 512, 426),
-    "prompt": ((288, 500), (370, 566), (288, 632)), "w": 40,
-    "cursor": (414, 640, 136, 46),
-}
-SMALL = {
-    "rx": 200, "crx": 64,
-    "back": (330, 150, 540, 400), "mid": (240, 250, 540, 420), "front": (150, 350, 560, 520),
-    "prompt": ((262, 500), (380, 600), (262, 700)), "w": 72,
-    "cursor": (428, 668, 180, 72),
-}
+# In a 1024 grid. The upper fold is a triangle pointing up-right, the lower
+# one a triangle pointing down-left; "fold" is where they overlap.
+UPPER = ((655, 102), (246, 594), (553, 594))
+LOWER = ((471, 430), (799, 430), (369, 922))
+FOLD = ((471, 430), (587, 430), (553, 594), (437, 594))
+CENTER = (522, 512)
+
+FULL = {"rx": 232, "scale": 1.0}
+SMALL = {"rx": 200, "scale": 1.1}
 EDGE = 12  # the light tile's outline, so it does not melt into a light bar
 
 
+def _shape(points, scale):
+    cx, cy = CENTER
+    return [(512 + (x - cx) * scale, 512 + (y - cy) * scale) for x, y in points]
+
+
 def svg(geo, colors):
-    def card(key):
-        x, y, w, h = geo[key]
-        return f'  <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{geo["crx"]}" fill="{colors[key]}"/>\n'
+    def poly(points, fill):
+        pts = " ".join(f"{x:.0f},{y:.0f}" for x, y in _shape(points, geo["scale"]))
+        return f'  <polygon points="{pts}" fill="{fill}"/>\n'
 
     edge = ""
     if colors["edge"]:
@@ -62,17 +62,22 @@ def svg(geo, colors):
             f'rx="{geo["rx"] - half}" fill="none" stroke="#000000" '
             f'stroke-opacity="{alpha:.2f}" stroke-width="{EDGE}"/>\n'
         )
-    points = " ".join(f"{x},{y}" for x, y in geo["prompt"])
-    cx, cy, cw, ch = geo["cursor"]
+    top, bottom = colors["tile"]
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">\n'
-        f'  <rect width="1024" height="1024" rx="{geo["rx"]}" fill="{colors["tile"]}"/>\n'
-        f"{edge}{card('back')}{card('mid')}{card('front')}"
-        f'  <polyline points="{points}" fill="none" stroke="{colors["prompt"]}" '
-        f'stroke-width="{geo["w"]}" stroke-linecap="round" stroke-linejoin="round"/>\n'
-        f'  <rect x="{cx}" y="{cy}" width="{cw}" height="{ch}" fill="{colors["cursor"]}"/>\n'
+        '  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/>'
+        "</linearGradient></defs>\n"
+        f'  <rect width="1024" height="1024" rx="{geo["rx"]}" fill="url(#tile)"/>\n'
+        f"{edge}"
+        f"{poly(UPPER, colors['upper'])}{poly(LOWER, colors['lower'])}{poly(FOLD, colors['fold'])}"
         "</svg>\n"
     )
+
+
+def _rgb(hex_color):
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
 def render(size, geo, colors, inset=0.0):
@@ -80,8 +85,6 @@ def render(size, geo, colors, inset=0.0):
     tile, as a share of the size (macOS icons leave one)."""
     k = max(4, 4096 // size)  # supersampling, then a smooth downscale
     n = size * k
-    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
     tile = n * (1 - 2 * inset)
     off = n * inset
     u = tile / 1024  # one grid unit in pixels
@@ -89,7 +92,18 @@ def render(size, geo, colors, inset=0.0):
     def p(v):
         return off + v * u
 
-    d.rounded_rectangle([p(0), p(0), p(1024) - 1, p(1024) - 1], radius=geo["rx"] * u, fill=colors["tile"])
+    # The tile: a vertical gradient cut to a rounded square.
+    top, bottom = _rgb(colors["tile"][0]), _rgb(colors["tile"][1])
+    grad = Image.new("RGBA", (1, n))
+    for y in range(n):
+        t = min(max((y - off) / tile, 0.0), 1.0)
+        grad.putpixel((0, y), tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)) + (255,))
+    grad = grad.resize((n, n))
+    mask = Image.new("L", (n, n), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([p(0), p(0), p(1024) - 1, p(1024) - 1], radius=geo["rx"] * u, fill=255)
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    img.paste(grad, (0, 0), mask)
+
     if colors["edge"]:
         edge = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         ImageDraw.Draw(edge).rounded_rectangle(
@@ -99,21 +113,10 @@ def render(size, geo, colors, inset=0.0):
             width=max(round(EDGE * u), k),  # at least one pixel once scaled down
         )
         img.alpha_composite(edge)
-        d = ImageDraw.Draw(img)
 
-    for key in ("back", "mid", "front"):
-        x, y, w, h = geo[key]
-        d.rounded_rectangle([p(x), p(y), p(x + w), p(y + h)], radius=geo["crx"] * u, fill=colors[key])
-
-    # The prompt: two strokes with round ends and a round corner.
-    pts = [(p(x), p(y)) for x, y in geo["prompt"]]
-    lw = geo["w"] * u
-    d.line(pts, fill=colors["prompt"], width=round(lw), joint="curve")
-    for x, y in pts:
-        d.ellipse([x - lw / 2, y - lw / 2, x + lw / 2, y + lw / 2], fill=colors["prompt"])
-
-    cx, cy, cw, ch = geo["cursor"]
-    d.rectangle([p(cx), p(cy), p(cx + cw), p(cy + ch)], fill=colors["cursor"])
+    d = ImageDraw.Draw(img)
+    for points, key in ((UPPER, "upper"), (LOWER, "lower"), (FOLD, "fold")):
+        d.polygon([(p(x), p(y)) for x, y in _shape(points, geo["scale"])], fill=colors[key])
     return img.resize((size, size), Image.LANCZOS)
 
 

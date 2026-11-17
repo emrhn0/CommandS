@@ -54,7 +54,7 @@ void main() {
     final used = _translatedLiterals();
     expect(used.length, greaterThan(150), reason: 'the scan itself must be finding the strings');
     // Names and formats that read the same in Turkish.
-    const same = {'SSH', 'RDP', 'JSON', 'XML', 'Port', 'CommandS', 'NetDeck', 'CSV (Excel/Sheets)'};
+    const same = {'SSH', 'RDP', 'JSON', 'XML', 'Port', 'CommandS', 'CSV (Excel/Sheets)'};
     // Interpolated values (a size in pt) carry no wording to translate.
     final missing =
         used.where((s) => !turkish.containsKey(s) && !same.contains(s) && !s.startsWith(r'${')).toList()
@@ -64,7 +64,7 @@ void main() {
 
   test('every string sent to tr() has a German translation', () {
     final used = _translatedLiterals();
-    const same = {'SSH', 'RDP', 'JSON', 'XML', 'Port', 'CommandS', 'NetDeck', 'CSV (Excel/Sheets)'};
+    const same = {'SSH', 'RDP', 'JSON', 'XML', 'Port', 'CommandS', 'CSV (Excel/Sheets)'};
     final missing =
         used.where((s) => !german.containsKey(s) && !same.contains(s) && !s.startsWith(r'${')).toList()..sort();
     expect(missing, isEmpty, reason: 'add these to lib/l10n/de.dart');

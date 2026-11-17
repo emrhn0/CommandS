@@ -736,7 +736,7 @@ class _LanguagePicker extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          tr('Applies to NetDeck itself; sessions are not affected.'),
+          tr('Applies to CommandS itself; sessions are not affected.'),
           style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
         ),
       ],
@@ -779,8 +779,8 @@ class _ThemePicker extends StatelessWidget {
   /// CommandS's own two themes say Dark and Light in the app's language;
   /// the others keep their own names.
   static String _label(ThemePreset t) => switch (t.id) {
-        AppState.defaultThemeId => 'NetDeck ${tr('Dark')}',
-        AppState.lightThemeId => 'NetDeck ${tr('Light')}',
+        AppState.defaultThemeId => 'CommandS ${tr('Dark')}',
+        AppState.lightThemeId => 'CommandS ${tr('Light')}',
         _ => t.name,
       };
 
@@ -846,7 +846,7 @@ class _ThemePicker extends StatelessWidget {
               label: Text(tr('Import theme…')),
             ),
             Text(
-              tr('A JSON file in the NetDeck theme format.'),
+              tr('A JSON file in the CommandS theme format.'),
               style: TextStyle(fontSize: 12, color: dim),
             ),
           ],
@@ -1925,8 +1925,8 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
                   Expanded(
                     child: Text(
                       tr(info.channel == ReleaseChannel.beta
-                          ? 'NetDeck Beta {version} is available'
-                          : 'NetDeck {version} is available', {'version': info.version}),
+                          ? 'CommandS Beta {version} is available'
+                          : 'CommandS {version} is available', {'version': info.version}),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -1985,7 +1985,7 @@ class _UpdatesPanelState extends State<_UpdatesPanel> {
               LinearProgressIndicator(value: p),
               const SizedBox(height: 10),
               Text(
-                tr('NetDeck will close and reopen on the new version by itself.'),
+                tr('CommandS will close and reopen on the new version by itself.'),
                 style: TextStyle(fontSize: 12, color: dim),
               ),
             ],

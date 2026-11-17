@@ -163,45 +163,45 @@ class ThemePreset {
 List<Color> _c(List<int> values) => [for (final v in values) Color(0xFF000000 | v)];
 
 /// The themes shipped with the app. Colours follow each theme's published
-/// palette, except NetDeck's own two, after the icon, and the one an install with no theme choice of its own
+/// palette, except CommandS's own two, after the icon, and the one an install with no theme choice of its own
 /// starts on (see [AppState.defaultThemeId]).
 final List<ThemePreset> builtInThemes = List.unmodifiable([
   ThemePreset(
     id: 'builtin:commands',
-    name: 'NetDeck Dark',
+    name: 'CommandS Dark',
     dark: true,
-    // The icon's slate tile and tabs, and its red cursor as the accent.
-    background: const Color(0xFF111318),
-    panel: const Color(0xFF16181D),
-    panelAlt: const Color(0xFF1F2229),
-    border: const Color(0xFF2B2F38),
-    text: const Color(0xFFF2F3F5),
-    textDim: const Color(0xFF8A919E),
-    accent: const Color(0xFFF0545A),
-    terminalBackground: const Color(0xFF111318),
-    terminalForeground: const Color(0xFFE8EAEE),
+    // The icon's warm, near-black tile, and its coral upper fold as the accent.
+    background: const Color(0xFF140C0A),
+    panel: const Color(0xFF1B110E),
+    panelAlt: const Color(0xFF261813),
+    border: const Color(0xFF3A2620),
+    text: const Color(0xFFF6EEEB),
+    textDim: const Color(0xFFA6918A),
+    accent: const Color(0xFFFF7B5C),
+    terminalBackground: const Color(0xFF140C0A),
+    terminalForeground: const Color(0xFFEFE4E0),
     ansi: _c([
-      0x1F2229, 0xF0545A, 0x5FCB8A, 0xF2B45A, 0x5B9BE6, 0xB78CF2, 0x4FC9C4, 0xC9CDD5,
-      0x5B6270, 0xFF7A7F, 0x86E0A8, 0xFFCB80, 0x86B7F0, 0xCDACFA, 0x7ADDD8, 0xF2F3F5,
+      0x261813, 0xE5533D, 0x7CCB8A, 0xF2B45A, 0x6FA3E6, 0xC48CF2, 0x5CC9C0, 0xD9CCC7,
+      0x6B5850, 0xFF7B5C, 0x9BE0A8, 0xFFCB80, 0x93BDF0, 0xD6ACFA, 0x86DDD6, 0xF6EEEB,
     ]),
   ),
-  // The light counterpart: the dark front tab of the light icon on white.
+  // The light counterpart: the icon's lower, deeper fold as the accent on white.
   ThemePreset(
     id: 'builtin:commands-light',
-    name: 'NetDeck Light',
+    name: 'CommandS Light',
     dark: false,
     background: const Color(0xFFFFFFFF),
-    panel: const Color(0xFFF4F5F7),
-    panelAlt: const Color(0xFFEBEDF0),
-    border: const Color(0xFFD9DCE1),
-    text: const Color(0xFF16181D),
-    textDim: const Color(0xFF5B6270),
-    accent: const Color(0xFFD93A40),
+    panel: const Color(0xFFFBF6F4),
+    panelAlt: const Color(0xFFF4EBE7),
+    border: const Color(0xFFE6D8D2),
+    text: const Color(0xFF24130F),
+    textDim: const Color(0xFF7A645D),
+    accent: const Color(0xFFC2372A),
     terminalBackground: const Color(0xFFFFFFFF),
-    terminalForeground: const Color(0xFF16181D),
+    terminalForeground: const Color(0xFF24130F),
     ansi: _c([
-      0x16181D, 0xD93A40, 0x2E9446, 0xB7791F, 0x2F6CB0, 0x8A4FC2, 0x14857C, 0x8A919E,
-      0x5B6270, 0xE5484D, 0x3AAE57, 0xD69228, 0x4A86CC, 0xA468DA, 0x23A196, 0x3A3F4B,
+      0x24130F, 0xC2372A, 0x2E9446, 0xB7791F, 0x2F6CB0, 0x8A4FC2, 0x14857C, 0x8A7A74,
+      0x6B5850, 0xE0533D, 0x3AAE57, 0xD69228, 0x4A86CC, 0xA468DA, 0x23A196, 0x3A2A25,
     ]),
   ),
   ThemePreset(

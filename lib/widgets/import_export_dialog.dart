@@ -40,7 +40,7 @@ Future<void> showExportDialog(BuildContext context) async {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final (key, label, hint, icon) in const [
-            ('json', 'JSON', 'Everything, for importing into NetDeck again', Icons.data_object),
+            ('json', 'JSON', 'Everything, for importing into CommandS again', Icons.data_object),
             ('xml', 'XML', 'Folders and connections', Icons.code),
             ('csv', 'CSV (Excel/Sheets)', 'One row per connection', Icons.table_chart_outlined),
           ])
@@ -68,7 +68,7 @@ Future<void> showExportDialog(BuildContext context) async {
   }
 
   final path = await FilePicker.platform.saveFile(
-    dialogTitle: tr('Export NetDeck connections'),
+    dialogTitle: tr('Export CommandS connections'),
     fileName: 'commands-export.$format',
     type: FileType.custom,
     allowedExtensions: [format],
@@ -85,7 +85,7 @@ Future<void> showExportDialog(BuildContext context) async {
 Future<void> showImportDialog(BuildContext context) async {
   final app = context.read<AppState>();
   final result = await FilePicker.platform.pickFiles(
-    dialogTitle: tr('Import connections (NetDeck JSON/XML/CSV or Remote Desktop Manager JSON)'),
+    dialogTitle: tr('Import connections (CommandS JSON/XML/CSV or Remote Desktop Manager JSON)'),
     type: FileType.custom,
     allowedExtensions: ['json', 'xml', 'csv'],
   );
@@ -110,8 +110,8 @@ Future<void> showImportDialog(BuildContext context) async {
       if (parsed.folders.isEmpty && parsed.connections.isEmpty) {
         throw FormatException(
           tr(
-            "This XML doesn't look like a NetDeck export (no <Connection>/<Folder> elements found). "
-            "NetDeck's own XML import only round-trips its own export — for Remote Desktop Manager, "
+            "This XML doesn't look like a CommandS export (no <Connection>/<Folder> elements found). "
+            "CommandS's own XML import only round-trips its own export — for Remote Desktop Manager, "
             'export as JSON instead, or as CSV if you need passwords included.',
           ),
         );

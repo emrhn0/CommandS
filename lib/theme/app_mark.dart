@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-/// The CommandS mark: the ⌘ (Command) key glyph on a rounded tile, its middle
-/// square filled red as a terminal cursor. The same drawing as the window,
-/// taskbar and installer icon (all made by `tool/make_icons.py`).
+/// The CommandS mark: a folded-paper lightning bolt on a rounded tile. The
+/// same drawing as the window, taskbar and installer icon (all made by `tool/make_icons.py`).
 ///
 /// It follows the theme so the tile stands out from the bar behind it: the
 /// light tile on a dark theme, the dark tile on a light one.

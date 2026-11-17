@@ -14,6 +14,7 @@ import 'screens/home_screen.dart';
 import 'services/rdp_session.dart';
 import 'services/mcp_server.dart';
 import 'services/terminal_appearance.dart';
+import 'widgets/launch_splash.dart';
 import 'widgets/mcp_approval_dialog.dart';
 import 'theme/app_theme.dart';
 import 'widgets/sftp_window.dart';
@@ -135,7 +136,7 @@ class CommandSApp extends StatelessWidget {
             // [RdpModalObserver].
             navigatorObservers: [_rdpModalObserver],
             // Asks, once a launch, whether to install a newer release.
-            home: const UpdateGate(child: HomeScreen()),
+            home: const LaunchSplash(child: UpdateGate(child: HomeScreen())),
           ),
         ),
       ),

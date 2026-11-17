@@ -1,12 +1,12 @@
 /// CI supplies the release tag. Local builds use the current source version.
-const String appVersion = String.fromEnvironment('COMMANDS_VERSION', defaultValue: 'v1.3.0');
+const String appVersion = String.fromEnvironment('COMMANDS_VERSION', defaultValue: 'v1.6.0-beta.2');
 
 enum ReleaseChannel { stable, beta }
 
 /// Set by the build, independent of the update channel chosen in Settings.
 const String _buildChannel = String.fromEnvironment('COMMANDS_CHANNEL', defaultValue: 'stable');
 const ReleaseChannel buildChannel = _buildChannel == 'beta' ? ReleaseChannel.beta : ReleaseChannel.stable;
-const String appName = buildChannel == ReleaseChannel.beta ? 'NetDeck Beta' : 'NetDeck';
+const String appName = buildChannel == ReleaseChannel.beta ? 'CommandS Beta' : 'CommandS';
 /// The same for a beta: it replaces the normal app and keeps its data.
 const String appDataDirName = 'CommandS';
 
