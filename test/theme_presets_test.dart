@@ -41,7 +41,7 @@ void main() {
   group('catalogue', () {
     test('has the requested themes, each complete', () {
       final names = builtInThemes.map((t) => t.name).toSet();
-      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora', 'CommandS Dark', 'CommandS Light']));
+      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora', 'NetDeck Dark', 'NetDeck Light']));
       expect(builtInThemes.map((t) => t.id).toSet().length, builtInThemes.length, reason: 'unique ids');
       for (final t in builtInThemes) {
         expect(t.ansi, hasLength(16), reason: t.name);
@@ -144,7 +144,7 @@ void main() {
       expect(prefs.containsKey('commands.themeMode'), isFalse);
     });
 
-    test('someone on the old Light theme moves to CommandS Light, terminal untouched', () async {
+    test('someone on the old Light theme moves to NetDeck Light, terminal untouched', () async {
       SharedPreferences.setMockInitialValues({
         'commands.themeMode': 'light',
         'commands.terminalBg': 0xFF102030,
@@ -158,26 +158,29 @@ void main() {
       expect((await _loadedState()).themeId, AppState.lightThemeId);
     });
 
-    test('someone on the old Dark theme moves to CommandS Dark', () async {
+    test('someone on the old Dark theme moves to NetDeck Dark', () async {
       SharedPreferences.setMockInitialValues({'commands.themeMode': 'dark'});
       final app = await _loadedState();
       expect(app.themeId, AppState.defaultThemeId);
       expect(app.themeMode, ThemeMode.dark);
     });
 
-    test('someone on the old CommandS theme stays on it, now named CommandS Dark', () async {
+    test('someone on the old CommandS theme stays on it, now named NetDeck Dark', () async {
       SharedPreferences.setMockInitialValues({'commands.themeMode': 'dark', 'commands.themeId': 'builtin:commands'});
       final app = await _loadedState();
       expect(app.themeId, AppState.defaultThemeId);
-      expect(app.activeTheme!.name, 'CommandS Dark');
+      expect(app.activeTheme!.name, 'NetDeck Dark');
     });
 
-    test('CommandS Light is black and orange on white', () {
+    test('NetDeck Light is the icon slate on white, with its red cursor as the accent', () {
       final light = builtInThemes.firstWhere((t) => t.id == AppState.lightThemeId);
       expect(light.dark, isFalse);
       expect(light.background, const Color(0xFFFFFFFF));
-      expect(light.text.computeLuminance(), lessThan(0.05));
-      expect(light.accent, const Color(0xFFE8711F));
+      expect(light.text, const Color(0xFF16181D));
+      expect(light.accent, const Color(0xFFD93A40));
+      final dark = builtInThemes.firstWhere((t) => t.id == AppState.defaultThemeId);
+      expect(dark.panel, const Color(0xFF16181D), reason: 'the icon tile');
+      expect(dark.accent, const Color(0xFFF0545A));
     });
   });
 
@@ -219,7 +222,7 @@ void main() {
       expect(app.themeId, 'builtin:nord', reason: 'the app theme stays');
     });
 
-    test('CommandS Light is chosen like any other theme', () async {
+    test('NetDeck Light is chosen like any other theme', () async {
       final app = await _loadedState();
       await app.selectTheme(AppState.lightThemeId);
       expect(app.themeMode, ThemeMode.light);
@@ -241,7 +244,7 @@ void main() {
 
       await again.removeImportedTheme(theme.id);
       expect(again.importedThemes, isEmpty);
-      // It was a light theme: CommandS Light takes its place.
+      // It was a light theme: NetDeck Light takes its place.
       expect(again.themeId, AppState.lightThemeId);
       expect((await _loadedState()).themeId, AppState.lightThemeId);
     });
@@ -281,7 +284,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.keepTerminalColors, isTrue);
 
-    await tester.tap(find.text('CommandS Light'));
+    await tester.tap(find.text('NetDeck Light'));
     await tester.pumpAndSettle();
     expect(app.themeId, AppState.lightThemeId);
     expect(app.themeMode, ThemeMode.light);
@@ -300,8 +303,8 @@ void main() {
       child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.theme)),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('CommandS Koyu'), findsOneWidget);
-    expect(find.text('CommandS Açık'), findsOneWidget);
-    expect(find.text('CommandS Dark'), findsNothing);
+    expect(find.text('NetDeck Koyu'), findsOneWidget);
+    expect(find.text('NetDeck Açık'), findsOneWidget);
+    expect(find.text('NetDeck Dark'), findsNothing);
   });
 }

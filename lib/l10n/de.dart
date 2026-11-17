@@ -201,13 +201,13 @@ const german = <String, String>{
       'Anmeldedaten. macOS hat keine einbettbare RDP-Komponente und erlaubt keiner App, das Fenster '
       'einer anderen App in einen Tab zu setzen, daher kann die Sitzung hier nicht angezeigt werden.',
   '{host} is open in {client}, in its own window, with the host and username filled in — '
-          '{client} keeps its own credential store, so the password is the one thing CommandS cannot '
-          'hand it. Copy it below, or run "brew install freerdp" and CommandS will sign you in with '
+          '{client} keeps its own credential store, so the password is the one thing NetDeck cannot '
+          'hand it. Copy it below, or run "brew install freerdp" and NetDeck will sign you in with '
           'no prompt at all.':
       '{host} ist in {client} in einem eigenen Fenster geöffnet, Host und Benutzername sind ausgefüllt — '
-      '{client} hat einen eigenen Anmeldedatenspeicher, daher kann CommandS ihm nur das Passwort nicht '
+      '{client} hat einen eigenen Anmeldedatenspeicher, daher kann NetDeck ihm nur das Passwort nicht '
       'übergeben. Kopieren Sie es unten, oder führen Sie „brew install freerdp“ aus, dann meldet '
-      'CommandS Sie ganz ohne Abfrage an.',
+      'NetDeck Sie ganz ohne Abfrage an.',
   '{host} is open in {client}, in its own window, with the host and username filled in.':
       '{host} ist in {client} in einem eigenen Fenster geöffnet, Host und Benutzername sind ausgefüllt.',
 
@@ -272,18 +272,18 @@ const german = <String, String>{
   'Export…': 'Exportieren…',
   'No connections to export yet.': 'Noch keine Verbindungen zum Exportieren.',
   'Export format': 'Exportformat',
-  'Everything, for importing into CommandS again': 'Alles, zum erneuten Import in CommandS',
+  'Everything, for importing into NetDeck again': 'Alles, zum erneuten Import in NetDeck',
   'Folders and connections': 'Ordner und Verbindungen',
   'One row per connection': 'Eine Zeile pro Verbindung',
-  'Export CommandS connections': 'CommandS-Verbindungen exportieren',
+  'Export NetDeck connections': 'NetDeck-Verbindungen exportieren',
   'Exported to {path}': 'Exportiert nach {path}',
-  'Import connections (CommandS JSON/XML/CSV or Remote Desktop Manager JSON)':
-      'Verbindungen importieren (CommandS JSON/XML/CSV oder Remote Desktop Manager JSON)',
-  "This XML doesn't look like a CommandS export (no <Connection>/<Folder> elements found). "
-          "CommandS's own XML import only round-trips its own export — for Remote Desktop Manager, "
+  'Import connections (NetDeck JSON/XML/CSV or Remote Desktop Manager JSON)':
+      'Verbindungen importieren (NetDeck JSON/XML/CSV oder Remote Desktop Manager JSON)',
+  "This XML doesn't look like a NetDeck export (no <Connection>/<Folder> elements found). "
+          "NetDeck's own XML import only round-trips its own export — for Remote Desktop Manager, "
           'export as JSON instead, or as CSV if you need passwords included.':
-      'Dieses XML sieht nicht wie ein CommandS-Export aus (keine <Connection>/<Folder>-Elemente gefunden). '
-      'Der XML-Import von CommandS liest nur den eigenen Export — exportieren Sie aus Remote Desktop Manager '
+      'Dieses XML sieht nicht wie ein NetDeck-Export aus (keine <Connection>/<Folder>-Elemente gefunden). '
+      'Der XML-Import von NetDeck liest nur den eigenen Export — exportieren Sie aus Remote Desktop Manager '
       'stattdessen als JSON, oder als CSV, wenn Passwörter enthalten sein sollen.',
   'Imported {n} connection(s)': '{n} Verbindung(en) importiert',
   '{n} skipped (unsupported type)': '{n} übersprungen (nicht unterstützter Typ)',
@@ -311,8 +311,8 @@ const german = <String, String>{
   'Passwords': 'Passwörter',
   'Remembered passwords are encrypted and kept on this computer. An export includes them only if you choose to.':
       'Gespeicherte Passwörter werden verschlüsselt auf diesem Computer abgelegt. Ein Export enthält sie nur, wenn Sie das wählen.',
-  'Applies to CommandS itself; sessions are not affected.':
-      'Gilt nur für CommandS selbst; Sitzungen sind nicht betroffen.',
+  'Applies to NetDeck itself; sessions are not affected.':
+      'Gilt nur für NetDeck selbst; Sitzungen sind nicht betroffen.',
   'Connections': 'Verbindungen',
   'MCP integration': 'MCP-Integration',
   'Type or paste a path': 'Pfad eingeben oder einfügen',
@@ -367,7 +367,7 @@ const german = <String, String>{
   'Size': 'Größe',
   'Import theme': 'Design importieren',
   'Import theme…': 'Design importieren…',
-  'A JSON file in the CommandS theme format.': 'Eine JSON-Datei im CommandS-Designformat.',
+  'A JSON file in the NetDeck theme format.': 'Eine JSON-Datei im NetDeck-Designformat.',
   'Theme imported: {name}': 'Design importiert: {name}',
   'Could not import the theme: {error}': 'Design konnte nicht importiert werden: {error}',
   'Could not read the theme file.': 'Designdatei konnte nicht gelesen werden.',
@@ -377,10 +377,10 @@ const german = <String, String>{
       'Ein Design ändert dann nur die App, nicht die von Ihnen festgelegten Terminalfarben.',
   // Theme file errors (lib/theme/theme_presets.dart).
   'A theme file is a JSON object.': 'Eine Designdatei ist ein JSON-Objekt.',
-  'Not a CommandS theme: "format" must be "commands-theme".':
-      'Kein CommandS-Design: "format" muss "commands-theme" sein.',
-  'Unsupported theme version; this CommandS reads version 1.':
-      'Nicht unterstützte Designversion; diese CommandS-Version liest Version 1.',
+  'Not a NetDeck theme: "format" must be "commands-theme".':
+      'Kein NetDeck-Design: "format" muss "commands-theme" sein.',
+  'Unsupported theme version; this NetDeck reads version 1.':
+      'Nicht unterstützte Designversion; diese NetDeck-Version liest Version 1.',
   'The theme needs a "name".': 'Das Design benötigt einen "name".',
   'The theme name must be 1 to 40 characters.': 'Der Designname muss 1 bis 40 Zeichen lang sein.',
   '"dark" must be true or false.': '"dark" muss true oder false sein.',
@@ -413,8 +413,8 @@ const german = <String, String>{
   'Could not reach GitHub to check for updates. Check the internet connection and try again.':
       'GitHub war für die Update-Suche nicht erreichbar. Prüfen Sie die Internetverbindung und versuchen Sie es erneut.',
   "You're up to date — {version} is the latest version.": 'Alles aktuell — {version} ist die neueste Version.',
-  'CommandS {version} is available': 'CommandS {version} ist verfügbar',
-  'CommandS Beta {version} is available': 'CommandS Beta {version} ist verfügbar',
+  'NetDeck {version} is available': 'NetDeck {version} ist verfügbar',
+  'NetDeck Beta {version} is available': 'NetDeck Beta {version} ist verfügbar',
   'Update to {version} now?': 'Jetzt auf {version} aktualisieren?',
   'Update to {version}': 'Auf {version} aktualisieren',
   'Yes, update': 'Ja, aktualisieren',
@@ -425,8 +425,8 @@ const german = <String, String>{
   'Downloading {version}… {percent}%': '{version} wird heruntergeladen… {percent} %',
   'Downloading…': 'Wird heruntergeladen…',
   'Downloading… {percent}%': 'Wird heruntergeladen… {percent} %',
-  'CommandS will close and reopen on the new version by itself.':
-      'CommandS schließt sich und startet von selbst mit der neuen Version.',
+  'NetDeck will close and reopen on the new version by itself.':
+      'NetDeck schließt sich und startet von selbst mit der neuen Version.',
   'You are running {version}.': 'Sie verwenden {version}.',
   'Download is {size}.': 'Download-Größe: {size}.',
   'Downloading opens the release page in your browser. Unzip the app and drag it to '

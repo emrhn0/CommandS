@@ -103,7 +103,7 @@ class MacRdpSessionController implements SessionController {
       }
       lastError =
           'No RDP client found. Install Microsoft "Windows App" from the Mac '
-          'App Store, or run "brew install freerdp" for a client CommandS can '
+          'App Store, or run "brew install freerdp" for a client NetDeck can '
           'hand your saved password to.';
       _setStatus(SessionStatus.error);
     } catch (e) {

@@ -6,7 +6,7 @@ enum ReleaseChannel { stable, beta }
 /// Set by the build, independent of the update channel chosen in Settings.
 const String _buildChannel = String.fromEnvironment('COMMANDS_CHANNEL', defaultValue: 'stable');
 const ReleaseChannel buildChannel = _buildChannel == 'beta' ? ReleaseChannel.beta : ReleaseChannel.stable;
-const String appName = buildChannel == ReleaseChannel.beta ? 'CommandS Beta' : 'CommandS';
+const String appName = buildChannel == ReleaseChannel.beta ? 'NetDeck Beta' : 'NetDeck';
 /// The same for a beta: it replaces the normal app and keeps its data.
 const String appDataDirName = 'CommandS';
 

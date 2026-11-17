@@ -418,9 +418,9 @@ class McpServer extends ChangeNotifier {
                 : '2025-11-25',
             'capabilities': {'tools': {}},
             'serverInfo': {'name': 'commands', 'version': appVersion},
-            'instructions': 'Use only the connections listed, by their id. Each has its name, host address, port and username; the login itself is handled by CommandS, so no password is needed or given. '
+            'instructions': 'Use only the connections listed, by their id. Each has its name, host address, port and username; the login itself is handled by NetDeck, so no password is needed or given. '
                 'Use device_type to choose device-specific commands. Unknown means inspect the banner and prompt before sending a command; do not assume a Unix shell. '
-                'On network devices, show and display commands (and turning off paging for the session) run at once. Every other command, such as configuration changes or saving, is approved by the user in CommandS first and can be refused. '
+                'On network devices, show and display commands (and turning off paging for the session) run at once. Every other command, such as configuration changes or saving, is approved by the user in NetDeck first and can be refused. '
                 'Open a session, send a single command, then read output using the returned cursor. '
                 'Session output is asynchronous; poll read_output until the expected prompt or result appears. '
                 'Never assume a command has finished just because one read returned no text.',
@@ -522,12 +522,12 @@ class McpServer extends ChangeNotifier {
   static const _tools = [
     {
       'name': 'list_connections',
-      'description': 'List the SSH connections the user allowed for this agent: id (use it to open the connection), name, host (hostname or IP address), port, username and device_type. Unknown means the type has not been identified. The password is never returned; CommandS logs in by itself.',
+      'description': 'List the SSH connections the user allowed for this agent: id (use it to open the connection), name, host (hostname or IP address), port, username and device_type. Unknown means the type has not been identified. The password is never returned; NetDeck logs in by itself.',
       'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
     },
     {
       'name': 'open_connection',
-      'description': 'Open a saved SSH connection in a CommandS tab and return its MCP session ID.',
+      'description': 'Open a saved SSH connection in a NetDeck tab and return its MCP session ID.',
       'inputSchema': {
         'type': 'object',
         'properties': {

@@ -162,47 +162,46 @@ class ThemePreset {
 
 List<Color> _c(List<int> values) => [for (final v in values) Color(0xFF000000 | v)];
 
-/// The themes shipped with CommandS. Colours follow each theme's published
-/// palette, except CommandS itself: the app's own, white on black with the
-/// icon's orange, and the one an install with no theme choice of its own
+/// The themes shipped with the app. Colours follow each theme's published
+/// palette, except NetDeck's own two, after the icon, and the one an install with no theme choice of its own
 /// starts on (see [AppState.defaultThemeId]).
 final List<ThemePreset> builtInThemes = List.unmodifiable([
   ThemePreset(
     id: 'builtin:commands',
-    name: 'CommandS Dark',
+    name: 'NetDeck Dark',
     dark: true,
-    background: const Color(0xFF0D0D0D),
-    panel: const Color(0xFF161616),
-    panelAlt: const Color(0xFF1F1F1F),
-    border: const Color(0xFF2C2C2C),
-    text: const Color(0xFFF5F3EF),
-    textDim: const Color(0xFF9A9690),
-    accent: const Color(0xFFFF8A3D),
-    terminalBackground: const Color(0xFF0D0D0D),
-    terminalForeground: const Color(0xFFF5F3EF),
+    // The icon's slate tile and tabs, and its red cursor as the accent.
+    background: const Color(0xFF111318),
+    panel: const Color(0xFF16181D),
+    panelAlt: const Color(0xFF1F2229),
+    border: const Color(0xFF2B2F38),
+    text: const Color(0xFFF2F3F5),
+    textDim: const Color(0xFF8A919E),
+    accent: const Color(0xFFF0545A),
+    terminalBackground: const Color(0xFF111318),
+    terminalForeground: const Color(0xFFE8EAEE),
     ansi: _c([
-      0x1A1A1A, 0xFF5C5C, 0x6BCB77, 0xFF8A3D, 0x5B9BD5, 0xC77DFF, 0x4FD1C5, 0xD9D5CE,
-      0x4A4A4A, 0xFF8080, 0x8FE3A0, 0xFFB066, 0x8FC1E8, 0xDDA8FF, 0x7FE8DB, 0xF5F3EF,
+      0x1F2229, 0xF0545A, 0x5FCB8A, 0xF2B45A, 0x5B9BE6, 0xB78CF2, 0x4FC9C4, 0xC9CDD5,
+      0x5B6270, 0xFF7A7F, 0x86E0A8, 0xFFCB80, 0x86B7F0, 0xCDACFA, 0x7ADDD8, 0xF2F3F5,
     ]),
   ),
-  // CommandS's own light theme: black on white with the icon's orange,
-  // the light counterpart of the one above.
+  // The light counterpart: the dark front tab of the light icon on white.
   ThemePreset(
     id: 'builtin:commands-light',
-    name: 'CommandS Light',
+    name: 'NetDeck Light',
     dark: false,
     background: const Color(0xFFFFFFFF),
-    panel: const Color(0xFFF5F4F1),
-    panelAlt: const Color(0xFFECEAE6),
-    border: const Color(0xFFDCD9D3),
-    text: const Color(0xFF111111),
-    textDim: const Color(0xFF6B6760),
-    accent: const Color(0xFFE8711F),
+    panel: const Color(0xFFF4F5F7),
+    panelAlt: const Color(0xFFEBEDF0),
+    border: const Color(0xFFD9DCE1),
+    text: const Color(0xFF16181D),
+    textDim: const Color(0xFF5B6270),
+    accent: const Color(0xFFD93A40),
     terminalBackground: const Color(0xFFFFFFFF),
-    terminalForeground: const Color(0xFF111111),
+    terminalForeground: const Color(0xFF16181D),
     ansi: _c([
-      0x1A1A1A, 0xD13B3B, 0x2E9446, 0xD9650F, 0x2F6CB0, 0x9447C2, 0x14857C, 0x8A8680,
-      0x5A5A5A, 0xE25555, 0x3AAE57, 0xF07F2A, 0x4A86CC, 0xAD64DA, 0x23A196, 0x2B2B2B,
+      0x16181D, 0xD93A40, 0x2E9446, 0xB7791F, 0x2F6CB0, 0x8A4FC2, 0x14857C, 0x8A919E,
+      0x5B6270, 0xE5484D, 0x3AAE57, 0xD69228, 0x4A86CC, 0xA468DA, 0x23A196, 0x3A3F4B,
     ]),
   ),
   ThemePreset(

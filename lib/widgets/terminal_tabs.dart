@@ -1604,8 +1604,8 @@ class _MacRdpPaneState extends State<_MacRdpPane> {
     if (controller.freerdpWouldHelp) {
       return tr(
         '{host} is open in {client}, in its own window, with the host and username filled in — '
-        '{client} keeps its own credential store, so the password is the one thing CommandS cannot '
-        'hand it. Copy it below, or run "brew install freerdp" and CommandS will sign you in with '
+        '{client} keeps its own credential store, so the password is the one thing NetDeck cannot '
+        'hand it. Copy it below, or run "brew install freerdp" and NetDeck will sign you in with '
         'no prompt at all.',
         args,
       );

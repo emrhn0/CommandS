@@ -202,12 +202,12 @@ const turkish = <String, String>{
       'gömülebilir bir RDP bileşeni yok ve bir uygulama başka bir uygulamanın penceresini sekmeye '
       'yerleştiremiyor; bu yüzden oturum burada gösterilemiyor.',
   '{host} is open in {client}, in its own window, with the host and username filled in — '
-          '{client} keeps its own credential store, so the password is the one thing CommandS cannot '
-          'hand it. Copy it below, or run "brew install freerdp" and CommandS will sign you in with '
+          '{client} keeps its own credential store, so the password is the one thing NetDeck cannot '
+          'hand it. Copy it below, or run "brew install freerdp" and NetDeck will sign you in with '
           'no prompt at all.':
       '{host}, {client} içinde kendi penceresinde, sunucu ve kullanıcı adı doldurulmuş olarak açıldı — '
-      '{client} kendi kimlik deposunu kullandığı için CommandS ona yalnızca şifreyi veremiyor. '
-      'Şifreyi aşağıdan kopyalayın ya da "brew install freerdp" çalıştırın; CommandS sizi hiç '
+      '{client} kendi kimlik deposunu kullandığı için NetDeck ona yalnızca şifreyi veremiyor. '
+      'Şifreyi aşağıdan kopyalayın ya da "brew install freerdp" çalıştırın; NetDeck sizi hiç '
       'sormadan oturuma alır.',
   '{host} is open in {client}, in its own window, with the host and username filled in.':
       '{host}, {client} içinde kendi penceresinde, sunucu ve kullanıcı adı doldurulmuş olarak açıldı.',
@@ -270,18 +270,18 @@ const turkish = <String, String>{
   'Export…': 'Dışa aktar…',
   'No connections to export yet.': 'Henüz dışa aktarılacak bağlantı yok.',
   'Export format': 'Dışa aktarma biçimi',
-  'Everything, for importing into CommandS again': 'Her şey, CommandS’e yeniden aktarmak için',
+  'Everything, for importing into NetDeck again': 'Her şey, NetDeck’e yeniden aktarmak için',
   'Folders and connections': 'Klasörler ve bağlantılar',
   'One row per connection': 'Her bağlantı bir satır',
-  'Export CommandS connections': 'CommandS bağlantılarını dışa aktar',
+  'Export NetDeck connections': 'NetDeck bağlantılarını dışa aktar',
   'Exported to {path}': '{path} konumuna aktarıldı',
-  'Import connections (CommandS JSON/XML/CSV or Remote Desktop Manager JSON)':
-      'Bağlantıları içe aktar (CommandS JSON/XML/CSV veya Remote Desktop Manager JSON)',
-  "This XML doesn't look like a CommandS export (no <Connection>/<Folder> elements found). "
-          "CommandS's own XML import only round-trips its own export — for Remote Desktop Manager, "
+  'Import connections (NetDeck JSON/XML/CSV or Remote Desktop Manager JSON)':
+      'Bağlantıları içe aktar (NetDeck JSON/XML/CSV veya Remote Desktop Manager JSON)',
+  "This XML doesn't look like a NetDeck export (no <Connection>/<Folder> elements found). "
+          "NetDeck's own XML import only round-trips its own export — for Remote Desktop Manager, "
           'export as JSON instead, or as CSV if you need passwords included.':
-      'Bu XML bir CommandS dışa aktarımına benzemiyor (<Connection>/<Folder> öğesi bulunamadı). '
-      'CommandS’in XML içe aktarımı yalnızca kendi dışa aktarımını okur — Remote Desktop Manager için '
+      'Bu XML bir NetDeck dışa aktarımına benzemiyor (<Connection>/<Folder> öğesi bulunamadı). '
+      'NetDeck’in XML içe aktarımı yalnızca kendi dışa aktarımını okur — Remote Desktop Manager için '
       'JSON olarak, şifreler de gerekiyorsa CSV olarak dışa aktarın.',
   'Imported {n} connection(s)': '{n} bağlantı içe aktarıldı',
   '{n} skipped (unsupported type)': '{n} tanesi atlandı (desteklenmeyen tür)',
@@ -309,8 +309,8 @@ const turkish = <String, String>{
   'Passwords': 'Parolalar',
   'Remembered passwords are encrypted and kept on this computer. An export includes them only if you choose to.':
       'Hatırlanan parolalar şifrelenir ve bu bilgisayarda saklanır. Dışa aktarmaya yalnızca sen seçersen eklenir.',
-  'Applies to CommandS itself; sessions are not affected.':
-      'Yalnızca CommandS’in kendi arayüzünü değiştirir; oturumlar etkilenmez.',
+  'Applies to NetDeck itself; sessions are not affected.':
+      'Yalnızca NetDeck’in kendi arayüzünü değiştirir; oturumlar etkilenmez.',
   'Connections': 'Bağlantılar',
   'MCP integration': 'MCP entegrasyonu',
   'Type or paste a path': 'Yol yazın veya yapıştırın',
@@ -364,7 +364,7 @@ const turkish = <String, String>{
   'Size': 'Boyut',
   'Import theme': 'Tema içe aktar',
   'Import theme…': 'Tema içe aktar…',
-  'A JSON file in the CommandS theme format.': 'CommandS tema biçiminde bir JSON dosyası.',
+  'A JSON file in the NetDeck theme format.': 'NetDeck tema biçiminde bir JSON dosyası.',
   'Theme imported: {name}': 'Tema içe aktarıldı: {name}',
   'Could not import the theme: {error}': 'Tema içe aktarılamadı: {error}',
   'Could not read the theme file.': 'Tema dosyası okunamadı.',
@@ -374,10 +374,10 @@ const turkish = <String, String>{
       'Tema yalnızca uygulamayı değiştirir, ayarladığın terminal renklerine dokunmaz.',
   // Theme file errors (lib/theme/theme_presets.dart).
   'A theme file is a JSON object.': 'Tema dosyası bir JSON nesnesi olmalı.',
-  'Not a CommandS theme: "format" must be "commands-theme".':
-      'CommandS teması değil: "format" değeri "commands-theme" olmalı.',
-  'Unsupported theme version; this CommandS reads version 1.':
-      'Desteklenmeyen tema sürümü; bu CommandS 1. sürümü okur.',
+  'Not a NetDeck theme: "format" must be "commands-theme".':
+      'NetDeck teması değil: "format" değeri "commands-theme" olmalı.',
+  'Unsupported theme version; this NetDeck reads version 1.':
+      'Desteklenmeyen tema sürümü; bu NetDeck 1. sürümü okur.',
   'The theme needs a "name".': 'Temanın bir "name" alanı olmalı.',
   'The theme name must be 1 to 40 characters.': 'Tema adı 1 ile 40 karakter arasında olmalı.',
   '"dark" must be true or false.': '"dark" true ya da false olmalı.',
@@ -409,8 +409,8 @@ const turkish = <String, String>{
   'Checking for updates…': 'Güncellemeler denetleniyor…',
   'Could not reach GitHub to check for updates. Check the internet connection and try again.': 'Güncellemeleri denetlemek için GitHub’a ulaşılamadı. İnternet bağlantısını kontrol edip tekrar deneyin.',
   "You're up to date — {version} is the latest version.": 'Güncelsiniz — {version} en son sürüm.',
-  'CommandS {version} is available': 'CommandS {version} yayında',
-  'CommandS Beta {version} is available': 'CommandS Beta {version} yayında',
+  'NetDeck {version} is available': 'NetDeck {version} yayında',
+  'NetDeck Beta {version} is available': 'NetDeck Beta {version} yayında',
   'Update to {version} now?': 'Şimdi {version} sürümüne güncellensin mi?',
   'Update to {version}': '{version} sürümüne güncelle',
   'Yes, update': 'Evet, güncelle',
@@ -421,8 +421,8 @@ const turkish = <String, String>{
   'Downloading {version}… {percent}%': '{version} indiriliyor… %{percent}',
   'Downloading…': 'İndiriliyor…',
   'Downloading… {percent}%': 'İndiriliyor… %{percent}',
-  'CommandS will close and reopen on the new version by itself.':
-      'CommandS kapanıp yeni sürümle kendiliğinden yeniden açılacak.',
+  'NetDeck will close and reopen on the new version by itself.':
+      'NetDeck kapanıp yeni sürümle kendiliğinden yeniden açılacak.',
   'You are running {version}.': 'Kullandığınız sürüm: {version}.',
   'Download is {size}.': 'İndirme boyutu: {size}.',
   'Downloading opens the release page in your browser. Unzip the app and drag it to '
