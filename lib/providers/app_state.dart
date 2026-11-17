@@ -1380,6 +1380,13 @@ class AppState extends ChangeNotifier {
     applyLayout(fillEmptyPane(layout, emptyId, tabId), editActive: activeGroupId != null);
   }
 
+  /// Opens [conn] straight into the empty pane [emptyId] of the split on
+  /// screen, as if its new tab had been dropped there.
+  void openConnectionInEmptyPane(String emptyId, SavedConnection conn) {
+    final tab = _openTab(conn);
+    dropTabInEmptyPane(emptyId, tab.id);
+  }
+
   /// Whether the session [tabId] can swap places with the one in the pane
   /// [targetTabId]: both are in the split on screen.
   bool canSwapPanes(String tabId, String targetTabId) {

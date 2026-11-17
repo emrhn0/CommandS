@@ -11,19 +11,33 @@ import '../models/models.dart';
 /// an appliance built on Linux may print its own banner a moment later.
 ///
 /// Null when nothing gives it away; the next connection tries again.
-DeviceKind? detectDevice({String serverVersion = '', String output = '', bool settled = false}) {
+DeviceKind? detectDevice({String serverVersion = '', String output = '', bool settled = false}) =>
+    detectDeviceKind(serverVersion: serverVersion, output: output, settled: settled)?.kind;
+
+/// As [detectDevice], and whether the answer is [certain]: a maker's own
+/// name or banner. An answer from signs other makers share (config lines
+/// Dell N-series switches print like a Cisco, a bash prompt, a Linux
+/// banner) is not, and a later certain answer replaces it.
+({DeviceKind kind, bool certain})? detectDeviceKind({
+  String serverVersion = '',
+  String output = '',
+  bool settled = false,
+}) {
   final v = serverVersion;
-  if (v.toLowerCase().contains('cisco')) return DeviceKind.cisco;
-  if (v.contains('HUAWEI')) return DeviceKind.huawei;
-  if (v.contains('OpenSSH_for_Windows')) return DeviceKind.windows;
+  if (v.toLowerCase().contains('cisco')) return (kind: DeviceKind.cisco, certain: true);
+  if (v.contains('HUAWEI')) return (kind: DeviceKind.huawei, certain: true);
+  if (v.contains('OpenSSH_for_Windows')) return (kind: DeviceKind.windows, certain: true);
 
   final text = output.replaceAll(_ansi, '');
   for (final (kind, pattern) in _rules) {
-    if (pattern.hasMatch(text)) return kind;
+    if (pattern.hasMatch(text)) return (kind: kind, certain: true);
+  }
+  for (final (kind, pattern) in _weakRules) {
+    if (pattern.hasMatch(text)) return (kind: kind, certain: false);
   }
 
   if (settled && (_linuxBanner.hasMatch(text) || RegExp(r'Ubuntu|Debian|Raspbian').hasMatch(v))) {
-    return DeviceKind.linux;
+    return (kind: DeviceKind.linux, certain: false);
   }
   return null;
 }
@@ -42,8 +56,13 @@ final List<(DeviceKind, RegExp)> _rules = [
   (
     DeviceKind.dell,
     RegExp(
-      r'\bDell(?: EMC)? Network(?:ing)? Operating System\s*\(OS10\)'
-      r'|^(?:System Description|Machine Description|Machine Type)\s*(?::|\.{2,})\s*Dell EMC Networking\b',
+      // OS10's login banner spaces its words out: "Dell EMC  Network ...".
+      r'\bDell(?:\s+EMC)?\s+Network(?:ing)?\s+Operating\s+System\s*\(OS10\)'
+      // N-series: `show system`, `show version`, and the head of
+      // `show running-config` (!System Description "Dell EMC Networking
+      // N3024, ..."), with or without EMC.
+      r'|^!?\s*(?:System Description|Machine Description|Machine Type)\s*(?::|\.{2,})?\s*"?Dell(?: EMC)? Networking\b'
+      r'|\bDell(?: EMC)? Networking [NSZ]\d{4}',
       multiLine: true,
       caseSensitive: false,
     ),
@@ -73,8 +92,21 @@ final List<(DeviceKind, RegExp)> _rules = [
       // that only Cisco's `show inventory` prints.
       r'|\bCBS\d{3}(?:-\w+)?\b|\bC9[2-6]00[A-Z]*-|\bC1000[A-Z]*-|\bS[GF]\d{3}[A-Z]*-\d{2}|\bIE-\d{4}'
       r'|\bCisco SFP\b'
-      r'|^\s*PID: \S+\s*,?\s+VID: \S+'
-      r'|^Building configuration\.\.\.'
+      r'|^\s*PID: \S+\s*,?\s+VID: \S+',
+      multiLine: true,
+    ),
+  ),
+  (DeviceKind.windows, RegExp(r'Microsoft Windows \[Version|^PS [A-Z]:\\', multiLine: true)),
+];
+
+/// Signs other makers share: taken when nothing certain is there, and
+/// replaced if something certain turns up later in the session.
+final List<(DeviceKind, RegExp)> _weakRules = [
+  (
+    DeviceKind.cisco,
+    RegExp(
+      // IOS-style output and config, which Dell N-series switches print too.
+      r'^Building configuration\.\.\.'
       r'|^Current configuration ?: ?\d+ bytes'
       r"|^% Invalid input detected at '\^' marker"
       r'|^\s*macro (auto smartport|description)\b'
@@ -83,7 +115,6 @@ final List<(DeviceKind, RegExp)> _rules = [
       multiLine: true,
     ),
   ),
-  (DeviceKind.windows, RegExp(r'Microsoft Windows \[Version|^PS [A-Z]:\\', multiLine: true)),
   (
     DeviceKind.linux,
     RegExp(

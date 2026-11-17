@@ -186,6 +186,56 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  testWidgets('a connection dragged from the list into an empty pane opens there', (tester) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final app = AppState();
+    await tester.pump();
+    final conn = SavedConnection(name: 'DEVICE-09', host: '192.0.2.19');
+    app.connections.add(conn);
+    app.tabs.addAll([
+      OpenTab(id: 'a', controller: PtySessionController(host: '192.0.2.10', port: 22, startImmediately: false)),
+      OpenTab(id: 'b', controller: PtySessionController(host: '192.0.2.11', port: 22, startImmediately: false)),
+    ]);
+    app.applyLayout(buildFromShape(presetShape(SplitPreset.threeColumns), ['a', null, 'b'], keepEmpty: true));
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: const MaterialApp(
+        home: Scaffold(
+          body: Row(children: [SizedBox(width: 280, child: ConnectionTree()), Expanded(child: TerminalTabsArea())]),
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final from = tester.getCenter(find.text('DEVICE-09'));
+    final to = tester.getCenter(find.text('Drop a tab here'));
+    final drag = await tester.startGesture(from, kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    for (var i = 1; i <= 12; i++) {
+      await drag.moveTo(Offset.lerp(from, to, i / 12)!);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.text('Drop here'), findsOneWidget);
+    await drag.up();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // A new tab for it, in the empty pane's place; the split stays as it was.
+    expect(app.tabs, hasLength(3));
+    final opened = app.tabs.last;
+    expect(opened.connectionId, conn.id);
+    expect(tabIdsInLayoutOrdered(app.paneLayout), ['a', opened.id, 'b']);
+    expect(app.groups.single.tabIds, ['a', opened.id, 'b']);
+    expect(find.text('Drop a tab here'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    for (final t in app.tabs) {
+      t.controller.dispose();
+    }
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('a tab in a short pane of the Split View window shows its name on one line', (tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1;

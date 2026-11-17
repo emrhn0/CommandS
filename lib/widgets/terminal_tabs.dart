@@ -21,6 +21,7 @@ import '../services/session_log.dart';
 import '../services/terminal_appearance.dart';
 import '../theme/app_theme.dart';
 import 'context_menu.dart';
+import 'tree_drag.dart';
 import 'new_connection_dialog.dart';
 import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
@@ -1234,11 +1235,20 @@ class _EmptyPaneState extends State<_EmptyPane> {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
     final dim = theme.textTheme.bodySmall?.color;
-    return DragTarget<_TabDrag>(
+    // A connection dragged from the list opens here, as a tab of its own.
+    return DragTarget<TreeDragItems>(
+      onWillAcceptWithDetails: (d) =>
+          d.data.singleConnection != null && app.connections.any((c) => c.id == d.data.singleConnection),
+      onAcceptWithDetails: (d) {
+        final id = d.data.singleConnection;
+        final conn = app.connections.where((c) => c.id == id).firstOrNull;
+        if (conn != null) app.openConnectionInEmptyPane(widget.emptyId, conn);
+      },
+      builder: (context, connections, _) => DragTarget<_TabDrag>(
       onWillAcceptWithDetails: (d) => !d.data.isGroup,
       onAcceptWithDetails: (d) => app.dropTabInEmptyPane(widget.emptyId, d.data.tabIds.single),
       builder: (context, candidates, _) {
-        final hovering = candidates.isNotEmpty;
+        final hovering = candidates.isNotEmpty || connections.isNotEmpty;
         final body = Container(
           margin: const EdgeInsets.all(6),
           decoration: BoxDecoration(
@@ -1272,6 +1282,7 @@ class _EmptyPaneState extends State<_EmptyPane> {
           ],
         );
       },
+      ),
     );
   }
 }

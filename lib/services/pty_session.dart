@@ -362,13 +362,14 @@ class PtySessionController implements TerminalSessionController {
 
   void _detect({required bool settled}) {
     if (!_sniffing) return;
-    final kind = detectDevice(serverVersion: serverVersion, output: _sniff.toString(), settled: settled);
-    if (kind != null) {
-      if (kind != _reportedKind) {
-        _reportedKind = kind;
-        onDeviceDetected?.call(kind);
+    final found = detectDeviceKind(serverVersion: serverVersion, output: _sniff.toString(), settled: settled);
+    if (found != null) {
+      if (found.kind != _reportedKind) {
+        _reportedKind = found.kind;
+        onDeviceDetected?.call(found.kind);
       }
-      if (kind != DeviceKind.linux) _sniffStop();
+      // A guess from shared signs keeps listening for the maker's own name.
+      if (found.certain) _sniffStop();
     }
   }
 

@@ -19,6 +19,7 @@ import 'threshold_draggable.dart';
 import 'tool_button.dart';
 import '../services/mcp_server.dart';
 import '../l10n/strings.dart';
+import 'tree_drag.dart';
 
 /// A row in the flattened, virtualized tree — a folder header, a connection
 /// leaf, or a saved split layout, at a given nesting depth.
@@ -104,10 +105,10 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
 
   /// What a drag starting on [row] carries: the whole selection when the
   /// row is part of a multi-selection, otherwise just the row.
-  _DragItems _dragItemsFor(_Row row, AppState app) {
+  TreeDragItems _dragItemsFor(_Row row, AppState app) {
     final id = _rowId(row)!;
     final ids = _selected.length > 1 && _selected.contains(id) ? _selected.toSet() : {id};
-    return _DragItems(
+    return TreeDragItems(
       folderIds: ids.where((i) => app.folders.any((f) => f.id == i)).toList(),
       connectionIds: ids.where((i) => app.connections.any((c) => c.id == i)).toList(),
       layoutIds: ids.where((i) => app.layouts.any((l) => l.id == i)).toList(),
@@ -117,7 +118,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   /// Whether [items] may go into [target] (null: the top level). A folder
   /// cannot go into itself or anything under it, and a drop that would move
   /// nothing is not offered.
-  bool _canDrop(_DragItems items, String? target, AppState app) {
+  bool _canDrop(TreeDragItems items, String? target, AppState app) {
     final parentOf = {for (final f in app.folders) f.id: f.parentId};
     for (final id in items.folderIds) {
       var cursor = target;
@@ -134,7 +135,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     return moves;
   }
 
-  Future<void> _drop(_DragItems items, String? target, AppState app) async {
+  Future<void> _drop(TreeDragItems items, String? target, AppState app) async {
     _stopHoverExpand();
     for (final id in items.folderIds) {
       await app.moveFolderToFolder(id, target);
@@ -220,7 +221,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
 
   /// Folders only, and none of them [target] or above it: they may be
   /// placed next to [target], in its parent.
-  bool _canPlaceBeside(_DragItems items, ConnectionFolder target, AppState app) {
+  bool _canPlaceBeside(TreeDragItems items, ConnectionFolder target, AppState app) {
     if (items.folderIds.isEmpty || items.connectionIds.isNotEmpty || items.layoutIds.isNotEmpty) return false;
     if (items.folderIds.contains(target.id)) return false;
     final parentOf = {for (final f in app.folders) f.id: f.parentId};
@@ -233,7 +234,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     return true;
   }
 
-  Future<void> _placeBeside(_DragItems items, ConnectionFolder target, bool after, AppState app) async {
+  Future<void> _placeBeside(TreeDragItems items, ConnectionFolder target, bool after, AppState app) async {
     _stopHoverExpand();
     String? before = target.id;
     if (after) {
@@ -258,13 +259,13 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
 
   /// Connections only, and not [target] itself: they may be placed next to
   /// it, in its folder.
-  bool _canPlaceConnectionsBeside(_DragItems items, SavedConnection target) =>
+  bool _canPlaceConnectionsBeside(TreeDragItems items, SavedConnection target) =>
       items.connectionIds.isNotEmpty &&
       items.folderIds.isEmpty &&
       items.layoutIds.isEmpty &&
       !items.connectionIds.contains(target.id);
 
-  Future<void> _placeConnectionsBeside(_DragItems items, SavedConnection target, bool after, AppState app) async {
+  Future<void> _placeConnectionsBeside(TreeDragItems items, SavedConnection target, bool after, AppState app) async {
     _stopHoverExpand();
     String? before = target.id;
     if (after) {
@@ -330,7 +331,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
           _placeConnectionsBeside(items, connection, zone == _Zone.after, app);
         }
       },
-      child: ThresholdDraggable<_DragItems>(
+      child: ThresholdDraggable<TreeDragItems>(
         data: _dragItemsFor(row, app),
         dragAnchorStrategy: pointerDragAnchorStrategy,
         onDragStarted: () {
@@ -796,7 +797,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
       onPointerDown: (e) {
         if (e.buttons == kPrimaryButton && _belowRows(e.position) && !_selectMode) _clearSelection();
       },
-      child: DragTarget<_DragItems>(
+      child: DragTarget<TreeDragItems>(
         key: _listKey,
         onWillAcceptWithDetails: (d) => _canDrop(d.data, null, app),
         onMove: (d) {
@@ -953,11 +954,11 @@ class _DropZone extends StatefulWidget {
 
   final int depth;
   final bool flash;
-  final bool Function(_DragItems) canInto;
-  final bool Function(_DragItems) canReorder;
+  final bool Function(TreeDragItems) canInto;
+  final bool Function(TreeDragItems) canReorder;
   final VoidCallback onInto;
   final VoidCallback onLeave;
-  final void Function(_DragItems, _Zone) onDrop;
+  final void Function(TreeDragItems, _Zone) onDrop;
   final Widget child;
 
   @override
@@ -967,7 +968,7 @@ class _DropZone extends StatefulWidget {
 class _DropZoneState extends State<_DropZone> {
   _Zone _zone = _Zone.none;
 
-  _Zone _zoneFor(DragTargetDetails<_DragItems> d) {
+  _Zone _zoneFor(DragTargetDetails<TreeDragItems> d) {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return _Zone.none;
     final y = box.globalToLocal(d.offset).dy;
@@ -1021,7 +1022,7 @@ class _DropZoneState extends State<_DropZone> {
         ),
       ),
     );
-    return DragTarget<_DragItems>(
+    return DragTarget<TreeDragItems>(
       onWillAcceptWithDetails: (d) => widget.canInto(d.data) || widget.canReorder(d.data),
       onMove: (d) => _set(_zoneFor(d)),
       onLeave: (_) => _set(_Zone.none),
@@ -1069,13 +1070,6 @@ class _DropZoneState extends State<_DropZone> {
 }
 
 /// What a drag in the tree carries.
-class _DragItems {
-  const _DragItems({required this.folderIds, required this.connectionIds, required this.layoutIds});
-  final List<String> folderIds;
-  final List<String> connectionIds;
-  final List<String> layoutIds;
-}
-
 /// The chip that follows the pointer while dragging.
 class _DragFeedback extends StatelessWidget {
   const _DragFeedback({required this.icon, required this.label});

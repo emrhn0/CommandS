@@ -128,6 +128,45 @@ void main() {
     expect(detected, [DeviceKind.linux, DeviceKind.dell]);
   });
 
+  test('Dell N-series: the head of show running-config names it, with or without EMC', () {
+    const run = 'DEVICE-01#show run\r\n\r\n!Current Configuration:\r\n'
+        '!System Description "Dell EMC Networking N3024, 6.0.0, Linux 3.0.0"\r\n'
+        '!System Software Version 6.0.0\r\n';
+    expect(detectDevice(output: run), DeviceKind.dell);
+    expect(detectDevice(output: '!System Description "Dell Networking N2048, 6.0.0, Linux 3.0.0"\r\n'), DeviceKind.dell);
+    expect(detectDevice(output: 'slot 1/0 1    ! Dell EMC Networking N3024\r\n'), DeviceKind.dell);
+  });
+
+  test('Dell OS10: the login banner, its words spaced out', () {
+    const banner = '-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-\r\n'
+        '-*        Dell EMC  Network Operating System (OS10)        *-\r\n'
+        '-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-\r\n';
+    expect(detectDeviceKind(output: banner), (kind: DeviceKind.dell, certain: true));
+  });
+
+  test('IOS-style config lines are only a guess: Dell N-series prints them too', () {
+    const lines = 'interface Gi1/0/1\r\nswitchport access vlan 10\r\nspanning-tree portfast\r\n';
+    expect(detectDeviceKind(output: lines), (kind: DeviceKind.cisco, certain: false));
+    expect(detectDeviceKind(output: '$lines!System Description "Dell EMC Networking N3024, 6.0.0"\r\n'),
+        (kind: DeviceKind.dell, certain: true));
+    expect(detectDeviceKind(output: 'Cisco IOS Software, C2960X Software\r\n'), (kind: DeviceKind.cisco, certain: true));
+  });
+
+  test('a session first taken for a Cisco by its config lines is set right when Dell names itself', () {
+    final session = PtySessionController(host: '192.0.2.10', port: 22, startImmediately: false);
+    addTearDown(session.dispose);
+    final detected = <DeviceKind>[];
+    session.onDeviceDetected = detected.add;
+
+    session.debugWatchDevice('DEVICE-01#', start: true);
+    session.debugWatchDevice('interface Gi1/0/1\r\nswitchport access vlan 10\r\n');
+    expect(detected, [DeviceKind.cisco]);
+    session.debugWatchDevice('!System Description "Dell EMC Networking N3024, 6.0.0"\r\n');
+    expect(detected, [DeviceKind.cisco, DeviceKind.dell]);
+    session.debugWatchDevice('Cisco IOS Software\r\n');
+    expect(detected, [DeviceKind.cisco, DeviceKind.dell], reason: 'certain: no longer listening');
+  });
+
   group('a Cisco that names no maker on login', () {
     const plainBanner = 'Authorized access only.\r\nswitch-01#';
 
