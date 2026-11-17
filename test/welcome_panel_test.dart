@@ -134,18 +134,31 @@ void main() {
       expect(WelcomePanel.greetingsFor(at(18)).first, 'Good evening');
       expect(WelcomePanel.greetingsFor(at(23)).first, 'Good night');
       expect(WelcomePanel.greetingsFor(at(3)).first, 'Good night');
-      for (var hour = 0; hour < 24; hour++) {
-        for (var seed = 0; seed < 8; seed++) {
-          expect(WelcomePanel.greetingsFor(at(hour)), contains(WelcomePanel.greetingFor(at(hour), seed: seed)));
-        }
-      }
     });
 
-    test('the line holds within an hour and moves on with the next one', () {
-      final nine = WelcomePanel.greetingFor(DateTime(2026, 1, 1, 9, 5), seed: 3);
-      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 9, 55), seed: 3), nine);
-      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 10, 5), seed: 3), isNot(nine));
-      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 9, 5), seed: 4), isNot(nine), reason: 'another launch, another line');
+    test('the plain greeting comes first in each part of the day, then the lighter lines', () {
+      final picker = GreetingPicker(seed: 3);
+      final morning = DateTime(2026, 1, 1, 9);
+      expect(picker.next(morning), 0, reason: 'Good morning first');
+      final later = [for (var i = 0; i < 5; i++) picker.next(morning.add(Duration(minutes: 10 * i)))];
+      expect(later, isNot(contains(0)), reason: 'then not the plain one again');
+      expect(later.toSet(), hasLength(5), reason: 'each lighter line in turn');
+      expect(picker.next(DateTime(2026, 1, 1, 13)), 0, reason: 'Good afternoon when the afternoon starts');
+      expect(picker.next(DateTime(2026, 1, 1, 14)), isNot(0));
+      expect(picker.next(DateTime(2026, 1, 1, 23)), 0, reason: 'Good night');
+      expect(picker.next(DateTime(2026, 1, 2, 2)), isNot(0), reason: 'past midnight is the same night');
+      expect(picker.next(DateTime(2026, 1, 2, 6)), 0, reason: 'a new morning');
+    });
+
+    test('every pick is a line of its part of the day', () {
+      final picker = GreetingPicker(seed: 7);
+      for (var hour = 0; hour < 24; hour++) {
+        final time = DateTime(2026, 1, 1, hour);
+        for (var i = 0; i < 6; i++) {
+          final index = picker.next(time);
+          expect(index, inInclusiveRange(0, WelcomePanel.greetingsFor(time).length - 1));
+        }
+      }
     });
 
     test('twenty-two different lines in all', () {

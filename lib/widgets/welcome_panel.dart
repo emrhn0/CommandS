@@ -23,7 +23,7 @@ class WelcomePanel extends StatefulWidget {
   /// The time the greeting is picked for; tests pass one in.
   final DateTime? now;
 
-  /// Picked once a launch, so each start can open on a different line.
+  /// Picked once a launch, so the lighter lines come in a different order.
   static final int launchSeed = Random().nextInt(1 << 16);
 
   /// The lines for the part of the day [time] falls in: morning from five,
@@ -69,25 +69,63 @@ class WelcomePanel extends StatefulWidget {
     ];
   }
 
-  /// One line for [time]. It stays the same within an hour, so the panel
-  /// does not flicker as the app redraws, and moves on at the next hour.
-  static String greetingFor(DateTime time, {int seed = 0}) {
-    final lines = greetingsFor(time);
-    return lines[(seed + time.hour) % lines.length];
-  }
+  /// Which line of [greetingsFor] the panel shows, for this run of the app.
+  static final picker = GreetingPicker(seed: launchSeed);
 
   @override
   State<WelcomePanel> createState() => _WelcomePanelState();
 }
 
+/// Picks the greeting: the plain one ("Good morning") the first time in each
+/// part of the day, then the lighter lines in turn, a new one each time the
+/// panel comes back and each hour it stays up.
+class GreetingPicker {
+  GreetingPicker({this.seed = 0});
+
+  final int seed;
+  String? _greetedPart;
+  int _turn = 0;
+
+  /// The part of the day [time] falls in, with the night that runs past
+  /// midnight counted with the evening before it.
+  static String partOf(DateTime time) {
+    final h = time.hour;
+    final part = h >= 5 && h < 12
+        ? 'morning'
+        : h >= 12 && h < 18
+            ? 'afternoon'
+            : h >= 18 && h < 23
+                ? 'evening'
+                : 'night';
+    final day = time.subtract(const Duration(hours: 5));
+    return '${day.year}-${day.month}-${day.day}-$part';
+  }
+
+  /// The index in [WelcomePanel.greetingsFor] to show next at [time].
+  int next(DateTime time) {
+    final part = partOf(time);
+    if (part != _greetedPart) {
+      _greetedPart = part;
+      return 0;
+    }
+    _turn++;
+    final others = WelcomePanel.greetingsFor(time).length - 1;
+    return 1 + (seed + _turn) % others;
+  }
+}
+
 class _WelcomePanelState extends State<WelcomePanel> {
   Timer? _hourly;
+  late int _line;
+
+  DateTime get _now => widget.now ?? DateTime.now();
 
   bool get sidebarVisible => widget.sidebarVisible;
 
   @override
   void initState() {
     super.initState();
+    _line = WelcomePanel.picker.next(_now);
     _scheduleNextHour();
   }
 
@@ -98,7 +136,7 @@ class _WelcomePanelState extends State<WelcomePanel> {
     final next = DateTime(now.year, now.month, now.day, now.hour + 1);
     _hourly = Timer(next.difference(now), () {
       if (!mounted) return;
-      setState(() {});
+      setState(() => _line = WelcomePanel.picker.next(_now));
       _scheduleNextHour();
     });
   }
@@ -107,6 +145,12 @@ class _WelcomePanelState extends State<WelcomePanel> {
   void dispose() {
     _hourly?.cancel();
     super.dispose();
+  }
+
+  /// Read at build time, so a change of language shows at once.
+  String _greeting() {
+    final lines = WelcomePanel.greetingsFor(_now);
+    return lines[_line % lines.length];
   }
 
   @override
@@ -134,7 +178,7 @@ class _WelcomePanelState extends State<WelcomePanel> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          WelcomePanel.greetingFor(widget.now ?? DateTime.now(), seed: WelcomePanel.launchSeed),
+                          _greeting(),
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w600,
