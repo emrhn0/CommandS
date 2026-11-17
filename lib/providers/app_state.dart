@@ -87,6 +87,41 @@ class AppState extends ChangeNotifier {
   static const _kConnectionOrder = 'commands.connectionOrder';
   static const _kSidebarWidth = 'commands.sidebarWidth';
   static const _kSidebarVisible = 'commands.sidebarVisible';
+  static const _kCustomLayouts = 'commands.customLayouts';
+
+  /// Layouts drawn in Split view > Custom, offered next to the presets.
+  List<CustomLayout> customLayouts = [];
+
+  /// Adds [layout], or replaces the one with its id.
+  Future<void> saveCustomLayout(CustomLayout layout) async {
+    final i = customLayouts.indexWhere((l) => l.id == layout.id);
+    if (i == -1) {
+      customLayouts = [...customLayouts, layout];
+    } else {
+      customLayouts = [...customLayouts]..[i] = layout;
+    }
+    notifyListeners();
+    await _saveCustomLayouts();
+  }
+
+  Future<void> deleteCustomLayout(String id) async {
+    customLayouts = [for (final l in customLayouts) if (l.id != id) l];
+    notifyListeners();
+    await _saveCustomLayouts();
+  }
+
+  static CustomLayout? _readCustomLayout(String raw) {
+    try {
+      return CustomLayout.fromJson(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveCustomLayouts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kCustomLayouts, [for (final l in customLayouts) jsonEncode(l.toJson())]);
+  }
   static const _kTerminalBg = 'commands.terminalBg';
   static const _kTerminalFg = 'commands.terminalFg';
   static const _kTerminalFont = 'commands.terminalFont';
@@ -166,6 +201,9 @@ class AppState extends ChangeNotifier {
     connectionOrder = prefs.getStringList(_kConnectionOrder) ?? [];
     sidebarWidth = (prefs.getDouble(_kSidebarWidth) ?? defaultSidebarWidth).clamp(minSidebarWidth, maxSidebarWidth);
     sidebarVisible = prefs.getBool(_kSidebarVisible) ?? true;
+    customLayouts = [
+      for (final raw in prefs.getStringList(_kCustomLayouts) ?? const <String>[]) ?_readCustomLayout(raw),
+    ];
     updateChannel = releaseChannelFromString(prefs.getString(_kUpdateChannel));
     final bg = prefs.getInt(_kTerminalBg);
     final fg = prefs.getInt(_kTerminalFg);
@@ -995,14 +1033,19 @@ class AppState extends ChangeNotifier {
   Future<SavedLayout> saveLayout({
     required String name,
     required String? folderId,
-    required SplitPreset preset,
+    SplitPreset? preset,
+    ZoneNode? shape,
     required List<String?> tabIds,
   }) async {
+    assert(preset != null || shape != null);
     final byTab = {for (final t in tabs) t.id: t.connectionId};
     final layout = SavedLayout(
       name: name,
       folderId: folderId,
-      preset: preset.name,
+      // A custom shape is kept whole in the layout; an older version reads
+      // the preset name only and falls back to side by side.
+      preset: shape != null ? 'custom' : preset!.name,
+      shape: shape?.toJson(),
       connectionIds: [for (final id in tabIds) id == null ? null : byTab[id]],
     );
     layouts.add(layout);
@@ -1018,9 +1061,11 @@ class AppState extends ChangeNotifier {
   int openLayout(SavedLayout layout) {
     final preset =
         SplitPreset.values.where((p) => p.name == layout.preset).firstOrNull ?? SplitPreset.sideBySide;
+    final shape = layout.shape == null ? null : ZoneNode.fromJson(layout.shape);
+    final count = shape == null ? preset.slots : zoneCount(shape);
     final used = <String>{};
     final slots = <String?>[];
-    for (var i = 0; i < preset.slots; i++) {
+    for (var i = 0; i < count; i++) {
       final connId = i < layout.connectionIds.length ? layout.connectionIds[i] : null;
       final conn = connId == null ? null : connections.where((c) => c.id == connId).firstOrNull;
       if (conn == null) {
@@ -1032,7 +1077,7 @@ class AppState extends ChangeNotifier {
       used.add(tab.id);
       slots.add(tab.id);
     }
-    final tree = buildLayout(preset, slots);
+    final tree = shape == null ? buildLayout(preset, slots) : buildFromShape(shape, slots);
     if (tree == null) {
       notifyListeners();
       return 0;

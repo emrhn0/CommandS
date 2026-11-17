@@ -178,3 +178,186 @@ List<Rect> presetSlotRects(SplitPreset preset) => switch (preset) {
     Rect.fromLTRB(0.5, 0.5, 1, 1),
   ],
 };
+
+// ---- Layout shapes and custom layouts ----
+
+/// The shape of a layout without any tabs in it: zones split in two, side by
+/// side or stacked, at a ratio. Built-in presets and the layouts people draw
+/// themselves (Split view > Custom) are both shapes. Zones are numbered in
+/// tree order (first side before second), which is reading order for every
+/// preset.
+sealed class ZoneNode {
+  const ZoneNode();
+
+  Map<String, Object?> toJson();
+
+  static ZoneNode fromJson(Object? json, {int depth = 0}) {
+    if (depth > 16 || json is! Map) return const ZoneLeaf();
+    if (json['split'] == null) return const ZoneLeaf();
+    final ratio = (json['ratio'] as num?)?.toDouble() ?? 0.5;
+    return ZoneSplit(
+      axis: json['split'] == 'vertical' ? Axis.vertical : Axis.horizontal,
+      ratio: ratio.clamp(minZoneRatio, 1 - minZoneRatio),
+      first: fromJson(json['first'], depth: depth + 1),
+      second: fromJson(json['second'], depth: depth + 1),
+    );
+  }
+}
+
+class ZoneLeaf extends ZoneNode {
+  const ZoneLeaf();
+
+  @override
+  Map<String, Object?> toJson() => const {};
+}
+
+class ZoneSplit extends ZoneNode {
+  const ZoneSplit({required this.axis, required this.first, required this.second, this.ratio = 0.5});
+  final Axis axis; // horizontal = side by side; vertical = stacked
+  final ZoneNode first;
+  final ZoneNode second;
+  final double ratio;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'split': axis == Axis.vertical ? 'vertical' : 'horizontal',
+    'ratio': ratio,
+    'first': first.toJson(),
+    'second': second.toJson(),
+  };
+}
+
+/// No zone thinner than this share of its split, so every pane stays usable.
+const double minZoneRatio = 0.1;
+
+/// The most zones a custom layout can have.
+const int maxCustomZones = 8;
+
+/// How many zones (panes) [shape] has.
+int zoneCount(ZoneNode shape) =>
+    shape is ZoneSplit ? zoneCount(shape.first) + zoneCount(shape.second) : 1;
+
+/// Where each zone sits, as fractions of the whole, in zone order.
+List<Rect> zoneRects(ZoneNode shape, [Rect area = const Rect.fromLTRB(0, 0, 1, 1)]) {
+  if (shape is! ZoneSplit) return [area];
+  final Rect a, b;
+  if (shape.axis == Axis.horizontal) {
+    final x = area.left + area.width * shape.ratio;
+    a = Rect.fromLTRB(area.left, area.top, x, area.bottom);
+    b = Rect.fromLTRB(x, area.top, area.right, area.bottom);
+  } else {
+    final y = area.top + area.height * shape.ratio;
+    a = Rect.fromLTRB(area.left, area.top, area.right, y);
+    b = Rect.fromLTRB(area.left, y, area.right, area.bottom);
+  }
+  return [...zoneRects(shape.first, a), ...zoneRects(shape.second, b)];
+}
+
+/// [preset] as a shape, with the same splits and ratios as [buildLayout].
+ZoneNode presetShape(SplitPreset preset) {
+  const z = ZoneLeaf();
+  ZoneSplit h(ZoneNode a, ZoneNode b, [double ratio = 0.5]) =>
+      ZoneSplit(axis: Axis.horizontal, first: a, second: b, ratio: ratio);
+  ZoneSplit v(ZoneNode a, ZoneNode b) => ZoneSplit(axis: Axis.vertical, first: a, second: b);
+  return switch (preset) {
+    SplitPreset.single => z,
+    SplitPreset.sideBySide => h(z, z),
+    SplitPreset.stacked => v(z, z),
+    SplitPreset.oneLeftTwoRight => h(z, v(z, z)),
+    SplitPreset.threeColumns => h(z, h(z, z), 1 / 3),
+    SplitPreset.grid => v(h(z, z), h(z, z)),
+  };
+}
+
+/// The tiling tree for [shape] with [slots] (tab ids, null for an empty
+/// zone) in zone order. As with [buildLayout], an empty zone is left out and
+/// its split collapses onto the other side. Null if nothing was placed.
+PaneNode? buildFromShape(ZoneNode shape, List<String?> slots) {
+  var next = 0;
+  PaneNode? walk(ZoneNode node) {
+    if (node is ZoneSplit) {
+      final a = walk(node.first);
+      final b = walk(node.second);
+      if (a == null) return b;
+      if (b == null) return a;
+      return PaneSplit(axis: node.axis, first: a, second: b, ratio: node.ratio);
+    }
+    final i = next++;
+    return i < slots.length && slots[i] != null ? PaneLeaf(slots[i]!) : null;
+  }
+
+  return walk(shape);
+}
+
+/// [shape] with zone [index] split in two along [axis]: the zone becomes its
+/// first half and a new zone its second.
+ZoneNode splitZone(ZoneNode shape, int index, Axis axis) {
+  var at = 0;
+  ZoneNode walk(ZoneNode node) {
+    if (node is ZoneSplit) {
+      return ZoneSplit(axis: node.axis, ratio: node.ratio, first: walk(node.first), second: walk(node.second));
+    }
+    return at++ == index ? ZoneSplit(axis: axis, first: const ZoneLeaf(), second: const ZoneLeaf()) : node;
+  }
+
+  return walk(shape);
+}
+
+/// [shape] without zone [index]: the other side of its split takes the room.
+/// The last zone cannot be removed.
+ZoneNode removeZone(ZoneNode shape, int index) {
+  var at = 0;
+  ZoneNode? walk(ZoneNode node) {
+    if (node is ZoneSplit) {
+      final a = walk(node.first);
+      final b = walk(node.second);
+      if (a == null) return b;
+      if (b == null) return a;
+      return ZoneSplit(axis: node.axis, ratio: node.ratio, first: a, second: b);
+    }
+    return at++ == index ? null : node;
+  }
+
+  return walk(shape) ?? shape;
+}
+
+/// [shape] with the split at [path] (false = first side, true = second, from
+/// the top) moved to [ratio].
+ZoneNode setZoneRatio(ZoneNode shape, List<bool> path, double ratio) {
+  if (shape is! ZoneSplit) return shape;
+  if (path.isEmpty) {
+    return ZoneSplit(
+      axis: shape.axis,
+      first: shape.first,
+      second: shape.second,
+      ratio: ratio.clamp(minZoneRatio, 1 - minZoneRatio),
+    );
+  }
+  final rest = path.sublist(1);
+  return ZoneSplit(
+    axis: shape.axis,
+    ratio: shape.ratio,
+    first: path.first ? shape.first : setZoneRatio(shape.first, rest, ratio),
+    second: path.first ? setZoneRatio(shape.second, rest, ratio) : shape.second,
+  );
+}
+
+/// A layout someone drew in Split view > Custom, kept with its name.
+class CustomLayout {
+  CustomLayout({required this.id, required this.name, required this.shape});
+  final String id;
+  String name;
+  ZoneNode shape;
+
+  Map<String, Object?> toJson() => {'id': id, 'name': name, 'shape': shape.toJson()};
+
+  static CustomLayout? fromJson(Object? json) {
+    if (json is! Map || json['id'] is! String) return null;
+    final name = (json['name'] as String?)?.trim();
+    return CustomLayout(
+      id: json['id'] as String,
+      name: name == null || name.isEmpty ? 'Custom' : name,
+      shape: ZoneNode.fromJson(json['shape']),
+    );
+  }
+}

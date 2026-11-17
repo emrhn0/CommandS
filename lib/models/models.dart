@@ -153,12 +153,18 @@ class SavedLayout {
   /// that was empty or held a quick connection, which cannot be reopened.
   List<String?> connectionIds;
 
+  /// For a layout drawn in Split view > Custom: its shape (`ZoneNode` JSON),
+  /// kept here so the saved arrangement opens even if that custom layout is
+  /// later deleted. Null for the built-in presets.
+  Map<String, Object?>? shape;
+
   SavedLayout({
     String? id,
     required this.name,
     this.folderId,
     required this.preset,
     required this.connectionIds,
+    this.shape,
   }) : id = id ?? _uuid.v4();
 
   Map<String, dynamic> toJson() => {
@@ -167,6 +173,7 @@ class SavedLayout {
         'folderId': folderId,
         'preset': preset,
         'connectionIds': connectionIds,
+        if (shape != null) 'shape': shape,
       };
 
   factory SavedLayout.fromJson(Map<String, dynamic> json) => SavedLayout(
@@ -175,5 +182,6 @@ class SavedLayout {
         folderId: json['folderId'] as String?,
         preset: json['preset'] as String? ?? 'sideBySide',
         connectionIds: [for (final e in (json['connectionIds'] as List? ?? const [])) e as String?],
+        shape: json['shape'] is Map ? Map<String, Object?>.from(json['shape'] as Map) : null,
       );
 }

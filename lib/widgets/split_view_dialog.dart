@@ -6,6 +6,7 @@ import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
 import '../services/pane_layout.dart';
 import '../services/rdp_session.dart';
+import 'custom_layout_editor.dart';
 import 'folder_picker.dart';
 import 'app_dialog.dart';
 import '../l10n/strings.dart';
@@ -30,9 +31,13 @@ class _SplitViewDialog extends StatefulWidget {
 }
 
 class _SplitViewDialogState extends State<_SplitViewDialog> {
-  late SplitPreset _preset;
+  /// The chosen layout: a built-in preset, or one drawn under Custom.
+  SplitPreset? _preset;
+  CustomLayout? _custom;
 
-  /// Tab id per slot of [_preset], in reading order; null = empty.
+  ZoneNode get _shape => _custom?.shape ?? presetShape(_preset!);
+
+  /// Tab id per zone of the chosen layout, in zone order; null = empty.
   late List<String?> _slots;
 
   @override
@@ -48,22 +53,45 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
       3 => SplitPreset.oneLeftTwoRight,
       _ => SplitPreset.grid,
     };
-    _slots = List<String?>.filled(_preset.slots, null);
+    _slots = List<String?>.filled(_preset!.slots, null);
     final order = [...onScreen, ...app.tabs.map((t) => t.id).where((id) => !onScreen.contains(id))];
     for (var i = 0; i < _slots.length && i < order.length; i++) {
       _slots[i] = order[i];
     }
   }
 
-  void _choosePreset(SplitPreset preset) {
+  void _choosePreset(SplitPreset preset) => _choose(preset: preset);
+
+  /// Switches layout, keeping the placed tabs in order as far as they fit.
+  void _choose({SplitPreset? preset, CustomLayout? custom}) {
     setState(() {
       final placed = _slots.whereType<String>().toList();
       _preset = preset;
-      _slots = List<String?>.filled(preset.slots, null);
+      _custom = custom;
+      _slots = List<String?>.filled(zoneCount(_shape), null);
       for (var i = 0; i < _slots.length && i < placed.length; i++) {
         _slots[i] = placed[i];
       }
     });
+  }
+
+  /// Custom: draw a new layout, or change or delete [editing].
+  Future<void> _editCustom([CustomLayout? editing]) async {
+    final app = context.read<AppState>();
+    final result = await showCustomLayoutEditor(
+      context,
+      editing: editing,
+      newId: () => 'custom-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    if (!mounted || result == null) return;
+    switch (result) {
+      case CustomLayoutSaved(:final layout):
+        await app.saveCustomLayout(layout);
+        if (mounted) _choose(custom: layout);
+      case CustomLayoutDeleted():
+        await app.deleteCustomLayout(editing!.id);
+        if (mounted && _custom?.id == editing.id) _choose(preset: SplitPreset.sideBySide);
+    }
   }
 
   /// Puts [tabId] in [slot]. A tab can only be in one pane, so if it was
@@ -87,7 +115,9 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
   }
 
   void _apply() {
-    context.read<AppState>().applyLayout(buildLayout(_preset, _slots), editActive: true);
+    final preset = _preset;
+    final tree = preset != null ? buildLayout(preset, _slots) : buildFromShape(_shape, _slots);
+    context.read<AppState>().applyLayout(tree, editActive: true);
     Navigator.of(context).pop();
   }
 
@@ -113,7 +143,13 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
       ),
     );
     if (result == null || !mounted) return;
-    await app.saveLayout(name: result.name, folderId: result.folderId, preset: _preset, tabIds: _slots);
+    await app.saveLayout(
+      name: result.name,
+      folderId: result.folderId,
+      preset: _preset,
+      shape: _custom?.shape,
+      tabIds: _slots,
+    );
     if (!mounted) return;
     setState(() => _savedTo = folderPath(app.folders, result.folderId) ?? tr('the top level'));
   }
@@ -142,7 +178,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
               Text(tr('Split View'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 18),
               Text(
-                '1. Choose a layout',
+                tr('1. Choose a layout'),
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim),
               ),
               const SizedBox(height: 10),
@@ -151,12 +187,29 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                 runSpacing: 10,
                 children: [
                   for (final p in SplitPreset.values)
-                    _PresetThumb(preset: p, selected: p == _preset, onTap: () => _choosePreset(p)),
+                    _PresetThumb(
+                      label: tr(p.label),
+                      shape: presetShape(p),
+                      selected: _custom == null && p == _preset,
+                      onTap: () => _choosePreset(p),
+                    ),
+                  // Layouts drawn here before: a click picks one, the pencil
+                  // edits or deletes it.
+                  for (final c in app.customLayouts)
+                    _PresetThumb(
+                      key: ValueKey('custom-thumb-${c.id}'),
+                      label: c.name,
+                      shape: c.shape,
+                      selected: _custom?.id == c.id,
+                      onTap: () => _choose(custom: c),
+                      onEdit: () => _editCustom(c),
+                    ),
+                  _NewCustomThumb(onTap: () => _editCustom()),
                 ],
               ),
               const SizedBox(height: 22),
               Text(
-                '2. Drag tabs into the panes',
+                tr('2. Drag tabs into the panes'),
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim),
               ),
               const SizedBox(height: 10),
@@ -165,8 +218,8 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                   constraints: const BoxConstraints(minHeight: 180, maxHeight: 320),
                   child: AspectRatio(
                     aspectRatio: 16 / 7,
-                    child: _PresetGeometry(
-                      preset: _preset,
+                    child: _ShapeGeometry(
+                      shape: _shape,
                       gap: 8,
                       slot: (i) => _SlotTarget(
                         index: i,
@@ -231,96 +284,156 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
   }
 }
 
-/// Lays out [preset]'s panes with [slot] building each one, in the same
+/// Lays out [shape]'s zones with [slot] building each one, in the same
 /// geometry the tab area will use. Shared by the thumbnails and the big
 /// preview so the two can never disagree.
-class _PresetGeometry extends StatelessWidget {
-  const _PresetGeometry({required this.preset, required this.slot, required this.gap});
-  final SplitPreset preset;
+class _ShapeGeometry extends StatelessWidget {
+  const _ShapeGeometry({required this.shape, required this.slot, required this.gap});
+  final ZoneNode shape;
   final Widget Function(int index) slot;
   final double gap;
 
+  Widget _node(ZoneNode node, int first) {
+    if (node is! ZoneSplit) return slot(first);
+    final horizontal = node.axis == Axis.horizontal;
+    return Flex(
+      direction: node.axis,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(flex: (node.ratio * 1000).round(), child: _node(node.first, first)),
+        SizedBox(width: horizontal ? gap : null, height: horizontal ? null : gap),
+        Expanded(
+          flex: ((1 - node.ratio) * 1000).round(),
+          child: _node(node.second, first + zoneCount(node.first)),
+        ),
+      ],
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
-    Widget row(List<Widget> children) => Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _withGaps(children, SizedBox(width: gap)),
-    );
-    Widget col(List<Widget> children) => Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _withGaps(children, SizedBox(height: gap)),
-    );
-    Widget s(int i) => Expanded(child: slot(i));
-
-    return switch (preset) {
-      SplitPreset.single => row([s(0)]),
-      SplitPreset.sideBySide => row([s(0), s(1)]),
-      SplitPreset.stacked => col([s(0), s(1)]),
-      SplitPreset.oneLeftTwoRight => row([
-        s(0),
-        Expanded(child: col([s(1), s(2)])),
-      ]),
-      SplitPreset.threeColumns => row([s(0), s(1), s(2)]),
-      SplitPreset.grid => col([
-        Expanded(child: row([s(0), s(1)])),
-        Expanded(child: row([s(2), s(3)])),
-      ]),
-    };
-  }
-
-  static List<Widget> _withGaps(List<Widget> items, Widget gap) {
-    final out = <Widget>[];
-    for (var i = 0; i < items.length; i++) {
-      if (i > 0) out.add(gap);
-      out.add(items[i]);
-    }
-    return out;
-  }
+  Widget build(BuildContext context) => _node(shape, 0);
 }
 
 class _PresetThumb extends StatelessWidget {
-  const _PresetThumb({required this.preset, required this.selected, required this.onTap});
-  final SplitPreset preset;
+  const _PresetThumb({
+    super.key,
+    required this.label,
+    required this.shape,
+    required this.selected,
+    required this.onTap,
+    this.onEdit,
+  });
+  final String label;
+  final ZoneNode shape;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Custom layouts: edit or delete.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
+    final thumb = InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        width: 92,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          border: Border.all(color: selected ? accent : theme.dividerColor, width: selected ? 2 : 1),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Column(
+          children: [
+            SizedBox(
+              height: 44,
+              child: _ShapeGeometry(
+                shape: shape,
+                gap: 3,
+                slot: (_) => Container(
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: selected ? 0.35 : 0.15),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w400),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+    final edit = onEdit;
     return Tooltip(
-      message: tr(preset.label),
+      message: label,
+      child: edit == null
+          ? thumb
+          : Stack(
+              clipBehavior: Clip.none,
+              children: [
+                thumb,
+                Positioned(
+                  top: -6,
+                  right: -6,
+                  child: Material(
+                    color: theme.colorScheme.surface,
+                    shape: CircleBorder(side: BorderSide(color: theme.dividerColor)),
+                    child: InkWell(
+                      key: ValueKey('edit-${(key as ValueKey?)?.value}'),
+                      customBorder: const CircleBorder(),
+                      onTap: edit,
+                      child: Padding(
+                        padding: const EdgeInsets.all(3),
+                        child: Tooltip(
+                          message: tr('Edit custom layout'),
+                          child: const Icon(Icons.edit_outlined, size: 12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+/// The last tile: draw a layout of your own.
+class _NewCustomThumb extends StatelessWidget {
+  const _NewCustomThumb({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: tr('New custom layout'),
       child: InkWell(
+        key: const ValueKey('custom-layout-new'),
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
         child: Container(
           width: 92,
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            border: Border.all(color: selected ? accent : theme.dividerColor, width: selected ? 2 : 1),
+            border: Border.all(color: theme.dividerColor),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Column(
             children: [
               SizedBox(
                 height: 44,
-                child: _PresetGeometry(
-                  preset: preset,
-                  gap: 3,
-                  slot: (_) => Container(
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: selected ? 0.35 : 0.15),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
+                child: Center(child: Icon(Icons.dashboard_customize_outlined, color: theme.colorScheme.primary)),
               ),
               const SizedBox(height: 6),
-              Text(
-                tr(preset.label),
-                style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w400),
-                overflow: TextOverflow.ellipsis,
-              ),
+              Text(tr('Custom'), style: const TextStyle(fontSize: 10)),
             ],
           ),
         ),

@@ -1512,7 +1512,7 @@ class _LayoutRow extends StatelessWidget {
       onOpen: () => _open(context),
       icon: Icons.space_dashboard_outlined,
       title: layout.name,
-      subtitle: '${tr(preset?.label ?? 'Layout')} · $panes',
+      subtitle: '${tr(layout.shape != null ? 'Custom' : preset?.label ?? 'Layout')} · $panes',
       menuItems: const [
         MenuAction('open', 'Open layout', Icons.play_arrow_outlined),
         MenuAction('rename', 'Rename', Icons.edit_outlined, separatorBefore: true),
