@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_pty/flutter_pty.dart';
 
 import '../app_version.dart';
 
@@ -34,21 +35,16 @@ abstract class SftpClient {
     String localPath, {
     SftpProgressCallback? onProgress,
   });
+  Future<void> verify(String localPath, String remotePath);
   Future<void> mkdir(String path);
   void dispose();
 }
 
 class SftpProgress {
-  const SftpProgress(
-    this.bytes,
-    this.total,
-    this.bytesPerSecond, {
-    this.verifying = false,
-  });
+  const SftpProgress(this.bytes, this.total, this.bytesPerSecond);
   final int bytes;
   final int total;
   final double bytesPerSecond;
-  final bool verifying;
 }
 
 typedef SftpProgressCallback = void Function(SftpProgress progress);
@@ -78,6 +74,7 @@ class OpenSshSftpClient implements SftpClient {
   @visibleForTesting
   final String? directServer;
   final Set<Process> _processes = {};
+  final Set<Pty> _ptys = {};
   bool _disposed = false;
 
   static String quotePath(String path) {
@@ -190,16 +187,29 @@ class OpenSshSftpClient implements SftpClient {
     SftpProgressCallback? onProgress,
   }) async {
     final total = await File(localPath).length();
-    // Every SFTP call is a new SSH login, so the remote size is not polled
-    // while uploading: that would log in to the device several times a
-    // second. The row shows a spinner until verification starts.
-    await _withProgress(
-      () => _run('put ${quotePath(localPath)} ${quotePath(remotePath)}'),
-      null,
-      total,
-      onProgress,
+    final command = 'put ${quotePath(localPath)} ${quotePath(remotePath)}';
+    final watch = Stopwatch()..start();
+    onProgress?.call(SftpProgress(0, total, 0));
+    if (runner == null && onProgress != null) {
+      _checkResult(
+        await _runOpenSsh(
+          command,
+          onMeter: (percent, rate) => onProgress(
+            SftpProgress((total * percent / 100).round(), total, rate),
+          ),
+        ),
+      );
+    } else {
+      await _run(command);
+    }
+    onProgress?.call(
+      SftpProgress(
+        total,
+        total,
+        total /
+            (watch.elapsedMilliseconds / 1000).clamp(0.001, double.infinity),
+      ),
     );
-    await _verify(File(localPath), remotePath);
   }
 
   @override
@@ -227,7 +237,6 @@ class OpenSshSftpClient implements SftpClient {
         total,
         onProgress,
       );
-      await _verify(partial, remotePath);
       final destination = File(localPath);
       if (await destination.exists()) {
         backup = await destination.rename('$localPath.commands-backup-$suffix');
@@ -298,10 +307,13 @@ class OpenSshSftpClient implements SftpClient {
         total,
         total /
             (watch.elapsedMilliseconds / 1000).clamp(0.001, double.infinity),
-        verifying: true,
       ),
     );
   }
+
+  @override
+  Future<void> verify(String localPath, String remotePath) =>
+      _verify(File(localPath), remotePath);
 
   Future<void> _verify(File local, String remotePath) async {
     final dir = await Directory.systemTemp.createTemp('commands_sftp_verify_');
@@ -323,7 +335,10 @@ class OpenSshSftpClient implements SftpClient {
     await _run('mkdir ${quotePath(path)}');
   }
 
-  Future<SftpCommandResult> _runOpenSsh(String command) async {
+  Future<SftpCommandResult> _runOpenSsh(
+    String command, {
+    void Function(int percent, double bytesPerSecond)? onMeter,
+  }) async {
     final sftp = Platform.isWindows
         ? '${Platform.environment['SystemRoot'] ?? r'C:\Windows'}\\System32\\OpenSSH\\sftp.exe'
         : (File('/usr/bin/sftp').existsSync() ? '/usr/bin/sftp' : 'sftp');
@@ -378,6 +393,47 @@ class OpenSshSftpClient implements SftpClient {
         ] else
           '$username@$host',
       ];
+      if (onMeter != null) {
+        final launcher = Platform.isWindows
+            ? await _writePtyLauncher(dir, sftp, args, env)
+            : sftp;
+        final pty = Pty.start(
+          launcher,
+          arguments: Platform.isWindows ? const [] : args,
+          environment: env,
+          columns: 100,
+          rows: 25,
+        );
+        _ptys.add(pty);
+        final output = StringBuffer();
+        var pending = '';
+        final subscription = pty.output
+            .map<List<int>>((bytes) => bytes)
+            .transform(utf8.decoder)
+            .listen((chunk) {
+              output.write(chunk);
+              pending += chunk;
+              final lines = pending.split(RegExp(r'[\r\n]'));
+              pending = lines.removeLast();
+              for (final line in lines) {
+                final meter = parseProgressMeter(line);
+                if (meter != null) onMeter(meter.$1, meter.$2);
+              }
+            });
+        final done = subscription.asFuture<void>();
+        try {
+          pty.write(
+            Uint8List.fromList(utf8.encode('progress\r$command\rbye\r')),
+          );
+          final code = await pty.exitCode;
+          await done;
+          return SftpCommandResult(output.toString(), '', code);
+        } finally {
+          await subscription.cancel();
+          _ptys.remove(pty);
+          pty.kill();
+        }
+      }
       final process = await Process.start(sftp, args, environment: env);
       _processes.add(process);
       try {
@@ -392,6 +448,58 @@ class OpenSshSftpClient implements SftpClient {
       }
     } finally {
       await dir.delete(recursive: true);
+    }
+  }
+
+  static final _progressMeter = RegExp(
+    r'(\d{1,3})%\s+\S+\s+([\d.]+)([KMGT]?B)/s',
+  );
+
+  @visibleForTesting
+  static (int, double)? parseProgressMeter(String line) {
+    final match = _progressMeter.firstMatch(line);
+    if (match == null) return null;
+    final percent = int.tryParse(match[1]!);
+    final rate = double.tryParse(match[2]!);
+    if (percent == null || percent > 100 || rate == null) return null;
+    final factor = switch (match[3]) {
+      'KB' => 1024,
+      'MB' => 1024 * 1024,
+      'GB' => 1024 * 1024 * 1024,
+      'TB' => 1024 * 1024 * 1024 * 1024,
+      _ => 1,
+    };
+    return (percent, rate * factor);
+  }
+
+  Future<String> _writePtyLauncher(
+    Directory dir,
+    String sftp,
+    List<String> args,
+    Map<String, String> env,
+  ) async {
+    env['COMMANDS_SFTP_EXE'] = sftp;
+    env['COMMANDS_SFTP_ARGS_B64'] = base64Encode(utf8.encode(jsonEncode(args)));
+    final script = File('${dir.path}\\launch.ps1');
+    await script.writeAsString(
+      '\$arguments = ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(\$env:COMMANDS_SFTP_ARGS_B64)))\r\n'
+      '& \$env:COMMANDS_SFTP_EXE @arguments\r\n'
+      'exit \$LASTEXITCODE\r\n',
+    );
+    final launcher = File('${dir.path}\\launch.cmd');
+    await launcher.writeAsString(
+      '@echo off\r\nchcp 65001 >nul\r\n'
+      'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0launch.ps1"\r\n',
+    );
+    return launcher.path;
+  }
+
+  static void _checkResult(SftpCommandResult result) {
+    if (result.exitCode != 0) {
+      final detail = result.stderr.trim().isNotEmpty
+          ? result.stderr.trim()
+          : result.stdout.trim();
+      throw SftpException(detail.isEmpty ? 'SFTP command failed' : detail);
     }
   }
 
@@ -428,6 +536,10 @@ class OpenSshSftpClient implements SftpClient {
       process.kill();
     }
     _processes.clear();
+    for (final pty in _ptys) {
+      pty.kill();
+    }
+    _ptys.clear();
   }
 }
 

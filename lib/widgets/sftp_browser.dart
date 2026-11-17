@@ -111,7 +111,15 @@ class DiskFileBrowser implements LocalFileBrowser {
 }
 
 class SftpBrowser extends StatefulWidget {
-  const SftpBrowser({super.key, required this.createClient, this.localBrowser, this.onClose, this.onExpand, this.wide = false, this.transfers});
+  const SftpBrowser({
+    super.key,
+    required this.createClient,
+    this.localBrowser,
+    this.onClose,
+    this.onExpand,
+    this.wide = false,
+    this.transfers,
+  });
   final SftpClientFactory createClient;
 
   /// Closes the panel; the terminal stays.
@@ -279,7 +287,14 @@ class _SftpBrowserState extends State<SftpBrowser> {
         : _localEntries.any((e) => e.name == name);
     if (exists && !await _confirmOverwrite(name)) return;
     if (!mounted) return;
-    final item = SftpTransfer(name, upload ? 'upload' : 'download');
+    final localPath = _local.join(_localPath, name);
+    final remotePath = OpenSshSftpClient.joinRemote(_remotePath, name);
+    final item = SftpTransfer(
+      name,
+      upload ? 'upload' : 'download',
+      localPath: localPath,
+      remotePath: remotePath,
+    );
     setState(() {
       _busy = true;
       _transfers.insert(0, item);
@@ -289,30 +304,49 @@ class _SftpBrowserState extends State<SftpBrowser> {
         if (!mounted) return;
         setState(() {
           item.progress = progress;
-          item.status = progress.verifying
-              ? 'Verifying SHA-256'
-              : 'Transferring';
+          item.status = 'Transferring';
         });
       }
 
       if (upload) {
-        await client.upload(
-          _local.join(_localPath, name),
-          OpenSshSftpClient.joinRemote(_remotePath, name),
-          onProgress: updateProgress,
-        );
+        await client.upload(localPath, remotePath, onProgress: updateProgress);
         await _loadRemote();
       } else {
         await client.download(
-          OpenSshSftpClient.joinRemote(_remotePath, name),
-          _local.join(_localPath, name),
+          remotePath,
+          localPath,
           onProgress: updateProgress,
         );
         await _loadLocal();
       }
-      item.status = 'Verified';
+      item.status = 'Completed';
     } catch (error) {
       item.status = 'Failed';
+      item.error = '$error';
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _verifyTransfer(SftpTransfer item) async {
+    final client = _client;
+    if (client == null ||
+        _busy ||
+        (item.status != 'Completed' && item.status != 'Verification failed') ||
+        item.localPath == null ||
+        item.remotePath == null) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      item.status = 'Verifying SHA-256';
+      item.error = null;
+    });
+    try {
+      await client.verify(item.localPath!, item.remotePath!);
+      item.status = 'Verified';
+    } catch (error) {
+      item.status = 'Verification failed';
       item.error = '$error';
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -375,22 +409,35 @@ class _SftpBrowserState extends State<SftpBrowser> {
           onSubmitted: (value) => Navigator.pop(context, value),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
-          FilledButton(onPressed: () => Navigator.pop(context, draft), child: Text(tr('Create'))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(tr('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, draft),
+            child: Text(tr('Create')),
+          ),
         ],
       ),
     );
     if (name == null || !mounted) return;
     final trimmed = name.trim();
-    if (trimmed.isEmpty || trimmed == '.' || trimmed == '..' || trimmed.contains(RegExp(r'[\\/]'))) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Invalid folder name'))));
+    if (trimmed.isEmpty ||
+        trimmed == '.' ||
+        trimmed == '..' ||
+        trimmed.contains(RegExp(r'[\\/]'))) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(tr('Invalid folder name'))));
       return;
     }
     try {
       await _local.mkdir(_local.join(_localPath, trimmed));
       await _loadLocal();
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
     }
   }
 
@@ -566,59 +613,86 @@ class _SftpBrowserState extends State<SftpBrowser> {
                   itemCount: _transfers.length,
                   itemBuilder: (context, index) {
                     final item = _transfers[index];
-                    return Tooltip(
-                      message: item.error ?? tr(item.status),
-                      child: SizedBox(
-                        height: 24,
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 12),
-                            Icon(
-                              item.direction == 'upload'
-                                  ? Icons.upload_rounded
-                                  : Icons.download_rounded,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                item.name,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            ),
-                            if (item.status == 'Transferring' ||
-                                item.status == 'Verifying SHA-256')
-                              const SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            else
-                              Icon(
-                                item.status == 'Verified'
-                                    ? Icons.check_circle_rounded
-                                    : Icons.error_rounded,
-                                size: 13,
-                                color: item.status == 'Verified'
-                                    ? const Color(0xFF2EB85C)
-                                    : Theme.of(context).colorScheme.error,
-                              ),
-                            const SizedBox(width: 5),
-                            Text(
-                              item.status == 'Transferring' &&
-                                      item.progress != null
-                                  ? '${item.progress!.total == 0 ? _size(item.progress!.bytes) : '${(100 * item.progress!.bytes / item.progress!.total).clamp(0, 100).floor()}%'} · ${_size(item.progress!.bytesPerSecond.round())}/s'
-                                  : tr(item.status),
+                    final row = SizedBox(
+                      height: 24,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          Icon(
+                            item.direction == 'upload'
+                                ? Icons.upload_rounded
+                                : Icons.download_rounded,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              item.name,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 11),
                             ),
+                          ),
+                          if (item.status == 'Transferring' ||
+                              item.status == 'Verifying SHA-256')
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            Icon(
+                              item.status == 'Verified' ||
+                                      item.status == 'Completed'
+                                  ? Icons.check_circle_rounded
+                                  : Icons.error_rounded,
+                              size: 13,
+                              color: item.status == 'Verified'
+                                  ? const Color(0xFF2EB85C)
+                                  : item.status == 'Completed'
+                                  ? Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant
+                                  : Theme.of(context).colorScheme.error,
+                            ),
+                          const SizedBox(width: 5),
+                          Text(
+                            item.status == 'Transferring' &&
+                                    item.progress != null &&
+                                    item.progress!.bytesPerSecond > 0
+                                ? '${item.progress!.total == 0 ? _size(item.progress!.bytes) : '${(100 * item.progress!.bytes / item.progress!.total).clamp(0, 100).floor()}%'} · ${(item.progress!.bytesPerSecond * 8 / 1000000).toStringAsFixed(1)} Mbps'
+                                : tr(item.status),
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          if ((item.status == 'Completed' ||
+                                  item.status == 'Verification failed') &&
+                              item.localPath != null &&
+                              item.remotePath != null)
+                            Tooltip(
+                              message: tr('Verify SHA-256'),
+                              child: IconButton(
+                                key: ValueKey('sftp-verify-${item.name}'),
+                                onPressed: _busy
+                                    ? null
+                                    : () => _verifyTransfer(item),
+                                icon: const Icon(
+                                  Icons.verified_outlined,
+                                  size: 16,
+                                ),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 26,
+                                  height: 24,
+                                ),
+                              ),
+                            )
+                          else
                             const SizedBox(width: 10),
-                          ],
-                        ),
+                        ],
                       ),
                     );
+                    return item.error == null
+                        ? row
+                        : Tooltip(message: item.error!, child: row);
                   },
                 ),
         ),
@@ -756,9 +830,24 @@ class _SftpBrowserState extends State<SftpBrowser> {
               ),
               const Spacer(),
               if (extra != null)
-                ToolButton(icon: Icons.create_new_folder_rounded, tooltip: extraTooltip ?? tr('New remote folder'), onPressed: extra, size: 26),
-              ToolButton(icon: Icons.arrow_upward_rounded, tooltip: tr('Parent folder'), onPressed: up, size: 26),
-              ToolButton(icon: Icons.refresh_rounded, tooltip: tr('Refresh'), onPressed: refresh, size: 26),
+                ToolButton(
+                  icon: Icons.create_new_folder_rounded,
+                  tooltip: extraTooltip ?? tr('New remote folder'),
+                  onPressed: extra,
+                  size: 26,
+                ),
+              ToolButton(
+                icon: Icons.arrow_upward_rounded,
+                tooltip: tr('Parent folder'),
+                onPressed: up,
+                size: 26,
+              ),
+              ToolButton(
+                icon: Icons.refresh_rounded,
+                tooltip: tr('Refresh'),
+                onPressed: refresh,
+                size: 26,
+              ),
               if (expand != null)
                 ToolButton(
                   icon: Icons.open_in_full_rounded,
@@ -934,7 +1023,11 @@ class _FileRowState extends State<_FileRow> {
 
 /// The file manager view: a bar with the way back, then both sides.
 class _WideSftp extends StatelessWidget {
-  const _WideSftp({required this.createClient, required this.localBrowser, required this.transfers});
+  const _WideSftp({
+    required this.createClient,
+    required this.localBrowser,
+    required this.transfers,
+  });
   final SftpClientFactory createClient;
   final LocalFileBrowser? localBrowser;
   final List<SftpTransfer> transfers;
@@ -973,7 +1066,14 @@ class _WideSftp extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(child: SftpBrowser(createClient: createClient, localBrowser: localBrowser, wide: true, transfers: transfers)),
+          Expanded(
+            child: SftpBrowser(
+              createClient: createClient,
+              localBrowser: localBrowser,
+              wide: true,
+              transfers: transfers,
+            ),
+          ),
         ],
       ),
     );

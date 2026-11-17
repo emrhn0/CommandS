@@ -58,6 +58,8 @@ const german = <String, String>{
   'Failed': 'Fehlgeschlagen',
   'Verified': 'Geprüft',
   'Verifying SHA-256': 'SHA-256 wird geprüft',
+  'Verify SHA-256': 'SHA-256 prüfen',
+  'Verification failed': 'Prüfung fehlgeschlagen',
   'Replace file?': 'Datei ersetzen?',
   'File {name} already exists at the destination.': 'Die Datei {name} ist am Ziel bereits vorhanden.',
   'Replace': 'Ersetzen',

@@ -59,6 +59,8 @@ const turkish = <String, String>{
   'Failed': 'Başarısız',
   'Verified': 'Doğrulandı',
   'Verifying SHA-256': 'SHA-256 doğrulanıyor',
+  'Verify SHA-256': 'SHA-256 doğrula',
+  'Verification failed': 'Doğrulama başarısız',
   'Replace file?': 'Dosya değiştirilsin mi?',
   'File {name} already exists at the destination.': 'Hedefte {name} dosyası zaten var.',
   'Replace': 'Değiştir',
