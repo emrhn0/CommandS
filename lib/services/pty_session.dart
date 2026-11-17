@@ -319,9 +319,16 @@ class PtySessionController implements TerminalSessionController {
     _watchLogin(text);
   }
 
-  /// Told once per connection what kind of device answered, when that can
-  /// be read from what it printed (see [detectDevice]).
+  /// Told when the device kind can be read from its output. A provisional
+  /// Linux result may be replaced by a later appliance banner.
   void Function(DeviceKind kind)? onDeviceDetected;
+
+  @visibleForTesting
+  void debugWatchDevice(String text, {bool start = false, bool settled = false}) {
+    if (start) _sniffStart();
+    if (text.isNotEmpty) _sniffAdd(text);
+    if (settled) _detect(settled: true);
+  }
 
   /// The server's identification line (`SSH-2.0-...`), read during the
   /// reachability check. Empty when there was none.
@@ -331,6 +338,7 @@ class PtySessionController implements TerminalSessionController {
   /// has an answer or enough has gone by.
   final _sniff = StringBuffer();
   bool _sniffing = false;
+  DeviceKind? _reportedKind;
   Timer? _settleTimer;
   static const _sniffLimit = 32 * 1024;
   static const _settleAfter = Duration(seconds: 15);
@@ -338,6 +346,7 @@ class PtySessionController implements TerminalSessionController {
   void _sniffStart() {
     _sniff.clear();
     _sniffing = true;
+    _reportedKind = null;
     _settleTimer?.cancel();
     _settleTimer = null;
     _detect(settled: false);
@@ -355,8 +364,11 @@ class PtySessionController implements TerminalSessionController {
     if (!_sniffing) return;
     final kind = detectDevice(serverVersion: serverVersion, output: _sniff.toString(), settled: settled);
     if (kind != null) {
-      _sniffStop();
-      onDeviceDetected?.call(kind);
+      if (kind != _reportedKind) {
+        _reportedKind = kind;
+        onDeviceDetected?.call(kind);
+      }
+      if (kind != DeviceKind.linux) _sniffStop();
     }
   }
 

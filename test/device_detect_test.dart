@@ -40,7 +40,7 @@ void main() {
       );
       expect(detectDevice(output: 'ArubaOS-CX\r\n(c) Copyright Hewlett Packard Enterprise\r\nSW-01# '), DeviceKind.aruba);
       expect(detectDevice(output: 'Cisco IOS Software, C2960X Software\r\nSW-01>'), DeviceKind.cisco);
-      expect(detectDevice(output: 'Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0 x86_64)\r\n'), DeviceKind.linux);
+      expect(detectDevice(output: 'Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0 x86_64)\r\n', settled: true), DeviceKind.linux);
       expect(detectDevice(output: 'Microsoft Windows [Version 10.0.20348.2340]\r\n'), DeviceKind.windows);
     });
 
@@ -85,6 +85,47 @@ void main() {
       expect(detectDevice(serverVersion: v, settled: true), DeviceKind.linux);
       expect(detectDevice(serverVersion: v, output: 'VMware vCenter Server', settled: true), DeviceKind.vmware);
     });
+
+    test('a Debian login banner waits for a delayed appliance banner', () {
+      const debian = 'Debian GNU/Linux 9\r\n'
+          'Linux DEVICE-01 4.9.210 #1 SMP Debian 4.9.210-1+deb9u1 x86_64\r\n';
+      expect(detectDevice(output: debian), isNull);
+      expect(detectDevice(output: debian, settled: true), DeviceKind.linux);
+      expect(detectDevice(output: '$debian\r\nDell EMC Networking Operating System (OS10)\r\n'), DeviceKind.dell);
+      expect(detectDevice(output: '$debian\r\nDell EMC Network Operating System (OS10)\r\n', settled: true), DeviceKind.dell);
+      expect(detectDevice(output: 'Copyright (c) by Dell Inc.\r\n'), isNull);
+    });
+
+    test('Dell N-series show output identifies the switch', () {
+      const system = 'DEVICE-01>show system\r\n'
+          'System Description: Dell EMC Networking Switch\r\n'
+          'System Model ID: N1148P-ON\r\n'
+          'Machine Type: Dell EMC Networking N1148P-ON\r\n';
+      const version = 'DEVICE-02>show version\r\n'
+          'Machine Description............... Dell EMC Networking Switch\r\n'
+          'System Model ID................... N1148P-ON\r\n'
+          'Machine Type...................... Dell EMC Networking N1148P-ON\r\n';
+      expect(detectDevice(output: system), DeviceKind.dell);
+      expect(detectDevice(output: version), DeviceKind.dell);
+      expect(detectDevice(output: 'Machine Type...................... Dell EMC Networking N1148P-ON\r\n'), DeviceKind.dell);
+      expect(detectDevice(output: 'System Model ID: N1148P-ON\r\n'), isNull);
+    });
+  });
+
+  test('a Dell banner upgrades Linux even after the settle timer', () {
+    final session = PtySessionController(host: '192.0.2.10', port: 22, startImmediately: false);
+    addTearDown(session.dispose);
+    final detected = <DeviceKind>[];
+    session.onDeviceDetected = detected.add;
+
+    session.debugWatchDevice('Debian GNU/Linux 9\r\n', start: true);
+    expect(detected, isEmpty);
+    session.debugWatchDevice('', settled: true);
+    expect(detected, [DeviceKind.linux]);
+    session.debugWatchDevice('Dell EMC Network Operating System (OS10)\r\n');
+    expect(detected, [DeviceKind.linux, DeviceKind.dell]);
+    session.debugWatchDevice('DEVICE-01# ');
+    expect(detected, [DeviceKind.linux, DeviceKind.dell]);
   });
 
   group('a Cisco that names no maker on login', () {
@@ -179,6 +220,8 @@ void main() {
     expect(SavedConnection.fromJson(SavedConnection(name: 'x', host: '192.0.2.1').toJson()).device, isNull);
     final hpe = SavedConnection(name: 'DEVICE-02', host: '192.0.2.11', device: DeviceKind.hpe);
     expect(SavedConnection.fromJson(hpe.toJson()).device, DeviceKind.hpe);
+    final dell = SavedConnection(name: 'DEVICE-03', host: '192.0.2.12', device: DeviceKind.dell);
+    expect(SavedConnection.fromJson(dell.toJson()).device, DeviceKind.dell);
   });
 
   testWidgets('the list shows the logo; RDP is always Windows', (tester) async {
@@ -190,6 +233,7 @@ void main() {
       SavedConnection(name: 'DEVICE-02', host: '192.0.2.11', port: 3389, protocol: ConnectionProtocol.rdp),
       SavedConnection(name: 'DEVICE-03', host: '192.0.2.12'),
       SavedConnection(name: 'DEVICE-04', host: '192.0.2.13', device: DeviceKind.hpe),
+      SavedConnection(name: 'DEVICE-05', host: '192.0.2.14', device: DeviceKind.dell),
     ]);
     await tester.pumpWidget(ChangeNotifierProvider.value(
       value: app,
@@ -199,6 +243,7 @@ void main() {
     expect(find.byKey(const ValueKey('device-paloalto')), findsOneWidget);
     expect(find.byKey(const ValueKey('device-windows')), findsOneWidget);
     expect(find.byKey(const ValueKey('device-hpe')), findsOneWidget);
+    expect(find.byKey(const ValueKey('device-dell')), findsOneWidget);
     expect(find.byIcon(Icons.terminal), findsOneWidget, reason: 'unknown devices keep the plain icon');
   });
 
