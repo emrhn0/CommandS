@@ -19,7 +19,10 @@ import '../l10n/strings.dart';
 ///
 /// Then again every minute while the app stays open, as a release can come
 /// out while someone is working. "Remind me later" brings the prompt for the
-/// same version back an hour after it was answered.
+/// same version back an hour after it was answered. The checks go on while
+/// the prompt is open: when a newer version turns up before it is answered,
+/// the prompt closes and one for the newer version opens in its place, saying
+/// which version it replaces, so an update is never a step behind.
 class UpdateGate extends StatefulWidget {
   const UpdateGate({super.key, required this.child, @visibleForTesting this.checker = UpdateService.check});
   final Widget child;
@@ -44,6 +47,18 @@ class _UpdateGateState extends State<UpdateGate> {
   String? _snoozedVersion;
   Timer? _snoozeEnd;
 
+  /// The version the open prompt offers, or null with no prompt open.
+  UpdateInfo? _showing;
+
+  /// The open prompt's own context, to close it with.
+  BuildContext? _promptContext;
+
+  /// True while the open prompt is downloading: it is not replaced then.
+  final _installing = ValueNotifier<bool>(false);
+
+  /// A newer version to open as soon as the open prompt has closed.
+  UpdateInfo? _replaceWith;
+
   @override
   void initState() {
     super.initState();
@@ -57,33 +72,68 @@ class _UpdateGateState extends State<UpdateGate> {
   void dispose() {
     _next?.cancel();
     _snoozeEnd?.cancel();
+    _installing.dispose();
     super.dispose();
   }
 
-  /// One check. The next is timed from the end of this one, so the hour after
-  /// "Remind me later" starts when it was pressed, and a prompt left open never
-  /// has a second one opened over it.
+  /// One check, and the next a minute after it ends. With a prompt open it
+  /// only looks for a newer version to put in its place; a prompt is never
+  /// opened over another one.
   Future<void> _round() async {
     final info = await widget.checker();
     if (!mounted) return;
     if (info != null) {
       UpdateService.available.value = info;
-      final snoozed = info.version == _snoozedVersion;
-      if (!snoozed && !await UpdateService.isSkipped(info.version)) {
+      final showing = _showing;
+      if (showing != null) {
+        await _replaceIfNewer(showing, info);
+      } else if (info.version != _snoozedVersion && !await UpdateService.isSkipped(info.version)) {
         if (!mounted) return;
         // Not over a dialog the user is in the middle of: the next round,
         // a minute on, tries again.
-        if (ModalRoute.of(context)?.isCurrent ?? true) {
-          await showUpdateDialog(context, info);
-          if (!mounted) return;
-          // Closed without updating or skipping: "Remind me later".
-          _snoozedVersion = info.version;
-          _snoozeEnd?.cancel();
-          _snoozeEnd = Timer(_snooze, () => _snoozedVersion = null);
-        }
+        if (ModalRoute.of(context)?.isCurrent ?? true) unawaited(_present(info));
       }
     }
+    if (!mounted) return;
     _next = Timer(_interval, _round);
+  }
+
+  /// Closes the open prompt for [showing] when [info] is newer, so [_present]
+  /// opens [info] next. Not while it downloads, and not when something is open
+  /// on top of it.
+  Future<void> _replaceIfNewer(UpdateInfo showing, UpdateInfo info) async {
+    if (UpdateService.compareVersions(info.version, showing.version) <= 0) return;
+    if (_installing.value || await UpdateService.isSkipped(info.version)) return;
+    final prompt = _promptContext;
+    if (!mounted || prompt == null || !prompt.mounted) return;
+    if (!(ModalRoute.of(prompt)?.isCurrent ?? false)) return;
+    _replaceWith = info;
+    Navigator.of(prompt).pop();
+  }
+
+  Future<void> _present(UpdateInfo info, {UpdateInfo? replaces}) async {
+    _showing = info;
+    await showUpdateDialog(
+      context,
+      info,
+      replaces: replaces,
+      installing: _installing,
+      onContext: (c) => _promptContext = c,
+    );
+    _showing = null;
+    _promptContext = null;
+    _installing.value = false;
+    if (!mounted) return;
+    final newer = _replaceWith;
+    _replaceWith = null;
+    if (newer != null) {
+      unawaited(_present(newer, replaces: info));
+      return;
+    }
+    // Closed without updating or skipping: "Remind me later".
+    _snoozedVersion = info.version;
+    _snoozeEnd?.cancel();
+    _snoozeEnd = Timer(_snooze, () => _snoozedVersion = null);
   }
 
   @override
@@ -100,18 +150,32 @@ Future<String?> installUpdate(UpdateInfo info, {void Function(double? progress)?
   exit(0);
 }
 
-/// Shows the "a new version is available" prompt for [info].
-Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
+/// Shows the "a new version is available" prompt for [info]. [replaces] is
+/// the version an earlier prompt offered, when this one took its place.
+/// [installing] follows whether it is downloading, and [onContext] gets the
+/// prompt's own context, which closes it.
+Future<void> showUpdateDialog(
+  BuildContext context,
+  UpdateInfo info, {
+  UpdateInfo? replaces,
+  ValueNotifier<bool>? installing,
+  void Function(BuildContext promptContext)? onContext,
+}) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _UpdateDialog(info: info),
+    builder: (promptContext) {
+      onContext?.call(promptContext);
+      return _UpdateDialog(info: info, replaces: replaces, installing: installing);
+    },
   );
 }
 
 class _UpdateDialog extends StatefulWidget {
-  const _UpdateDialog({required this.info});
+  const _UpdateDialog({required this.info, this.replaces, this.installing});
   final UpdateInfo info;
+  final UpdateInfo? replaces;
+  final ValueNotifier<bool>? installing;
 
   @override
   State<_UpdateDialog> createState() => _UpdateDialogState();
@@ -123,6 +187,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   String? _error;
 
   Future<void> _install() async {
+    widget.installing?.value = true;
     setState(() {
       _busy = true;
       _error = null;
@@ -134,6 +199,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         if (mounted) setState(() => _progress = p);
       },
     );
+    widget.installing?.value = false;
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -162,6 +228,25 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (widget.replaces != null) ...[
+            Container(
+              key: const Key('update-replaces'),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                tr('A newer version came out: {version} replaces {previous}.', {
+                  'version': info.version,
+                  'previous': widget.replaces!.version,
+                }),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Text(
             tr('You are running {version}.', {'version': appVersion}) +
                 (info.sizeLabel.isEmpty ? '' : ' ${tr('Download is {size}.', {'size': info.sizeLabel})}'),

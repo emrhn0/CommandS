@@ -451,6 +451,7 @@ const german = <String, String>{
   'Downloading… {percent}%': 'Wird heruntergeladen… {percent} %',
   'CommandS will close and reopen on the new version by itself.':
       'CommandS schließt sich und startet von selbst mit der neuen Version.',
+  'A newer version came out: {version} replaces {previous}.': 'Eine neuere Version ist erschienen: {version} ersetzt {previous}.',
   'You are running {version}.': 'Sie verwenden {version}.',
   'Download is {size}.': 'Download-Größe: {size}.',
   'Downloading opens the release page in your browser. Unzip the app and drag it to '

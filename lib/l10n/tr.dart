@@ -447,6 +447,7 @@ const turkish = <String, String>{
   'Downloading… {percent}%': 'İndiriliyor… %{percent}',
   'CommandS will close and reopen on the new version by itself.':
       'CommandS kapanıp yeni sürümle kendiliğinden yeniden açılacak.',
+  'A newer version came out: {version} replaces {previous}.': 'Daha yeni bir sürüm çıktı: {previous} yerine {version} geldi.',
   'You are running {version}.': 'Kullandığınız sürüm: {version}.',
   'Download is {size}.': 'İndirme boyutu: {size}.',
   'Downloading opens the release page in your browser. Unzip the app and drag it to '

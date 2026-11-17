@@ -99,13 +99,48 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('a prompt left open does not get a second one over it', (tester) async {
+  testWidgets('a prompt left open keeps checking, but never gets a second one over it', (tester) async {
     answer = _release;
     await pumpGate(tester);
     await wait(tester, Duration.zero);
-    await wait(tester, const Duration(hours: 3));
-    expect(checks, 1);
+    await wait(tester, const Duration(minutes: 5));
+    expect(checks, greaterThan(3), reason: 'a newer version could come out meanwhile');
     expect(prompt, findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a newer version that comes out while the prompt is open takes its place', (tester) async {
+    answer = _release;
+    await pumpGate(tester);
+    await wait(tester, Duration.zero);
+    expect(find.text('CommandS v99.0.0 is available'), findsOneWidget);
+    answer = const UpdateInfo(
+      version: 'v99.1.0',
+      releaseUrl: 'https://example.com/release',
+      notes: 'Newer',
+      assetName: 'setup.exe',
+      assetUrl: 'https://example.com/setup.exe',
+      assetSize: 1,
+      checksumsUrl: null,
+      method: UpdateMethod.windowsInstaller,
+    );
+    await wait(tester, const Duration(seconds: 65));
+    await tester.pumpAndSettle();
+    expect(find.text('CommandS v99.0.0 is available'), findsNothing);
+    expect(find.text('CommandS v99.1.0 is available'), findsOneWidget);
+    expect(prompt, findsOneWidget, reason: 'one prompt, not two');
+    expect(find.byKey(const Key('update-replaces')), findsOneWidget);
+    expect(find.text('A newer version came out: v99.1.0 replaces v99.0.0.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('the same version found again leaves the open prompt alone', (tester) async {
+    answer = _release;
+    await pumpGate(tester);
+    await wait(tester, Duration.zero);
+    await wait(tester, const Duration(seconds: 65));
+    expect(find.byKey(const Key('update-replaces')), findsNothing);
+    expect(find.text('CommandS v99.0.0 is available'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
