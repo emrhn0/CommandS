@@ -8,6 +8,7 @@ import 'package:xterm/xterm.dart';
 
 import '../providers/app_state.dart';
 import '../services/mac_rdp_session.dart';
+import '../services/dead_keys.dart';
 import '../services/mcp_server.dart';
 import '../services/open_path.dart';
 import '../services/pane_layout.dart';
@@ -1552,6 +1553,10 @@ class _TerminalPaneState extends State<_TerminalPane> {
       // Ctrl+Insert copies (TerminalClipboard).
       shortcuts: TerminalClipboard.shortcuts,
       onKeyEvent: (node, event) {
+        // A dead key (AltGr+Ü for ~ on a Turkish keyboard) arrives with its
+        // plain letter as the character; the real one comes with the next
+        // key. Typing the letter made ~ come out as ü~.
+        if (event is! KeyUpEvent && DeadKeys.isDeadKey(event)) return KeyEventResult.handled;
         final session = widget.controller;
         final keyboard = HardwareKeyboard.instance;
         if (session is PtySessionController &&
