@@ -1328,8 +1328,9 @@ class AppState extends ChangeNotifier {
     applyLayout(buildLayout(preset, slots), editActive: activeGroupId != null);
   }
 
-  /// Takes [tabIds] out of every group but [except]; a group left with a
-  /// single session is no longer a split and goes back to being a plain tab.
+  /// Takes [tabIds] out of every group but [except], leaving an empty pane in
+  /// each one's place; a group left with a single session is no longer a
+  /// split and goes back to being a plain tab.
   void _takeFromGroups(Iterable<String> tabIds, {TabGroup? except}) {
     for (final g in [...groups]) {
       if (identical(g, except)) continue;
@@ -1337,9 +1338,12 @@ class AppState extends ChangeNotifier {
       // can hand back the same root, so comparing roots afterwards missed a
       // change (a split with an empty pane left holding one session).
       if (!tabIds.any(g.tabIds.contains)) continue;
+      // The session's pane stays, empty: the split keeps the shape it was
+      // given (a pane next to it growing over the space moved the others
+      // around). A split left with one session is no split any more.
       PaneNode? rest = g.layout;
       for (final id in tabIds) {
-        rest = removeFromLayout(rest, id);
+        rest = emptyPaneOf(rest, id);
       }
       if (rest == null || tabIdsInLayout(rest).length < 2) {
         groups.remove(g);
@@ -1362,11 +1366,6 @@ class AppState extends ChangeNotifier {
       _takeFromGroups([tabId], except: activeGroup);
     }
     applyLayout(fillEmptyPane(layout, emptyId, tabId), editActive: activeGroupId != null);
-  }
-
-  /// Closes the empty pane [emptyId]; the pane next to it takes the room.
-  void closeEmptyPane(String emptyId) {
-    applyLayout(removeEmptyPane(paneLayout, emptyId), editActive: activeGroupId != null);
   }
 
   /// Splits the group back into plain tabs; the sessions stay open.

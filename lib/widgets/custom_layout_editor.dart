@@ -103,7 +103,7 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
                 children: [
                   Expanded(
                     child: Text(
-                      tr('Click where the line is to split a zone. Shift switches the line. Drag a divider to resize.'),
+                      tr('Click where the line is to split a zone; Shift switches the line. Drag a divider to resize: it snaps to halves, thirds and quarters (Alt: no snapping). Double-click it to make the panes even.'),
                       style: TextStyle(fontSize: 12, color: dim),
                     ),
                   ),
@@ -130,7 +130,9 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
                 ],
               ),
               const SizedBox(height: 14),
-              AspectRatio(
+              // Shrinks with the window instead of pushing the buttons off it.
+              Flexible(
+                child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: _ZoneCanvas(
                   key: const ValueKey('zone-canvas'),
@@ -141,7 +143,9 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
                   onSplit: _split,
                   onRemove: _remove,
                   onResize: (path, ratio) => setState(() => _shape = setZoneRatio(_shape, path, ratio)),
+                  onEqualize: (path) => setState(() => _shape = equalizeZones(_shape, path)),
                 ),
+              ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -187,8 +191,10 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
 }
 
 /// The editable drawing: zones with their number, a line that follows the
-/// mouse to split along, and dividers that drag.
-class _ZoneCanvas extends StatelessWidget {
+/// mouse to split along, and dividers that drag. A dragged divider shows the
+/// two shares and snaps to halves, thirds and quarters (Alt: no snapping);
+/// a double click on it makes its row or column even.
+class _ZoneCanvas extends StatefulWidget {
   const _ZoneCanvas({
     super.key,
     required this.shape,
@@ -198,6 +204,7 @@ class _ZoneCanvas extends StatelessWidget {
     required this.onSplit,
     required this.onRemove,
     required this.onResize,
+    required this.onEqualize,
   });
 
   final ZoneNode shape;
@@ -207,21 +214,35 @@ class _ZoneCanvas extends StatelessWidget {
   final void Function(int zone, Axis line, double at) onSplit;
   final void Function(int zone) onRemove;
   final void Function(List<bool> path, double ratio) onResize;
+  final void Function(List<bool> path) onEqualize;
 
+  @override
+  State<_ZoneCanvas> createState() => _ZoneCanvasState();
+}
+
+class _ZoneCanvasState extends State<_ZoneCanvas> {
   static const double _divider = 8;
+
+  /// The divider being dragged, by its path, and whether it sits on a snap
+  /// ratio right now.
+  String? _dragging;
+  bool _snapped = false;
+
+  static String _key(List<bool> path) => path.map((p) => p ? 1 : 0).join();
 
   Widget _node(ZoneNode node, List<bool> path, int firstZone) {
     if (node is! ZoneSplit) {
       return _Zone(
         index: firstZone,
-        line: line,
-        canSplit: canSplit,
-        canRemove: canRemove,
-        onSplit: (line, at) => onSplit(firstZone, line, at),
-        onRemove: () => onRemove(firstZone),
+        line: widget.line,
+        canSplit: widget.canSplit,
+        canRemove: widget.canRemove,
+        onSplit: (line, at) => widget.onSplit(firstZone, line, at),
+        onRemove: () => widget.onRemove(firstZone),
       );
     }
     final horizontal = node.axis == Axis.horizontal;
+    final key = _key(path);
     return LayoutBuilder(
       builder: (context, constraints) {
         final total = (horizontal ? constraints.maxWidth : constraints.maxHeight) - _divider;
@@ -232,46 +253,103 @@ class _ZoneCanvas extends StatelessWidget {
           final box = context.findRenderObject() as RenderBox?;
           if (box == null || total <= 0) return;
           final local = box.globalToLocal(global);
-          final along = (horizontal ? local.dx : local.dy) - _divider / 2;
-          onResize(path, along / total);
+          final free = (((horizontal ? local.dx : local.dy) - _divider / 2) / total)
+              .clamp(minZoneRatio, 1 - minZoneRatio);
+          final ratio = HardwareKeyboard.instance.isAltPressed ? free : snapZoneRatio(free);
+          setState(() {
+            _dragging = key;
+            _snapped = ratio != free || zoneSnapRatios.contains(ratio);
+          });
+          widget.onResize(path, ratio);
         }
 
-        return Flex(
-          direction: node.axis,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        void end() => setState(() => _dragging = null);
+
+        final theme = Theme.of(context);
+        final accent = theme.colorScheme.primary;
+        final dragging = _dragging == key;
+        final at = node.ratio * total + _divider / 2;
+        final first = (node.ratio * 100).round();
+        return Stack(
+          clipBehavior: Clip.none,
           children: [
-            Expanded(
-              flex: (node.ratio * 1000).round(),
-              child: _node(node.first, [...path, false], firstZone),
+            Flex(
+              direction: node.axis,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  flex: (node.ratio * 1000).round(),
+                  child: _node(node.first, [...path, false], firstZone),
+                ),
+                MouseRegion(
+                  cursor: horizontal ? SystemMouseCursors.resizeColumn : SystemMouseCursors.resizeRow,
+                  child: Tooltip(
+                    message: tr('Double-click to make the panes even'),
+                    waitDuration: const Duration(milliseconds: 800),
+                    child: GestureDetector(
+                      key: ValueKey('zone-divider-$key'),
+                      behavior: HitTestBehavior.opaque,
+                      dragStartBehavior: DragStartBehavior.down,
+                      onPanDown: (d) => follow(d.globalPosition),
+                      onPanUpdate: (d) => follow(d.globalPosition),
+                      onPanEnd: (_) => end(),
+                      onPanCancel: end,
+                      onDoubleTap: () => widget.onEqualize(path),
+                      child: SizedBox(
+                        width: horizontal ? _divider : null,
+                        height: horizontal ? null : _divider,
+                        child: Center(
+                          child: Container(
+                            width: horizontal ? 2 : 24,
+                            height: horizontal ? 24 : 2,
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: dragging ? 1 : 0.7),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: ((1 - node.ratio) * 1000).round(),
+                  child: _node(node.second, [...path, true], firstZone + zoneCount(node.first)),
+                ),
+              ],
             ),
-            MouseRegion(
-              cursor: horizontal ? SystemMouseCursors.resizeColumn : SystemMouseCursors.resizeRow,
-              child: GestureDetector(
-                key: ValueKey('zone-divider-${path.map((p) => p ? 1 : 0).join()}'),
-                behavior: HitTestBehavior.opaque,
-                dragStartBehavior: DragStartBehavior.down,
-                onPanDown: (d) => follow(d.globalPosition),
-                onPanUpdate: (d) => follow(d.globalPosition),
-                child: SizedBox(
-                  width: horizontal ? _divider : null,
-                  height: horizontal ? null : _divider,
+            // The two shares, next to the divider while it is dragged; lit
+            // when it sits on a half, third or quarter.
+            if (dragging)
+              Positioned(
+                left: horizontal ? at - 48 : null,
+                top: horizontal ? null : at - 13,
+                right: horizontal ? null : 0,
+                bottom: horizontal ? 0 : null,
+                width: horizontal ? 96 : null,
+                child: IgnorePointer(
                   child: Center(
                     child: Container(
-                      width: horizontal ? 2 : 24,
-                      height: horizontal ? 24 : 2,
+                      key: const ValueKey('zone-share'),
+                      margin: const EdgeInsets.all(6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(1),
+                        color: _snapped ? accent : theme.colorScheme.surface,
+                        border: Border.all(color: accent),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        tr('{a}% | {b}%', {'a': first, 'b': 100 - first}),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: _snapped ? theme.colorScheme.onPrimary : accent,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Expanded(
-              flex: ((1 - node.ratio) * 1000).round(),
-              child: _node(node.second, [...path, true], firstZone + zoneCount(node.first)),
-            ),
           ],
         );
       },
@@ -279,7 +357,7 @@ class _ZoneCanvas extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => _node(shape, const [], 0);
+  Widget build(BuildContext context) => _node(widget.shape, const [], 0);
 }
 
 class _Zone extends StatefulWidget {

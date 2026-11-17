@@ -404,3 +404,65 @@ class CustomLayout {
     );
   }
 }
+
+/// The ratios a divider snaps to while dragged: quarters, thirds, half.
+const List<double> zoneSnapRatios = [0.25, 1 / 3, 0.5, 2 / 3, 0.75];
+
+/// How near (share of the split) a dragged divider has to come to snap.
+const double zoneSnapDistance = 0.02;
+
+/// [ratio], moved to a snap ratio if it is close to one.
+double snapZoneRatio(double ratio) {
+  for (final s in zoneSnapRatios) {
+    if ((ratio - s).abs() <= zoneSnapDistance) return s;
+  }
+  return ratio;
+}
+
+/// [shape] with the row or column the divider at [path] belongs to made
+/// even: every pane along it gets the same share. The run is the chain of
+/// splits along the same axis around that divider (three side-by-side panes
+/// are two nested splits), so all of them are evened out, not just the two
+/// next to the divider.
+ZoneNode equalizeZones(ZoneNode shape, List<bool> path) {
+  ZoneNode? at(ZoneNode node, List<bool> p) {
+    var n = node;
+    for (final second in p) {
+      if (n is! ZoneSplit) return null;
+      n = second ? n.second : n.first;
+    }
+    return n;
+  }
+
+  final target = at(shape, path);
+  if (target is! ZoneSplit) return shape;
+  // Up to the outermost split along the same axis.
+  var top = path;
+  while (top.isNotEmpty) {
+    final parent = at(shape, top.sublist(0, top.length - 1));
+    if (parent is! ZoneSplit || parent.axis != target.axis) break;
+    top = top.sublist(0, top.length - 1);
+  }
+
+  int parts(ZoneNode n, Axis axis) =>
+      n is ZoneSplit && n.axis == axis ? parts(n.first, axis) + parts(n.second, axis) : 1;
+
+  ZoneNode even(ZoneNode n, Axis axis) {
+    if (n is! ZoneSplit || n.axis != axis) return n;
+    final a = parts(n.first, axis), b = parts(n.second, axis);
+    return ZoneSplit(axis: axis, ratio: a / (a + b), first: even(n.first, axis), second: even(n.second, axis));
+  }
+
+  ZoneNode replace(ZoneNode node, List<bool> p) {
+    if (p.isEmpty) return even(node, target.axis);
+    final s = node as ZoneSplit;
+    return ZoneSplit(
+      axis: s.axis,
+      ratio: s.ratio,
+      first: p.first ? s.first : replace(s.first, p.sublist(1)),
+      second: p.first ? replace(s.second, p.sublist(1)) : s.second,
+    );
+  }
+
+  return replace(shape, top);
+}

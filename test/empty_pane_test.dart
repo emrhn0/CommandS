@@ -94,16 +94,26 @@ void main() {
       expect(rects, ['empty', 'a', 'b'], reason: 'its old place is the empty one now');
     });
 
-    test('closing the empty pane gives its room to the next one', () async {
-      final app = await splitWithEmpty();
-      app.closeEmptyPane(emptyIdOf(app));
-      expect(tabIdsInLayoutOrdered(app.paneLayout), ['a', 'b']);
-      var empties = 0;
-      mapPanes(app.paneLayout, (p) {
-        if (p is PaneEmpty) empties++;
-        return p;
-      });
-      expect(empties, 0);
+    test('closing a session leaves its pane empty; the layout keeps its shape', () async {
+      final app = AppState();
+      await app.ready;
+      app.tabs.addAll([_tab('a'), _tab('b'), _tab('c'), _tab('d')]);
+      app.applyLayout(buildFromShape(presetShape(SplitPreset.grid), ['a', 'b', 'c', 'd'], keepEmpty: true));
+      List<String> panes() {
+        final out = <String>[];
+        mapPanes(app.paneLayout, (p) {
+          out.add(p is PaneLeaf ? p.tabId : 'empty');
+          return p;
+        });
+        return out;
+      }
+
+      app.closeTab(app.tabs.indexWhere((t) => t.id == 'b'));
+      expect(panes(), ['a', 'empty', 'c', 'd'], reason: 'b closed: its place is empty, nothing moved');
+      expect(app.activeGroup, isNotNull);
+
+      app.takeOutOfSplit('d');
+      expect(panes(), ['a', 'empty', 'c', 'empty'], reason: 'taken out to a tab of its own: same');
     });
 
     test('a split left with one session drops its empty panes too', () async {

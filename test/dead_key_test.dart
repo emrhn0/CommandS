@@ -135,4 +135,18 @@ void main() {
       calloc.free(list);
     }
   }, skip: !Platform.isWindows);
+
+  test('with AltGr held, a key reporting its own plain letter types nothing', () {
+    KeyDownEvent press(LogicalKeyboardKey key, String character) => KeyDownEvent(
+      physicalKey: PhysicalKeyboardKey.bracketRight,
+      logicalKey: key,
+      character: character,
+      timeStamp: Duration.zero,
+    );
+    const ue = LogicalKeyboardKey(0xfc); // the Ü key of a Turkish keyboard
+    expect(DeadKeys.plainLetterUnderAltGr(press(ue, 'ü'), true), '', reason: 'skipped');
+    expect(DeadKeys.plainLetterUnderAltGr(press(ue, 'ü'), false), isNull, reason: 'plain Ü types ü');
+    expect(DeadKeys.plainLetterUnderAltGr(press(LogicalKeyboardKey.keyQ, '@'), true), isNull,
+        reason: 'AltGr+Q is @ and goes through');
+  });
 }

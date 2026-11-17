@@ -1094,8 +1094,8 @@ class _PaneTreeView extends StatelessWidget {
   }
 }
 
-/// A pane of a split with no session yet: drop a tab on it to fill it, or
-/// close it to let the pane next to it take the room.
+/// A pane of a split with no session: drop a tab on it to fill it. It keeps
+/// its place in the layout either way.
 class _EmptyPane extends StatefulWidget {
   const _EmptyPane({super.key, required this.emptyId, required this.header});
   final String emptyId;
@@ -1141,21 +1141,10 @@ class _EmptyPaneState extends State<_EmptyPane> {
                   color: accent.withValues(alpha: 0.06),
                   border: Border(bottom: BorderSide(color: theme.dividerColor)),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(tr('Empty pane'), style: TextStyle(fontSize: 11.5, color: dim)),
-                    ),
-                    Tooltip(
-                      message: tr('Close pane'),
-                      child: InkWell(
-                        key: ValueKey('empty-close-${widget.emptyId}'),
-                        onTap: () => app.closeEmptyPane(widget.emptyId),
-                        child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 13)),
-                      ),
-                    ),
-                  ],
-                ),
+                // No close button: an empty pane is part of the layout it
+                // was given, and is filled by dropping a tab on it.
+                alignment: Alignment.centerLeft,
+                child: Text(tr('Empty pane'), style: TextStyle(fontSize: 11.5, color: dim)),
               ),
             Expanded(child: body),
           ],

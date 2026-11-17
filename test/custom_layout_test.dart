@@ -73,6 +73,25 @@ void main() {
       expect(buildFromShape(shape, [null, null]), isNull);
     });
 
+    test('a double click makes the whole row even, not just two panes', () {
+      // Three side by side, uneven: two nested splits.
+      var shape = splitZone(splitZone(const ZoneLeaf(), 0, Axis.horizontal, ratio: 0.2), 1, Axis.horizontal, ratio: 0.7);
+      shape = splitZone(shape, 0, Axis.vertical); // the first column also split top and bottom
+      final even = equalizeZones(shape, const [true]); // the inner divider
+      final rects = zoneRects(even);
+      expect(rects[0].right, closeTo(1 / 3, 1e-9));
+      expect(rects[2].left, closeTo(1 / 3, 1e-9));
+      expect(rects[3].left, closeTo(2 / 3, 1e-9));
+      expect(rects[1].top, 0.5, reason: 'the split across the first column stays as it was');
+    });
+
+    test('a ratio near a half, third or quarter snaps to it', () {
+      expect(snapZoneRatio(0.34), 1 / 3);
+      expect(snapZoneRatio(0.49), 0.5);
+      expect(snapZoneRatio(0.26), 0.25);
+      expect(snapZoneRatio(0.41), 0.41);
+    });
+
     test('JSON keeps a shape and survives a broken one', () {
       final shape = splitZone(presetShape(SplitPreset.threeColumns), 2, Axis.vertical);
       final again = ZoneNode.fromJson(shape.toJson());
@@ -193,8 +212,10 @@ void main() {
       await tester.pump();
     }
     expect(tester.getCenter(divider).dx, closeTo(to.dx, canvas.width * 0.02));
+    expect(find.text('70% | 30%'), findsOneWidget, reason: 'the shares show while dragging');
     await drag.up();
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('zone-share')), findsNothing);
 
     expect(tester.widget<ElevatedButton>(find.byKey(const ValueKey('custom-layout-save'))).onPressed, isNull,
         reason: 'a name is needed');

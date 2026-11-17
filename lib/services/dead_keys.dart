@@ -41,13 +41,19 @@ class DeadKeys {
     if (character == null || character.isEmpty) return null;
     final scanCode = _scanCodeOf[event.physicalKey.usbHidUsage];
     if (scanCode == null) return null;
+    final altGr = HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.altRight);
     try {
       // The layout of the window the keys go to: this isolate's thread has
       // its own, which need not be the one in use.
       final thread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
       final layout = GetKeyboardLayout(thread);
-      final key = keyOnLayout(scanCode, layout);
-      if (key == null) return null;
+      final key = keyOnLayout(
+        scanCode,
+        layout,
+        held: _heldAtEvent(altGr),
+        capsLock: HardwareKeyboard.instance.lockModesEnabled.contains(KeyboardLockMode.capsLock),
+      );
+      if (key == null) return plainLetterUnderAltGr(event, altGr);
       if (key.dead) {
         _afterDeadKey = true;
         return key.text;
@@ -56,10 +62,37 @@ class DeadKeys {
         _afterDeadKey = false;
         return key.text;
       }
-      return null;
+      return plainLetterUnderAltGr(event, altGr);
     } catch (_) {
-      return null;
+      return plainLetterUnderAltGr(event, altGr);
     }
+  }
+
+  /// The modifiers held when [event] happened, as Windows virtual keys, from
+  /// Flutter's own record of them rather than asking Windows now: by the
+  /// time the event is handled, AltGr may already be up. Flutter shows AltGr
+  /// as the right Alt alone; to Windows it is Ctrl and Alt.
+  static List<int> _heldAtEvent(bool altGr) {
+    final k = HardwareKeyboard.instance;
+    return [
+      if (k.isShiftPressed) ...[VK_SHIFT, VK_LSHIFT],
+      if (altGr) ...[VK_CONTROL, VK_LCONTROL, VK_MENU, VK_RMENU],
+      if (!altGr && k.isAltPressed) ...[VK_MENU, VK_LMENU],
+      if (k.isControlPressed) ...[VK_CONTROL, VK_LCONTROL],
+    ];
+  }
+
+  /// A last guard, whatever Windows answered: with AltGr held, a key that
+  /// reports its own plain letter (Ü for the ~ key) is not typing that letter
+  /// -- AltGr gives a key its third character, never its first. It is
+  /// skipped (an empty text types nothing).
+  @visibleForTesting
+  static String? plainLetterUnderAltGr(KeyEvent event, bool altGr) {
+    if (!altGr) return null;
+    final character = event.character;
+    final label = event.logicalKey.keyLabel;
+    if (character == null || label.isEmpty) return null;
+    return character.toLowerCase() == label.toLowerCase() ? '' : null;
   }
 
   /// What the key with [scanCode] types on [layout] with the modifiers held
@@ -68,7 +101,12 @@ class DeadKeys {
   /// without touching the keyboard state, and from a thread with no accent
   /// waiting, so the answer is the key on its own.
   @visibleForTesting
-  static ({String text, bool dead})? keyOnLayout(int scanCode, int layout, {List<int>? held}) {
+  static ({String text, bool dead})? keyOnLayout(
+    int scanCode,
+    int layout, {
+    List<int>? held,
+    bool? capsLock,
+  }) {
     final vk = MapVirtualKeyEx(scanCode, MAPVK_VSC_TO_VK_EX, layout);
     if (vk == 0) return null;
     final state = calloc<Uint8>(256);
@@ -88,7 +126,7 @@ class DeadKeys {
         final down = held != null ? held.contains(key) : GetAsyncKeyState(key) & 0x8000 != 0;
         if (down) state[key] = 0x80;
       }
-      if (held == null && GetKeyState(VK_CAPITAL) & 1 != 0) state[VK_CAPITAL] = 0x01;
+      if (capsLock ?? (held == null && GetKeyState(VK_CAPITAL) & 1 != 0)) state[VK_CAPITAL] = 0x01;
       // Flag 4: leave the keyboard state alone (Windows 10 1607 and later).
       final result = ToUnicodeEx(vk, scanCode, state, buffer.cast(), 8, 4, layout);
       if (result == 0) return null;
