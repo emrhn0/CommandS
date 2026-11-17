@@ -5,7 +5,9 @@ import 'package:commands/theme/app_mark.dart';
 import 'package:commands/widgets/launch_splash.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:commands/widgets/welcome_panel.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -150,6 +152,57 @@ void main() {
       expect(find.text('192.0.2.30'), findsNothing);
       expect(find.text('SWITCH-01 - 192.0.2.30'), findsOneWidget);
       expect(find.text('192.0.2.31'), findsOneWidget);
+      await closeAll(tester, app);
+    });
+
+    testWidgets('hovering a recent connection lights it up with an arrow and a hand cursor', (tester) async {
+      final a = conn('DEVICE-01');
+      final app = await show(tester, recent: [a]);
+      final arrow = find.byKey(Key('welcome-recent-arrow-${a.id}'));
+      double arrowOpacity() =>
+          tester.widget<AnimatedOpacity>(find.ancestor(of: arrow, matching: find.byType(AnimatedOpacity))).opacity;
+      expect(arrowOpacity(), 0);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await tester.pump();
+      await mouse.moveTo(tester.getCenter(find.byKey(Key('welcome-recent-${a.id}'))));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(arrowOpacity(), 1);
+      expect(
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+        SystemMouseCursors.click,
+      );
+      await mouse.moveTo(Offset.zero);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(arrowOpacity(), 0);
+      await closeAll(tester, app);
+    });
+
+    testWidgets('each recent connection shows its outermost folder, dimmed', (tester) async {
+      final site = ConnectionFolder(name: 'Customer A');
+      final inner = ConnectionFolder(name: 'Folder A', parentId: site.id);
+      final nested = conn('SWITCH-01')..folderId = inner.id;
+      final loose = conn('DEVICE-01');
+      tester.view.physicalSize = const Size(1000, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final app = AppState();
+      await tester.pump();
+      app.folders.addAll([site, inner]);
+      app.connections.addAll([nested, loose]);
+      app.recentConnectionIds = [nested.id, loose.id];
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: app,
+          child: const MaterialApp(home: Scaffold(body: TerminalTabsArea())),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(Key('welcome-recent-site-${nested.id}')), findsOneWidget);
+      expect(find.text('Customer A'), findsOneWidget);
+      expect(find.text('Folder A'), findsNothing, reason: 'only the outermost folder');
+      expect(find.byKey(Key('welcome-recent-site-${loose.id}')), findsNothing, reason: 'no folder, no label');
       await closeAll(tester, app);
     });
 

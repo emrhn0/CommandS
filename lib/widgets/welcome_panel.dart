@@ -269,7 +269,9 @@ class _WelcomePanelState extends State<WelcomePanel> {
   }
 }
 
-class _RecentRow extends StatelessWidget {
+/// One recent connection: a click opens it. On hover the row lights up in
+/// the accent colour and an arrow shows, so it reads as clickable.
+class _RecentRow extends StatefulWidget {
   const _RecentRow({required this.conn, required this.accent, required this.palette});
 
   final SavedConnection conn;
@@ -277,36 +279,95 @@ class _RecentRow extends StatelessWidget {
   final AppPalette palette;
 
   @override
+  State<_RecentRow> createState() => _RecentRowState();
+}
+
+class _RecentRowState extends State<_RecentRow> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
+    final conn = widget.conn;
+    final palette = widget.palette;
+    final accent = widget.accent;
     final defaultPort = conn.protocol == ConnectionProtocol.rdp ? 3389 : 22;
     final address = conn.port == defaultPort ? conn.host : '${conn.host}:${conn.port}';
     // Many names already carry the address; it is not repeated beside them.
     final showAddress = !conn.name.toLowerCase().contains(conn.host.toLowerCase());
-    return InkWell(
-      key: Key('welcome-recent-${conn.id}'),
-      borderRadius: BorderRadius.circular(6),
-      onTap: () => context.read<AppState>().openConnection(conn),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: palette.panelAlt, borderRadius: BorderRadius.circular(4)),
-              child: Text(
-                conn.protocol == ConnectionProtocol.rdp ? 'RDP' : 'SSH',
-                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: palette.textDim),
+    // The outermost folder the connection sits in, the customer or site.
+    final site = context.read<AppState>().folderNamesOf(conn.folderId).firstOrNull;
+    const fast = Duration(milliseconds: 120);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        key: Key('welcome-recent-${conn.id}'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => context.read<AppState>().openConnection(conn),
+        child: AnimatedContainer(
+          duration: fast,
+          margin: const EdgeInsets.symmetric(vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          decoration: BoxDecoration(
+            color: _hover ? Color.alphaBlend(accent.withValues(alpha: 0.10), palette.panel) : Colors.transparent,
+            border: Border.all(color: _hover ? accent.withValues(alpha: 0.35) : Colors.transparent),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: fast,
+                width: 36,
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _hover ? accent.withValues(alpha: 0.18) : palette.panelAlt,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  conn.protocol == ConnectionProtocol.rdp ? 'RDP' : 'SSH',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: _hover ? accent : palette.textDim,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(conn.name, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: palette.text)),
-            ),
-            if (showAddress) const SizedBox(width: 10),
-            if (showAddress) Text(address, style: TextStyle(fontSize: 11.5, color: palette.textDim, fontFamily: 'Consolas')),
-          ],
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  conn.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: palette.text, fontWeight: _hover ? FontWeight.w600 : FontWeight.w400),
+                ),
+              ),
+              if (site != null) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    site,
+                    key: Key('welcome-recent-site-${conn.id}'),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: palette.textDim.withValues(alpha: 0.75)),
+                  ),
+                ),
+              ],
+              const Spacer(),
+              if (showAddress) ...[
+                const SizedBox(width: 10),
+                Text(address, style: TextStyle(fontSize: 11.5, color: palette.textDim, fontFamily: 'Consolas')),
+              ],
+              AnimatedOpacity(
+                duration: fast,
+                opacity: _hover ? 1 : 0,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(Icons.arrow_forward_rounded, key: Key('welcome-recent-arrow-${conn.id}'), size: 16, color: accent),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
