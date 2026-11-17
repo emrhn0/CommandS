@@ -52,8 +52,13 @@ class TabGroup {
 class AppState extends ChangeNotifier {
   AppState({HostnameDetectionLog? hostnameLog})
       : _hostnameLog = hostnameLog ?? HostnameDetectionLog() {
-    _load();
+    ready = _load();
   }
+
+  /// Done once the saved state (theme, connections, settings) is read. The
+  /// app waits for it before its window is shown, so the first frame is not
+  /// drawn in the defaults and then repainted.
+  late final Future<void> ready;
 
   final _storage = StorageService();
   final HostnameDetectionLog _hostnameLog;

@@ -34,7 +34,19 @@ void main() async {
     await runSftpWindow(sftp);
     return;
   }
+  // No frame until the saved theme and connections are read. The window is
+  // shown on its first frame (windows/runner/flutter_window.cpp), and a
+  // first frame drawn before them came out in the default light theme with
+  // an empty list, then repainted: a white flash at every start. A load that
+  // fails or hangs does not keep the app from opening.
+  WidgetsBinding.instance.deferFirstFrame();
   await windowManager.ensureInitialized();
+  final app = AppState();
+  try {
+    await app.ready.timeout(const Duration(seconds: 5));
+  } catch (error) {
+    debugPrint('Starting before the saved state was read: $error');
+  }
   await windowManager.waitUntilReadyToShow(
     const WindowOptions(
       size: Size(1280, 800),
@@ -56,12 +68,13 @@ void main() async {
           TitleBarStyle.hidden,
           windowButtonVisibility: true,
         );
+        await windowManager.show();
       }
-      await windowManager.show();
       await windowManager.focus();
     },
   );
-  runApp(const CommandSApp());
+  runApp(CommandSApp(app: app));
+  WidgetsBinding.instance.allowFirstFrame();
 }
 
 Future<SftpWindowArguments?> _sftpWindowArguments() async {
@@ -74,7 +87,10 @@ Future<SftpWindowArguments?> _sftpWindowArguments() async {
 }
 
 class CommandSApp extends StatelessWidget {
-  const CommandSApp({super.key});
+  const CommandSApp({super.key, required this.app});
+
+  /// Created and loaded in [main] before the window is shown.
+  final AppState app;
 
   /// One instance for the life of the app: this whole subtree rebuilds on
   /// every AppState change, and handing MaterialApp a fresh observer list each
@@ -87,8 +103,8 @@ class CommandSApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AppState(),
+    return ChangeNotifierProvider.value(
+      value: app,
       child: ChangeNotifierProvider<McpServer>(
         lazy: false,
         create: (context) {
