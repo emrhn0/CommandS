@@ -335,25 +335,36 @@ class _RecentRowState extends State<_RecentRow> {
                 ),
               ),
               const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  conn.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13, color: palette.text, fontWeight: _hover ? FontWeight.w600 : FontWeight.w400),
+              // Name and site take the room left, so the address and the
+              // arrow always sit at the row's right edge.
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        conn.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: palette.text,
+                          fontWeight: _hover ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                    if (site != null) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          site,
+                          key: Key('welcome-recent-site-${conn.id}'),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, color: palette.textDim.withValues(alpha: 0.75)),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (site != null) ...[
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    site,
-                    key: Key('welcome-recent-site-${conn.id}'),
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11.5, color: palette.textDim.withValues(alpha: 0.75)),
-                  ),
-                ),
-              ],
-              const Spacer(),
               if (showAddress) ...[
                 const SizedBox(width: 10),
                 Text(address, style: TextStyle(fontSize: 11.5, color: palette.textDim, fontFamily: 'Consolas')),

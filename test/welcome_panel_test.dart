@@ -179,6 +179,18 @@ void main() {
       await closeAll(tester, app);
     });
 
+    testWidgets('the arrow sits at the right edge of the row, whatever the name', (tester) async {
+      final short = conn('A');
+      final named = SavedConnection(name: 'SWITCH-01 - 192.0.2.30', host: '192.0.2.30');
+      final app = await show(tester, recent: [short, named]);
+      for (final c in [short, named]) {
+        final row = tester.getRect(find.byKey(Key('welcome-recent-${c.id}')));
+        final arrow = tester.getRect(find.byKey(Key('welcome-recent-arrow-${c.id}')));
+        expect(row.right - arrow.right, lessThan(16), reason: '${c.name}: the arrow is pinned right');
+      }
+      await closeAll(tester, app);
+    });
+
     testWidgets('each recent connection shows its outermost folder, dimmed', (tester) async {
       final site = ConnectionFolder(name: 'Customer A');
       final inner = ConnectionFolder(name: 'Folder A', parentId: site.id);
