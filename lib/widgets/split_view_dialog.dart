@@ -35,7 +35,12 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
   SplitPreset? _preset;
   CustomLayout? _custom;
 
-  ZoneNode get _shape => _custom?.shape ?? presetShape(_preset!);
+  /// The split on screen, kept as it is (dividers included) until another
+  /// layout is picked, so opening the dialog and pressing Apply changes
+  /// nothing.
+  ZoneNode? _onScreen;
+
+  ZoneNode get _shape => _onScreen ?? _custom?.shape ?? presetShape(_preset!);
 
   /// Tab id per zone of the chosen layout, in zone order; null = empty.
   late List<String?> _slots;
@@ -44,6 +49,16 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
   void initState() {
     super.initState();
     final app = context.read<AppState>();
+    final layout = app.paneLayout;
+    if (layout is PaneSplit) {
+      // A split on screen: its own shape, empty panes included, and the
+      // layout it was made from marked, built-in or custom.
+      final current = shapeOfLayout(layout);
+      _onScreen = current.shape;
+      _slots = current.slots;
+      _markLayoutOf(current.shape, app.customLayouts);
+      return;
+    }
     final onScreen = tabIdsInLayoutOrdered(app.paneLayout);
     // Start from what is on screen, so opening the dialog and pressing Apply
     // changes nothing, and adjusting one pane is one drag.
@@ -60,12 +75,35 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
     }
   }
 
+  /// Marks the built-in or custom layout [shape] matches: first one with the
+  /// dividers where they are, else one that splits the same way. None when
+  /// nothing does; the shape on screen is still what is shown.
+  void _markLayoutOf(ZoneNode shape, List<CustomLayout> customs) {
+    for (final tolerance in [0.02, null]) {
+      for (final c in customs) {
+        if (sameShape(c.shape, shape, ratioTolerance: tolerance)) {
+          _custom = c;
+          _preset = null;
+          return;
+        }
+      }
+      for (final p in SplitPreset.values) {
+        if (sameShape(presetShape(p), shape, ratioTolerance: tolerance)) {
+          _preset = p;
+          return;
+        }
+      }
+    }
+    _preset = null;
+  }
+
   void _choosePreset(SplitPreset preset) => _choose(preset: preset);
 
   /// Switches layout, keeping the placed tabs in order as far as they fit.
   void _choose({SplitPreset? preset, CustomLayout? custom}) {
     setState(() {
       final placed = _slots.whereType<String>().toList();
+      _onScreen = null;
       _preset = preset;
       _custom = custom;
       _slots = List<String?>.filled(zoneCount(_shape), null);
@@ -118,7 +156,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
     // A zone left empty stays an empty pane to drop a tab on later, rather
     // than the pane beside it growing over it.
     final placed = _slots.whereType<String>().length;
-    final tree = buildFromShape(_shape, _slots, keepEmpty: placed >= 2);
+    final tree = buildFromShape(_shape, _slots, keepEmpty: placed >= 2 || (_onScreen != null && placed >= 1));
     context.read<AppState>().applyLayout(tree, editActive: true);
     Navigator.of(context).pop();
   }
@@ -190,6 +228,7 @@ class _SplitViewDialogState extends State<_SplitViewDialog> {
                 children: [
                   for (final p in SplitPreset.values)
                     _PresetThumb(
+                      key: ValueKey('preset-${p.name}'),
                       label: tr(p.label),
                       shape: presetShape(p),
                       selected: _custom == null && p == _preset,

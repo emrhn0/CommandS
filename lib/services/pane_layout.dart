@@ -331,6 +331,41 @@ PaneNode? buildFromShape(ZoneNode shape, List<String?> slots, {bool keepEmpty = 
   return walk(shape);
 }
 
+/// The shape of [layout] and what sits in each of its zones, in zone order:
+/// a tab id, or null for an empty pane. The other way round from
+/// [buildFromShape] with keepEmpty.
+({ZoneNode shape, List<String?> slots}) shapeOfLayout(PaneNode layout) {
+  final slots = <String?>[];
+  ZoneNode walk(PaneNode node) {
+    switch (node) {
+      case PaneSplit():
+        return ZoneSplit(axis: node.axis, first: walk(node.first), second: walk(node.second), ratio: node.ratio);
+      case PaneLeaf():
+        slots.add(node.tabId);
+        return const ZoneLeaf();
+      case PaneEmpty():
+        slots.add(null);
+        return const ZoneLeaf();
+    }
+  }
+
+  final shape = walk(layout);
+  return (shape: shape, slots: slots);
+}
+
+/// Whether [a] and [b] split the same way. With [ratioTolerance] the
+/// dividers must also sit within that share of each other; null ignores
+/// where they sit.
+bool sameShape(ZoneNode a, ZoneNode b, {double? ratioTolerance}) {
+  if (a is ZoneSplit && b is ZoneSplit) {
+    if (a.axis != b.axis) return false;
+    if (ratioTolerance != null && (a.ratio - b.ratio).abs() > ratioTolerance) return false;
+    return sameShape(a.first, b.first, ratioTolerance: ratioTolerance) &&
+        sameShape(a.second, b.second, ratioTolerance: ratioTolerance);
+  }
+  return a is ZoneLeaf && b is ZoneLeaf;
+}
+
 /// [shape] with zone [index] split in two along [axis] at [ratio] of the
 /// zone: the zone becomes its first part and a new zone its second.
 ZoneNode splitZone(ZoneNode shape, int index, Axis axis, {double ratio = 0.5}) {

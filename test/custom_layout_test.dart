@@ -249,4 +249,49 @@ void main() {
     expect(app.customLayouts, isEmpty);
     expect(find.text('Mine'), findsNothing);
   });
+
+  testWidgets('over a split, the dialog shows that split: its own layout marked, empty panes kept', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState();
+    await tester.pump();
+    for (final id in ['a', 'b', 'c', 'd']) {
+      app.tabs.add(OpenTab(id: id, controller: _FakeSession('DEVICE-$id')));
+    }
+    const z = ZoneLeaf();
+    const shape = ZoneSplit(
+      axis: Axis.vertical,
+      first: ZoneSplit(axis: Axis.horizontal, first: z, second: ZoneSplit(axis: Axis.horizontal, first: z, second: z)),
+      second: ZoneSplit(axis: Axis.horizontal, first: z, second: z),
+    );
+    final custom = CustomLayout(id: 'custom-1', name: 'Layout A', shape: shape);
+    await tester.runAsync(() => app.saveCustomLayout(custom));
+    // Three sessions in a five-pane layout: two panes are empty.
+    app.applyLayout(buildFromShape(shape, ['a', null, 'b', null, 'c'], keepEmpty: true), editActive: true);
+
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(child: TextButton(onPressed: () => showSplitViewDialog(context), child: const Text('open'))),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    bool selected(Key key) => (tester.widget(find.byKey(key)) as dynamic).selected as bool;
+    expect(selected(const ValueKey('custom-thumb-custom-1')), isTrue);
+    expect(selected(const ValueKey('preset-oneLeftTwoRight')), isFalse, reason: 'picked by the number of sessions');
+
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    final now = shapeOfLayout(app.paneLayout!);
+    expect(sameShape(now.shape, shape, ratioTolerance: 0.001), isTrue);
+    expect(now.slots, ['a', null, 'b', null, 'c']);
+  });
 }
