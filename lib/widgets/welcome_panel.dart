@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -69,6 +70,12 @@ class WelcomePanel extends StatefulWidget {
     ];
   }
 
+  /// How long one line stays before the next fades in.
+  static const rotateEvery = Duration(seconds: 30);
+
+  /// Off under `flutter test`: the pulsing dot would keep tests from settling.
+  static bool animate = !Platform.environment.containsKey('FLUTTER_TEST');
+
   /// Which line of [greetingsFor] the panel shows, for this run of the app.
   static final picker = GreetingPicker(seed: launchSeed);
 
@@ -78,7 +85,7 @@ class WelcomePanel extends StatefulWidget {
 
 /// Picks the greeting: the plain one ("Good morning") the first time in each
 /// part of the day, then the lighter lines in turn, a new one each time the
-/// panel comes back and each hour it stays up.
+/// panel comes back and every [WelcomePanel.rotateEvery] it stays up.
 class GreetingPicker {
   GreetingPicker({this.seed = 0});
 
@@ -115,7 +122,7 @@ class GreetingPicker {
 }
 
 class _WelcomePanelState extends State<WelcomePanel> {
-  Timer? _hourly;
+  Timer? _rotate;
   late int _line;
 
   DateTime get _now => widget.now ?? DateTime.now();
@@ -126,24 +133,14 @@ class _WelcomePanelState extends State<WelcomePanel> {
   void initState() {
     super.initState();
     _line = WelcomePanel.picker.next(_now);
-    _scheduleNextHour();
-  }
-
-  /// Redraws at the top of the next hour, for the next line.
-  void _scheduleNextHour() {
-    if (widget.now != null) return;
-    final now = DateTime.now();
-    final next = DateTime(now.year, now.month, now.day, now.hour + 1);
-    _hourly = Timer(next.difference(now), () {
-      if (!mounted) return;
-      setState(() => _line = WelcomePanel.picker.next(_now));
-      _scheduleNextHour();
+    _rotate = Timer.periodic(WelcomePanel.rotateEvery, (_) {
+      if (mounted) setState(() => _line = WelcomePanel.picker.next(_now));
     });
   }
 
   @override
   void dispose() {
-    _hourly?.cancel();
+    _rotate?.cancel();
     super.dispose();
   }
 
@@ -170,37 +167,52 @@ class _WelcomePanelState extends State<WelcomePanel> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const AppMark(size: 60),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _greeting(),
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.4,
-                            color: palette.text,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          tr('{connections} connections, {folders} folders', {
-                            'connections': app.connections.length,
-                            'folders': app.folders.length,
-                          }),
-                          style: TextStyle(fontSize: 13, color: palette.textDim),
-                        ),
-                      ],
+                  const AppMark(size: 54),
+                  const SizedBox(width: 14),
+                  Text.rich(
+                    key: const Key('welcome-wordmark'),
+                    TextSpan(children: [
+                      const TextSpan(text: 'Command'),
+                      TextSpan(text: 'S', style: TextStyle(color: accent)),
+                    ]),
+                    style: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, letterSpacing: -1, color: palette.text),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _PulseDot(color: accent),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 350),
+                      transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+                      child: Text(
+                        _greeting(),
+                        key: ValueKey(_greeting()),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 16, color: Color.lerp(palette.textDim, palette.text, 0.55)),
+                      ),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 6),
+              Text(
+                tr('{connections} connections, {folders} folders', {
+                  'connections': app.connections.length,
+                  'folders': app.folders.length,
+                }),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12.5, color: palette.textDim),
+              ),
               const SizedBox(height: 22),
               Wrap(
+                alignment: WrapAlignment.center,
                 spacing: 10,
                 runSpacing: 10,
                 children: [
@@ -268,6 +280,8 @@ class _RecentRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final defaultPort = conn.protocol == ConnectionProtocol.rdp ? 3389 : 22;
     final address = conn.port == defaultPort ? conn.host : '${conn.host}:${conn.port}';
+    // Many names already carry the address; it is not repeated beside them.
+    final showAddress = !conn.name.toLowerCase().contains(conn.host.toLowerCase());
     return InkWell(
       key: Key('welcome-recent-${conn.id}'),
       borderRadius: BorderRadius.circular(6),
@@ -290,11 +304,49 @@ class _RecentRow extends StatelessWidget {
             Expanded(
               child: Text(conn.name, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: palette.text)),
             ),
-            const SizedBox(width: 10),
-            Text(address, style: TextStyle(fontSize: 11.5, color: palette.textDim, fontFamily: 'Consolas')),
+            if (showAddress) const SizedBox(width: 10),
+            if (showAddress) Text(address, style: TextStyle(fontSize: 11.5, color: palette.textDim, fontFamily: 'Consolas')),
           ],
         ),
       ),
     );
   }
+}
+
+/// The small accent dot before the greeting, slowly fading in and out.
+class _PulseDot extends StatefulWidget {
+  const _PulseDot({required this.color});
+
+  final Color color;
+
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1000), value: 1);
+
+  @override
+  void initState() {
+    super.initState();
+    if (WelcomePanel.animate) _controller.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: Tween(begin: 0.35, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut)),
+        child: Container(
+          key: const Key('welcome-pulse'),
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+        ),
+      );
 }

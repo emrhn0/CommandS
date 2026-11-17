@@ -119,6 +119,40 @@ void main() {
       await closeAll(tester, app);
     });
 
+    testWidgets('the header is the mark, CommandS in two colours, a pulsing dot and the line', (tester) async {
+      final app = await show(tester);
+      expect(find.byType(AppMark), findsOneWidget);
+      final word = tester.widget<Text>(find.byKey(const Key('welcome-wordmark'))).textSpan! as TextSpan;
+      expect(word.toPlainText(), 'CommandS');
+      final s = word.children!.last as TextSpan;
+      expect(s.text, 'S');
+      expect(s.style!.color, Theme.of(tester.element(find.byType(AppMark))).colorScheme.primary);
+      expect(find.byKey(const Key('welcome-pulse')), findsOneWidget);
+      await closeAll(tester, app);
+    });
+
+    testWidgets('the line changes while the panel stays up', (tester) async {
+      final app = await show(tester);
+      String line() => tester
+          .widget<Text>(find.descendant(of: find.byType(AnimatedSwitcher), matching: find.byType(Text)).last)
+          .data!;
+      final first = line();
+      await tester.pump(WelcomePanel.rotateEvery);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(line(), isNot(first));
+      await closeAll(tester, app);
+    });
+
+    testWidgets('an address already in the name is not repeated beside it', (tester) async {
+      final named = SavedConnection(name: 'SWITCH-01 - 192.0.2.30', host: '192.0.2.30');
+      final plain = SavedConnection(name: 'DEVICE-01', host: '192.0.2.31');
+      final app = await show(tester, recent: [named, plain]);
+      expect(find.text('192.0.2.30'), findsNothing);
+      expect(find.text('SWITCH-01 - 192.0.2.30'), findsOneWidget);
+      expect(find.text('192.0.2.31'), findsOneWidget);
+      await closeAll(tester, app);
+    });
+
     testWidgets('with nothing opened yet it says how to start', (tester) async {
       final app = await show(tester);
       expect(find.textContaining('Pick a saved connection on the left'), findsOneWidget);
