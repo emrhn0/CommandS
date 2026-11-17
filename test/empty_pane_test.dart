@@ -116,10 +116,12 @@ void main() {
       expect(panes(), ['a', 'empty', 'c', 'empty'], reason: 'taken out to a tab of its own: same');
     });
 
-    test('a split left with one session drops its empty panes too', () async {
+    test('a split left with one session stays a split, its panes where they were', () async {
       final app = await splitWithEmpty();
       app.closeTab(app.tabs.indexWhere((t) => t.id == 'b'));
-      expect(app.paneLayout, isA<PaneLeaf>());
+      expect(app.paneLayout, isA<PaneSplit>());
+      expect(tabIdsInLayoutOrdered(app.paneLayout), ['a']);
+      expect(app.activeGroup, isNotNull);
     });
 
     test('a folder opens with everything inside it, a subfolder only with its own', () async {

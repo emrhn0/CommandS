@@ -1259,6 +1259,9 @@ class AppState extends ChangeNotifier {
   /// side, and the next plain tab takes the other half. One already in the
   /// split moves to its new place.
   bool canDropTabBeside(String tabId, String targetTabId) {
+    // A split's panes were laid out in Split View: a tab dragged onto one
+    // never splits it further. Only its empty panes take a tab.
+    if (paneLayout is PaneSplit) return false;
     final onScreen = tabIdsInLayout(paneLayout);
     if (!onScreen.contains(targetTabId)) return false;
     if (tabId == targetTabId) return onScreen.length == 1 && _partnerFor(tabId) != null;
@@ -1345,7 +1348,9 @@ class AppState extends ChangeNotifier {
       for (final id in tabIds) {
         rest = emptyPaneOf(rest, id);
       }
-      if (rest == null || tabIdsInLayout(rest).length < 2) {
+      // A split stays one, with its panes where they are, until its last
+      // session goes: closing all but one does not jump to full screen.
+      if (rest == null || tabIdsInLayout(rest).isEmpty) {
         groups.remove(g);
         if (activeGroupId == g.id) activeGroupId = null;
       } else {
@@ -1366,6 +1371,26 @@ class AppState extends ChangeNotifier {
       _takeFromGroups([tabId], except: activeGroup);
     }
     applyLayout(fillEmptyPane(layout, emptyId, tabId), editActive: activeGroupId != null);
+  }
+
+  /// Whether the session [tabId] can swap places with the one in the pane
+  /// [targetTabId]: both are in the split on screen.
+  bool canSwapPanes(String tabId, String targetTabId) {
+    if (tabId == targetTabId) return false;
+    final onScreen = tabIdsInLayout(paneLayout);
+    return onScreen.contains(tabId) && onScreen.contains(targetTabId);
+  }
+
+  /// Swaps the panes of two sessions of the split on screen; the layout and
+  /// every other pane stay as they are.
+  void swapPanes(String tabId, String targetTabId) {
+    if (!canSwapPanes(tabId, targetTabId)) return;
+    final swapped = mapPanes(paneLayout, (p) {
+      if (p is PaneLeaf && p.tabId == tabId) return PaneLeaf(targetTabId);
+      if (p is PaneLeaf && p.tabId == targetTabId) return PaneLeaf(tabId);
+      return p;
+    });
+    applyLayout(swapped, editActive: activeGroupId != null);
   }
 
   /// Splits the group back into plain tabs; the sessions stay open.
@@ -1399,7 +1424,7 @@ class AppState extends ChangeNotifier {
       _takeFromGroups([tab.id]);
       if (wasActive) {
         final still = groups.contains(group);
-        // Two left and one closed: the survivor is shown on its own.
+        // Its last session closed: the split is gone, the next tab shows.
         paneLayout = still ? group.layout : withoutEmptyPanes(removeFromLayout(paneLayout, tab.id));
         if (still) activeGroupId = group.id;
       }
@@ -1447,9 +1472,8 @@ class AppState extends ChangeNotifier {
     if (ids.isEmpty) return;
     final index = tabs.indexWhere((t) => t.id == ids.first);
     if (index != -1) activeTabIndex = index;
-    if (ids.length < 2) {
-      // Back to one pane: the session is a plain tab again, and empty panes
-      // around it go.
+    if (ids.length < 2 && layout is! PaneSplit) {
+      // One pane: the session is a plain tab again.
       final editing = editActive ? activeGroup : null;
       if (editing != null) groups.remove(editing);
       _takeFromGroups(ids);

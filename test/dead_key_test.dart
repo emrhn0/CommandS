@@ -20,8 +20,6 @@ void main() {
   });
   tearDown(() => PtySessionController.checkReachability = true);
 
-  var after = false;
-
   // The Ü key of a Turkish Q keyboard (where [ is on a US one).
   const keyUe = LogicalKeyboardKey.bracketLeft;
   const physicalUe = PhysicalKeyboardKey.bracketLeft;
@@ -49,46 +47,55 @@ void main() {
     return sent;
   }
 
-  /// Stands in for Windows: AltGr+Ü is a dead key for ~; after it, a key
-  /// types its own letter (Windows would compose ~ and a into ã).
+  /// Stands in for Windows, through the real decision: AltGr+Ü is a dead
+  /// key for ~; other keys type their own letter.
   String? fakeWindows(KeyEvent e) {
     final altGr = HardwareKeyboard.instance.isAltPressed;
-    if (e.logicalKey == keyUe && altGr) {
-      after = true;
-      return '~';
-    }
-    if (after && e.character != null) {
-      after = false;
-      return e.logicalKey == LogicalKeyboardKey.keyA ? 'a' : e.logicalKey == LogicalKeyboardKey.space ? ' ' : null;
-    }
-    return null;
+    final isUe = e.logicalKey == keyUe;
+    final key = isUe && altGr
+        ? (text: '~', dead: true)
+        : e.logicalKey == LogicalKeyboardKey.keyA
+        ? (text: 'a', dead: false)
+        : e.logicalKey == LogicalKeyboardKey.keyB
+        ? (text: 'b', dead: false)
+        : isUe
+        ? (text: 'ü', dead: false)
+        : null;
+    final character = e.character;
+    if (character == null || character.isEmpty) return null;
+    return DeadKeys.decide(character: character, altGr: altGr, key: key, plain: isUe ? 'ü' : key?.text);
   }
 
-  testWidgets('AltGr+Ü types ~ at once, with nothing more', (tester) async {
+  Future<void> altGrUe(WidgetTester tester, String character) async {
+    await tester.sendKeyDownEvent(keyUe, physicalKey: physicalUe, character: character);
+    await tester.sendKeyUpEvent(keyUe, physicalKey: physicalUe);
+  }
+
+  testWidgets('holding AltGr: the first Ü types nothing, the second types ~', (tester) async {
     final original = DeadKeys.translate;
-    after = false;
+    DeadKeys.reset();
     DeadKeys.translate = fakeWindows;
     addTearDown(() => DeadKeys.translate = original);
 
     final sent = await typeInTerminal(tester, () async {
       await tester.sendKeyDownEvent(LogicalKeyboardKey.altRight);
-      await tester.sendKeyDownEvent(keyUe, physicalKey: physicalUe, character: 'ü');
-      await tester.sendKeyUpEvent(keyUe, physicalKey: physicalUe);
+      await altGrUe(tester, 'ü');
+      // Windows sends ~ with the second press.
+      await altGrUe(tester, '~');
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altRight);
     });
-    expect(sent.join(), '~');
+    expect(sent.join(), '~', reason: 'no ü before it');
   });
 
-  testWidgets('the key after ~ types its own letter, not a composed one', (tester) async {
+  testWidgets('~ then a letter types both, not a composed letter', (tester) async {
     final original = DeadKeys.translate;
-    after = false;
+    DeadKeys.reset();
     DeadKeys.translate = fakeWindows;
     addTearDown(() => DeadKeys.translate = original);
 
     final sent = await typeInTerminal(tester, () async {
       await tester.sendKeyDownEvent(LogicalKeyboardKey.altRight);
-      await tester.sendKeyDownEvent(keyUe, physicalKey: physicalUe, character: 'ü');
-      await tester.sendKeyUpEvent(keyUe, physicalKey: physicalUe);
+      await altGrUe(tester, 'ü');
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altRight);
       // Windows composes the waiting ~ into the next key: ã.
       await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA, character: 'ã');
@@ -101,7 +108,7 @@ void main() {
 
   testWidgets('the same key without AltGr still types ü', (tester) async {
     final original = DeadKeys.translate;
-    after = false;
+    DeadKeys.reset();
     DeadKeys.translate = fakeWindows;
     addTearDown(() => DeadKeys.translate = original);
 
@@ -136,17 +143,33 @@ void main() {
     }
   }, skip: !Platform.isWindows);
 
-  test('with AltGr held, a key reporting its own plain letter types nothing', () {
-    KeyDownEvent press(LogicalKeyboardKey key, String character) => KeyDownEvent(
-      physicalKey: PhysicalKeyboardKey.bracketRight,
-      logicalKey: key,
-      character: character,
-      timeStamp: Duration.zero,
-    );
-    const ue = LogicalKeyboardKey(0xfc); // the Ü key of a Turkish keyboard
-    expect(DeadKeys.plainLetterUnderAltGr(press(ue, 'ü'), true), '', reason: 'skipped');
-    expect(DeadKeys.plainLetterUnderAltGr(press(ue, 'ü'), false), isNull, reason: 'plain Ü types ü');
-    expect(DeadKeys.plainLetterUnderAltGr(press(LogicalKeyboardKey.keyQ, '@'), true), isNull,
-        reason: 'AltGr+Q is @ and goes through');
+  group('what a key press types', () {
+    const deadTilde = (text: '~', dead: true);
+    setUp(DeadKeys.reset);
+
+    test('AltGr+Ü: the first press types nothing, the second types ~', () {
+      expect(DeadKeys.decide(character: 'ü', altGr: true, key: deadTilde, plain: 'ü'), '');
+      expect(DeadKeys.decide(character: '~', altGr: true, key: deadTilde, plain: 'ü'), '~');
+    });
+
+    test('~ then a letter types both, not a composed letter', () {
+      expect(DeadKeys.decide(character: 'ü', altGr: true, key: deadTilde, plain: 'ü'), '');
+      expect(DeadKeys.decide(character: 'ã', altGr: false, key: (text: 'a', dead: false), plain: 'a'), '~a');
+    });
+
+    test('~ then space types ~ alone', () {
+      DeadKeys.decide(character: 'ü', altGr: true, key: deadTilde, plain: 'ü');
+      expect(DeadKeys.decide(character: '~', altGr: false, key: (text: ' ', dead: false), plain: ' '), '~');
+    });
+
+    test('with AltGr held, a key sending its own plain letter types nothing, whatever Windows said', () {
+      expect(DeadKeys.decide(character: 'ü', altGr: true, key: null, plain: 'ü'), '');
+      expect(DeadKeys.decide(character: 'ü', altGr: true, key: (text: 'ü', dead: false), plain: 'ü'), '');
+    });
+
+    test('everything else goes through as usual', () {
+      expect(DeadKeys.decide(character: 'ü', altGr: false, key: (text: 'ü', dead: false), plain: 'ü'), isNull);
+      expect(DeadKeys.decide(character: '@', altGr: true, key: (text: '@', dead: false), plain: 'q'), isNull);
+    });
   });
 }

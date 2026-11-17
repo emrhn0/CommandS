@@ -61,27 +61,11 @@ void main() {
       expect(app.groups, hasLength(1));
     });
 
-    test('a third tab joins the split on screen, keeping its divider', () {
+    test('a tab dropped on a pane of a split does not split it', () {
       app.dropTabBeside('2', '1', PaneSide.right);
-      (app.paneLayout! as PaneSplit).ratio = 0.3;
+      expect(app.canDropTabBeside('3', '2'), isFalse);
       app.dropTabBeside('3', '2', PaneSide.bottom);
-      expect(tabIdsInLayoutOrdered(app.paneLayout), ['1', '2', '3']);
-      expect((app.paneLayout! as PaneSplit).ratio, 0.3);
-      expect(app.groups, hasLength(1));
-    });
-
-    test('no more panes than Split view can show', () {
-      for (var i = 4; i <= 9; i++) {
-        app.tabs.add(OpenTab(id: '$i', controller: _FakeSession('TAB-$i')));
-      }
-      app.dropTabBeside('2', '1', PaneSide.right);
-      for (var i = 3; i <= 8; i++) {
-        app.dropTabBeside('$i', '1', PaneSide.bottom);
-      }
-      expect(tabIdsInLayout(app.paneLayout), hasLength(maxSplitPanes));
-      expect(app.canDropTabBeside('9', '1'), isFalse);
-      app.dropTabBeside('9', '1', PaneSide.right);
-      expect(tabIdsInLayout(app.paneLayout), hasLength(maxSplitPanes));
+      expect(tabIdsInLayoutOrdered(app.paneLayout), ['1', '2'], reason: 'the panes stay as they were set');
     });
 
     test('the tab on screen dropped on its own pane splits it with its neighbour', () {
@@ -91,11 +75,14 @@ void main() {
       expect(app.groups, hasLength(1));
     });
 
-    test('a session already in the split moves to its new place', () {
-      app.dropTabBeside('2', '1', PaneSide.right);
-      app.dropTabBeside('1', '2', PaneSide.right);
-      expect(tabIdsInLayoutOrdered(app.paneLayout), ['2', '1']);
-      expect(app.groups.single.tabIds.toSet(), {'1', '2'});
+    test('two sessions of a split swap panes; nothing else moves', () {
+      app.applyLayout(buildLayout(SplitPreset.threeColumns, ['1', '2', '3']));
+      final ratio = (app.paneLayout! as PaneSplit).ratio;
+      expect(app.canSwapPanes('1', '3'), isTrue);
+      app.swapPanes('1', '3');
+      expect(tabIdsInLayoutOrdered(app.paneLayout), ['3', '2', '1']);
+      expect((app.paneLayout! as PaneSplit).ratio, ratio);
+      expect(app.groups.single.tabIds.toSet(), {'1', '2', '3'});
     });
 
     test('taken out of a split, a session is a tab again and the rest stays', () {
@@ -105,8 +92,9 @@ void main() {
       expect(app.groupOf('3'), isNull);
       expect(tabIdsInLayout(app.paneLayout), {'1', '2'});
       app.takeOutOfSplit('2');
-      expect(app.groups, isEmpty, reason: 'one session is not a split');
-      expect(tabIdsInLayout(app.paneLayout), {'1'});
+      expect(app.groups.single.tabIds, ['1'], reason: 'the split stays until its last session goes');
+      app.takeOutOfSplit('1');
+      expect(app.groups, isEmpty);
     });
 
     test('a layout from the picker places the tab and fills the rest', () {

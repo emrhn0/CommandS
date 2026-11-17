@@ -75,7 +75,7 @@ void main() {
       expect(app.groups.single.name, 'Core switches');
     });
 
-    test('closing a session leaves the rest of the split; down to one, it is a plain tab again', () {
+    test('closing sessions leaves their panes empty; the split stays until the last one goes', () {
       fake('1');
       fake('2');
       fake('3');
@@ -84,9 +84,12 @@ void main() {
       expect(app.groups.single.tabIds, ['1', '2']);
       expect(tabIdsInLayoutOrdered(app.paneLayout), ['1', '2']);
       app.closeTab(app.tabs.indexWhere((t) => t.id == '2'));
+      // Down to one: still the split, the session in its own pane, not full screen.
+      expect(app.groups.single.tabIds, ['1']);
+      expect(app.activeGroupId, app.groups.single.id);
+      expect(app.paneLayout, isA<PaneSplit>());
+      app.closeTab(app.tabs.indexWhere((t) => t.id == '1'));
       expect(app.groups, isEmpty);
-      expect(app.activeGroupId, isNull);
-      expect(tabIdsInLayout(app.paneLayout), {'1'});
     });
 
     test('a session moved into a new split leaves its old one', () {
@@ -96,10 +99,10 @@ void main() {
       app.applyLayout(buildLayout(SplitPreset.sideBySide, ['1', '2']), editActive: true);
       app.setActiveTab(2);
       app.applyLayout(buildLayout(SplitPreset.oneLeftTwoRight, ['2', '3', '4']), editActive: true);
-      // The first split lost a session and is down to one: no longer a group.
-      expect(app.groups, hasLength(1));
-      expect(app.groups.single.tabIds, ['2', '3', '4']);
-      expect(app.groupOf('1'), isNull);
+      // The first split lost a session: its pane is empty, the split stays.
+      expect(app.groups, hasLength(2));
+      expect(app.groupOf('2')!.tabIds, ['2', '3', '4']);
+      expect(app.groupOf('1')!.tabIds, ['1']);
     });
 
     test('editing the split on screen reworks it rather than making another', () {

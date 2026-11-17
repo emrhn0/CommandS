@@ -86,7 +86,9 @@ class TerminalTabsArea extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               _PaneTreeView(node: layout, headers: layout is PaneSplit),
-              if (app.draggingTabId != null && app.tabs.length > 1)
+              // Not over a split: its layout was set in Split View, and a tab
+              // dragged there only fills an empty pane.
+              if (app.draggingTabId != null && app.tabs.length > 1 && layout is! PaneSplit)
                 _LayoutPicker(tabId: app.draggingTabId!, tabCount: app.tabs.length),
             ],
           ),
@@ -902,6 +904,10 @@ class _PaneDropTarget extends StatefulWidget {
 class _PaneDropTargetState extends State<_PaneDropTarget> {
   PaneSide? _side;
 
+  /// In a split: a session of the same split is over this pane, and would
+  /// swap places with it.
+  bool _swap = false;
+
   PaneSide? _sideFor(DragTargetDetails<_TabDrag> d) {
     final box = context.findRenderObject() as RenderBox;
     return paneSideAt(box.size, box.globalToLocal(d.offset));
@@ -911,23 +917,46 @@ class _PaneDropTargetState extends State<_PaneDropTarget> {
     if (_side != side) setState(() => _side = side);
   }
 
+  void _setSwap(bool swap) {
+    if (_swap != swap) setState(() => _swap = swap);
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
+    // A split keeps the panes it was given in Split View: nothing dropped on
+    // a pane splits it. A session of the same split swaps places with it;
+    // a tab from elsewhere goes into an empty pane only.
+    bool inSplit() => app.paneLayout is PaneSplit;
     return DragTarget<_TabDrag>(
-      onWillAcceptWithDetails: (d) => !d.data.isGroup && app.canDropTabBeside(d.data.tabIds.single, widget.tabId),
-      onMove: (d) => _set(_sideFor(d)),
-      onLeave: (_) => _set(null),
+      onWillAcceptWithDetails: (d) {
+        if (d.data.isGroup) return false;
+        final id = d.data.tabIds.single;
+        if (inSplit()) return app.canSwapPanes(id, widget.tabId);
+        return app.canDropTabBeside(id, widget.tabId);
+      },
+      onMove: (d) => inSplit() ? _setSwap(true) : _set(_sideFor(d)),
+      onLeave: (_) {
+        _set(null);
+        _setSwap(false);
+      },
       onAcceptWithDetails: (d) {
+        final id = d.data.tabIds.single;
+        if (inSplit()) {
+          _setSwap(false);
+          app.swapPanes(id, widget.tabId);
+          return;
+        }
         final side = _sideFor(d);
         _set(null);
-        if (side != null) app.dropTabBeside(d.data.tabIds.single, widget.tabId, side);
+        if (side != null) app.dropTabBeside(id, widget.tabId, side);
       },
       builder: (context, _, _) => Stack(
         fit: StackFit.expand,
         children: [
           widget.child,
-          if (_side != null) _SnapPreview(fraction: paneSideRect(_side!)),
+          if (_swap) const _SnapPreview(fraction: Rect.fromLTRB(0, 0, 1, 1)),
+          if (!_swap && _side != null) _SnapPreview(fraction: paneSideRect(_side!)),
         ],
       ),
     );

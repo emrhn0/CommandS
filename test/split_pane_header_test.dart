@@ -84,9 +84,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(app.tabs.map((t) => t.id), ['a', 'c']);
-    // One session left: no split, so no pane bars either.
-    expect(find.byKey(const ValueKey('pane-header-a')), findsNothing);
+    // One session left: the split stays, b's pane is empty now.
+    expect(find.byKey(const ValueKey('pane-header-a')), findsOneWidget);
+    expect(find.text('Drop a tab here'), findsOneWidget);
     await cleanUp(tester, app);
+  });
+
+  testWidgets('a pane dragged by its bar onto another swaps with it; no layout picker over a split', (tester) async {
+    final app = await showSplit(tester);
+    final from = tester.getCenter(find.byKey(const ValueKey('pane-header-a')));
+    final to = tester.getCenter(find.byKey(const ValueKey('b')));
+    final drag = await tester.startGesture(from, kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    for (var i = 1; i <= 12; i++) {
+      await drag.moveTo(Offset.lerp(from, to, i / 12)!);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.byKey(const ValueKey('layout-sideBySide-0')), findsNothing,
+          reason: 'the layout was set in Split View');
+    }
+    await drag.up();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tabIdsInLayoutOrdered(app.paneLayout), ['b', 'a']);
+    await cleanUp(tester, app);
+    await tester.pump(const Duration(seconds: 1));
   });
 
   testWidgets('one click moves the keyboard to the other pane, at once', (tester) async {
