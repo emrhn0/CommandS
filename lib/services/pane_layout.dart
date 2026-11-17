@@ -289,15 +289,16 @@ PaneNode? buildFromShape(ZoneNode shape, List<String?> slots) {
   return walk(shape);
 }
 
-/// [shape] with zone [index] split in two along [axis]: the zone becomes its
-/// first half and a new zone its second.
-ZoneNode splitZone(ZoneNode shape, int index, Axis axis) {
+/// [shape] with zone [index] split in two along [axis] at [ratio] of the
+/// zone: the zone becomes its first part and a new zone its second.
+ZoneNode splitZone(ZoneNode shape, int index, Axis axis, {double ratio = 0.5}) {
   var at = 0;
+  final r = ratio.clamp(minZoneRatio, 1 - minZoneRatio);
   ZoneNode walk(ZoneNode node) {
     if (node is ZoneSplit) {
       return ZoneSplit(axis: node.axis, ratio: node.ratio, first: walk(node.first), second: walk(node.second));
     }
-    return at++ == index ? ZoneSplit(axis: axis, first: const ZoneLeaf(), second: const ZoneLeaf()) : node;
+    return at++ == index ? ZoneSplit(axis: axis, first: const ZoneLeaf(), second: const ZoneLeaf(), ratio: r) : node;
   }
 
   return walk(shape);

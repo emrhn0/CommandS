@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -20,8 +21,10 @@ class CustomLayoutDeleted extends CustomLayoutEdit {
 }
 
 /// Draws a custom split layout, the way PowerToys FancyZones does: start from
-/// one zone, click a zone to split it side by side (Shift+click: stacked),
-/// drag a divider to resize, remove a zone with its x. Null when cancelled.
+/// one zone; over a zone a line follows the mouse, and a click splits the
+/// zone right there. The line is horizontal or vertical, picked at the top
+/// (Shift switches it while held). Dividers drag, a zone goes with its x.
+/// Null when cancelled.
 Future<CustomLayoutEdit?> showCustomLayoutEditor(
   BuildContext context, {
   CustomLayout? editing,
@@ -43,8 +46,11 @@ class _CustomLayoutEditor extends StatefulWidget {
 }
 
 class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
-  late ZoneNode _shape = widget.editing?.shape ??
-      const ZoneSplit(axis: Axis.horizontal, first: ZoneLeaf(), second: ZoneLeaf());
+  late ZoneNode _shape = widget.editing?.shape ?? const ZoneLeaf();
+
+  /// The direction of the line a click splits along: a horizontal line
+  /// stacks two zones, a vertical one puts them side by side.
+  Axis _line = Axis.horizontal;
   late final _name = TextEditingController(text: widget.editing?.name ?? '');
 
   @override
@@ -55,9 +61,11 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
 
   bool get _canSplit => zoneCount(_shape) < maxCustomZones;
 
-  void _split(int zone, Axis axis) {
+  /// A split along a [line] at [at] (0..1 across the zone).
+  void _split(int zone, Axis line, double at) {
     if (!_canSplit) return;
-    setState(() => _shape = splitZone(_shape, zone, axis));
+    final axis = line == Axis.horizontal ? Axis.vertical : Axis.horizontal;
+    setState(() => _shape = splitZone(_shape, zone, axis, ratio: at));
   }
 
   void _remove(int zone) {
@@ -91,9 +99,35 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              Text(
-                tr('Click a zone to split it side by side, Shift+click to stack it. Drag a divider to resize.'),
-                style: TextStyle(fontSize: 12, color: dim),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      tr('Click where the line is to split a zone. Shift switches the line. Drag a divider to resize.'),
+                      style: TextStyle(fontSize: 12, color: dim),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SegmentedButton<Axis>(
+                    key: const ValueKey('split-line'),
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    segments: [
+                      ButtonSegment(
+                        value: Axis.horizontal,
+                        icon: const Icon(Icons.horizontal_split_outlined, size: 16),
+                        label: Text(tr('Horizontal split')),
+                      ),
+                      ButtonSegment(
+                        value: Axis.vertical,
+                        icon: const Icon(Icons.vertical_split_outlined, size: 16),
+                        label: Text(tr('Vertical split')),
+                      ),
+                    ],
+                    selected: {_line},
+                    onSelectionChanged: (v) => setState(() => _line = v.single),
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
               AspectRatio(
@@ -101,6 +135,7 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
                 child: _ZoneCanvas(
                   key: const ValueKey('zone-canvas'),
                   shape: _shape,
+                  line: _line,
                   canSplit: _canSplit,
                   canRemove: count > 1,
                   onSplit: _split,
@@ -151,12 +186,13 @@ class _CustomLayoutEditorState extends State<_CustomLayoutEditor> {
   }
 }
 
-/// The editable drawing: zones with their number and buttons, dividers that
-/// drag.
+/// The editable drawing: zones with their number, a line that follows the
+/// mouse to split along, and dividers that drag.
 class _ZoneCanvas extends StatelessWidget {
   const _ZoneCanvas({
     super.key,
     required this.shape,
+    required this.line,
     required this.canSplit,
     required this.canRemove,
     required this.onSplit,
@@ -165,9 +201,10 @@ class _ZoneCanvas extends StatelessWidget {
   });
 
   final ZoneNode shape;
+  final Axis line;
   final bool canSplit;
   final bool canRemove;
-  final void Function(int zone, Axis axis) onSplit;
+  final void Function(int zone, Axis line, double at) onSplit;
   final void Function(int zone) onRemove;
   final void Function(List<bool> path, double ratio) onResize;
 
@@ -177,9 +214,10 @@ class _ZoneCanvas extends StatelessWidget {
     if (node is! ZoneSplit) {
       return _Zone(
         index: firstZone,
+        line: line,
         canSplit: canSplit,
         canRemove: canRemove,
-        onSplit: (axis) => onSplit(firstZone, axis),
+        onSplit: (line, at) => onSplit(firstZone, line, at),
         onRemove: () => onRemove(firstZone),
       );
     }
@@ -187,6 +225,17 @@ class _ZoneCanvas extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final total = (horizontal ? constraints.maxWidth : constraints.maxHeight) - _divider;
+        // The divider sits under the mouse: the ratio is read from where the
+        // pointer is in this split, not added up from movement, which lagged
+        // behind by the distance a drag needs before it starts.
+        void follow(Offset global) {
+          final box = context.findRenderObject() as RenderBox?;
+          if (box == null || total <= 0) return;
+          final local = box.globalToLocal(global);
+          final along = (horizontal ? local.dx : local.dy) - _divider / 2;
+          onResize(path, along / total);
+        }
+
         return Flex(
           direction: node.axis,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -200,11 +249,9 @@ class _ZoneCanvas extends StatelessWidget {
               child: GestureDetector(
                 key: ValueKey('zone-divider-${path.map((p) => p ? 1 : 0).join()}'),
                 behavior: HitTestBehavior.opaque,
-                onPanUpdate: (d) {
-                  if (total <= 0) return;
-                  final delta = horizontal ? d.delta.dx : d.delta.dy;
-                  onResize(path, node.ratio + delta / total);
-                },
+                dragStartBehavior: DragStartBehavior.down,
+                onPanDown: (d) => follow(d.globalPosition),
+                onPanUpdate: (d) => follow(d.globalPosition),
                 child: SizedBox(
                   width: horizontal ? _divider : null,
                   height: horizontal ? null : _divider,
@@ -238,6 +285,7 @@ class _ZoneCanvas extends StatelessWidget {
 class _Zone extends StatefulWidget {
   const _Zone({
     required this.index,
+    required this.line,
     required this.canSplit,
     required this.canRemove,
     required this.onSplit,
@@ -245,9 +293,10 @@ class _Zone extends StatefulWidget {
   });
 
   final int index;
+  final Axis line;
   final bool canSplit;
   final bool canRemove;
-  final ValueChanged<Axis> onSplit;
+  final void Function(Axis line, double at) onSplit;
   final VoidCallback onRemove;
 
   @override
@@ -255,63 +304,114 @@ class _Zone extends StatefulWidget {
 }
 
 class _ZoneState extends State<_Zone> {
-  bool _hover = false;
+  /// Where the mouse is over this zone, null when it is elsewhere.
+  Offset? _pointer;
+  bool _overButton = false;
+
+  /// The line in use: the picked one, the other while Shift is held.
+  Axis get _line {
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (!shift) return widget.line;
+    return widget.line == Axis.horizontal ? Axis.vertical : Axis.horizontal;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  /// Shift pressed or let go while the mouse is still: the line turns.
+  bool _onKey(KeyEvent event) {
+    if (_pointer != null &&
+        (event.logicalKey == LogicalKeyboardKey.shiftLeft || event.logicalKey == LogicalKeyboardKey.shiftRight)) {
+      setState(() {});
+    }
+    return false;
+  }
+
+  double _at(Offset local, Size size, Axis line) =>
+      line == Axis.horizontal ? local.dy / size.height : local.dx / size.width;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
-    Widget button(String key, IconData icon, String tip, VoidCallback? onPressed) => IconButton(
-      key: ValueKey('zone-${widget.index}-$key'),
-      tooltip: tip,
-      visualDensity: VisualDensity.compact,
-      iconSize: 16,
-      onPressed: onPressed,
-      icon: Icon(icon),
-    );
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: widget.canSplit ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      child: GestureDetector(
-        key: ValueKey('zone-${widget.index}'),
-        onTap: widget.canSplit
-            ? () => widget.onSplit(HardwareKeyboard.instance.isShiftPressed ? Axis.vertical : Axis.horizontal)
-            : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 100),
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: _hover ? 0.22 : 0.12),
-            border: Border.all(color: accent.withValues(alpha: _hover ? 0.9 : 0.4)),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Stack(
-            children: [
-              Center(
-                child: Text(
-                  '${widget.index + 1}',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: accent),
-                ),
+    final pointer = _pointer;
+    final line = _line;
+    final showLine = pointer != null && widget.canSplit && !_overButton;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        return MouseRegion(
+          onHover: (e) => setState(() => _pointer = e.localPosition),
+          onExit: (_) => setState(() => _pointer = null),
+          cursor: widget.canSplit ? SystemMouseCursors.precise : SystemMouseCursors.basic,
+          child: GestureDetector(
+            key: ValueKey('zone-${widget.index}'),
+            onTapUp: widget.canSplit
+                ? (d) => widget.onSplit(line, _at(d.localPosition, size, line))
+                : null,
+            child: Container(
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: pointer != null ? 0.18 : 0.10),
+                border: Border.all(color: accent.withValues(alpha: pointer != null ? 0.8 : 0.4)),
+                borderRadius: BorderRadius.circular(6),
               ),
-              if (_hover)
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      button('split-h', Icons.vertical_split_outlined, tr('Split side by side'),
-                          widget.canSplit ? () => widget.onSplit(Axis.horizontal) : null),
-                      button('split-v', Icons.horizontal_split_outlined, tr('Split stacked'),
-                          widget.canSplit ? () => widget.onSplit(Axis.vertical) : null),
-                      if (widget.canRemove) button('remove', Icons.close, tr('Remove pane'), widget.onRemove),
-                    ],
+              child: Stack(
+                children: [
+                  Center(
+                    child: Text(
+                      '${widget.index + 1}',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: accent),
+                    ),
                   ),
-                ),
-            ],
+                  // The split to come: a faint line under the mouse.
+                  if (showLine)
+                    line == Axis.horizontal
+                        ? Positioned(
+                            key: const ValueKey('split-preview'),
+                            left: 0,
+                            right: 0,
+                            top: pointer.dy.clamp(0, size.height) - 1,
+                            child: IgnorePointer(child: Container(height: 2, color: accent.withValues(alpha: 0.55))),
+                          )
+                        : Positioned(
+                            key: const ValueKey('split-preview'),
+                            top: 0,
+                            bottom: 0,
+                            left: pointer.dx.clamp(0, size.width) - 1,
+                            child: IgnorePointer(child: Container(width: 2, color: accent.withValues(alpha: 0.55))),
+                          ),
+                  if (pointer != null && widget.canRemove)
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: MouseRegion(
+                        onEnter: (_) => setState(() => _overButton = true),
+                        onExit: (_) => setState(() => _overButton = false),
+                        child: IconButton(
+                          key: ValueKey('zone-${widget.index}-remove'),
+                          tooltip: tr('Remove pane'),
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 16,
+                          onPressed: widget.onRemove,
+                          icon: const Icon(Icons.close),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

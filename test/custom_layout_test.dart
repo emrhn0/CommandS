@@ -3,6 +3,7 @@ import 'package:commands/providers/app_state.dart';
 import 'package:commands/services/pane_layout.dart';
 import 'package:commands/services/session_controller.dart';
 import 'package:commands/widgets/split_view_dialog.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -151,20 +152,48 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1. Choose a layout'), findsOneWidget);
 
-    // The Custom tile opens the editor with two zones side by side.
+    // The Custom tile opens the editor with one zone.
     await tester.tap(find.byKey(const ValueKey('custom-layout-new')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('zone-1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('zone-2')), findsNothing);
+    expect(find.byKey(const ValueKey('zone-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('zone-1')), findsNothing);
+    final canvas = tester.getRect(find.byKey(const ValueKey('zone-canvas')));
 
-    // A click on the second zone splits it: three panes.
-    await tester.tap(find.byKey(const ValueKey('zone-1')));
+    // Over a zone a line follows the mouse: horizontal to begin with.
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: canvas.topLeft + const Offset(5, 5));
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(canvas.topLeft + Offset(canvas.width * 0.3, canvas.height * 0.5));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('split-preview')), findsOneWidget);
+
+    // Vertical line, click at 30 % across: two zones side by side, split there.
+    await tester.tap(find.text('Vertical split'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(canvas.topLeft + Offset(canvas.width * 0.3, canvas.height * 0.5));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('zone-1')), findsOneWidget);
+    expect(tester.getRect(find.byKey(const ValueKey('zone-0'))).right, closeTo(canvas.left + canvas.width * 0.3, 8));
+
+    // Horizontal line, click in the right zone: it splits top and bottom.
+    await tester.tap(find.text('Horizontal split'));
+    await tester.pumpAndSettle();
+    final right = tester.getRect(find.byKey(const ValueKey('zone-1')));
+    await tester.tapAt(right.center);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('zone-2')), findsOneWidget);
 
-    // Dragging the first divider widens the left pane.
+    // The divider stays under the mouse while dragged.
     final divider = find.byKey(const ValueKey('zone-divider-'));
-    await tester.drag(divider, const Offset(80, 0));
+    final from = tester.getCenter(divider);
+    final to = Offset(canvas.left + canvas.width * 0.7, from.dy);
+    final drag = await tester.startGesture(from, kind: PointerDeviceKind.mouse);
+    for (var i = 1; i <= 10; i++) {
+      await drag.moveTo(Offset.lerp(from, to, i / 10)!);
+      await tester.pump();
+    }
+    expect(tester.getCenter(divider).dx, closeTo(to.dx, canvas.width * 0.02));
+    await drag.up();
     await tester.pumpAndSettle();
 
     expect(tester.widget<ElevatedButton>(find.byKey(const ValueKey('custom-layout-save'))).onPressed, isNull,
@@ -177,7 +206,7 @@ void main() {
     final custom = app.customLayouts.single;
     expect(custom.name, 'Mine');
     expect(zoneCount(custom.shape), 3);
-    expect(zoneRects(custom.shape)[0].right, greaterThan(0.5));
+    expect(zoneRects(custom.shape)[0].right, closeTo(0.7, 0.02));
     expect(find.text('Mine'), findsWidgets, reason: 'its tile is next to the presets, and picked');
 
     // The third pane starts empty; a click on a tab fills it.
@@ -186,7 +215,7 @@ void main() {
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
     final root = app.paneLayout as PaneSplit;
-    expect(root.ratio, greaterThan(0.5));
+    expect(root.ratio, closeTo(0.7, 0.02));
     expect(tabIdsInLayoutOrdered(root), ['a', 'b', 'c']);
 
     // Back in the dialog, the pencil on its tile edits or deletes it.
