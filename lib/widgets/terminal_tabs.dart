@@ -1626,9 +1626,16 @@ class _TerminalPaneState extends State<_TerminalPane> {
       shortcuts: TerminalClipboard.shortcuts,
       onKeyEvent: (node, event) {
         // A dead key (AltGr+Ü for ~ on a Turkish keyboard) arrives with its
-        // plain letter as the character; the real one comes with the next
-        // key. Typing the letter made ~ come out as ü~.
-        if (event is! KeyUpEvent && DeadKeys.isDeadKey(event)) return KeyEventResult.handled;
+        // plain letter as the character, and Windows would compose the
+        // accent into the next key. The terminal types the accent at once
+        // and the next key plain (see DeadKeys).
+        if (event is! KeyUpEvent) {
+          final text = DeadKeys.translate(event);
+          if (text != null) {
+            if (text.isNotEmpty) widget.controller.terminal.textInput(text);
+            return KeyEventResult.handled;
+          }
+        }
         final session = widget.controller;
         final keyboard = HardwareKeyboard.instance;
         if (session is PtySessionController &&

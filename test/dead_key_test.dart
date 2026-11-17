@@ -20,6 +20,8 @@ void main() {
   });
   tearDown(() => PtySessionController.checkReachability = true);
 
+  var after = false;
+
   // The Ü key of a Turkish Q keyboard (where [ is on a US one).
   const keyUe = LogicalKeyboardKey.bracketLeft;
   const physicalUe = PhysicalKeyboardKey.bracketLeft;
@@ -47,28 +49,61 @@ void main() {
     return sent;
   }
 
-  testWidgets('a dead key types nothing; the character that follows it does', (tester) async {
-    final original = DeadKeys.isDeadKey;
-    // AltGr+Ü on a Turkish keyboard: a dead key that becomes ~.
-    DeadKeys.isDeadKey = (e) => e.logicalKey == keyUe && HardwareKeyboard.instance.isAltPressed;
-    addTearDown(() => DeadKeys.isDeadKey = original);
+  /// Stands in for Windows: AltGr+Ü is a dead key for ~; after it, a key
+  /// types its own letter (Windows would compose ~ and a into ã).
+  String? fakeWindows(KeyEvent e) {
+    final altGr = HardwareKeyboard.instance.isAltPressed;
+    if (e.logicalKey == keyUe && altGr) {
+      after = true;
+      return '~';
+    }
+    if (after && e.character != null) {
+      after = false;
+      return e.logicalKey == LogicalKeyboardKey.keyA ? 'a' : e.logicalKey == LogicalKeyboardKey.space ? ' ' : null;
+    }
+    return null;
+  }
+
+  testWidgets('AltGr+Ü types ~ at once, with nothing more', (tester) async {
+    final original = DeadKeys.translate;
+    after = false;
+    DeadKeys.translate = fakeWindows;
+    addTearDown(() => DeadKeys.translate = original);
 
     final sent = await typeInTerminal(tester, () async {
       await tester.sendKeyDownEvent(LogicalKeyboardKey.altRight);
       await tester.sendKeyDownEvent(keyUe, physicalKey: physicalUe, character: 'ü');
       await tester.sendKeyUpEvent(keyUe, physicalKey: physicalUe);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altRight);
-      // Windows then hands over the composed character with the next key.
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.space, character: '~');
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
     });
     expect(sent.join(), '~');
   });
 
+  testWidgets('the key after ~ types its own letter, not a composed one', (tester) async {
+    final original = DeadKeys.translate;
+    after = false;
+    DeadKeys.translate = fakeWindows;
+    addTearDown(() => DeadKeys.translate = original);
+
+    final sent = await typeInTerminal(tester, () async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altRight);
+      await tester.sendKeyDownEvent(keyUe, physicalKey: physicalUe, character: 'ü');
+      await tester.sendKeyUpEvent(keyUe, physicalKey: physicalUe);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altRight);
+      // Windows composes the waiting ~ into the next key: ã.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA, character: 'ã');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyB, character: 'b');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyB);
+    });
+    expect(sent.join(), '~ab');
+  });
+
   testWidgets('the same key without AltGr still types ü', (tester) async {
-    final original = DeadKeys.isDeadKey;
-    DeadKeys.isDeadKey = (e) => e.logicalKey == keyUe && HardwareKeyboard.instance.isAltPressed;
-    addTearDown(() => DeadKeys.isDeadKey = original);
+    final original = DeadKeys.translate;
+    after = false;
+    DeadKeys.translate = fakeWindows;
+    addTearDown(() => DeadKeys.translate = original);
 
     final sent = await typeInTerminal(tester, () async {
       await tester.sendKeyDownEvent(keyUe, physicalKey: physicalUe, character: 'ü');
@@ -77,17 +112,7 @@ void main() {
     expect(sent.join(), 'ü');
   });
 
-  test('on Windows, a plain letter with nothing held is not a dead key', () {
-    final event = KeyDownEvent(
-      physicalKey: PhysicalKeyboardKey.keyA,
-      logicalKey: LogicalKeyboardKey.keyA,
-      character: 'a',
-      timeStamp: Duration.zero,
-    );
-    expect(DeadKeys.isDeadKey(event), isFalse);
-  }, skip: !Platform.isWindows);
-
-  test('on a Turkish Q keyboard, AltGr+Ü is a dead key and Ü alone is not', () {
+  test('on a Turkish Q keyboard, AltGr+Ü is a dead key typing ~, and Ü alone types ü', () {
     final list = calloc<ffi.IntPtr>(16);
     try {
       final n = GetKeyboardLayoutList(16, list);
@@ -96,12 +121,16 @@ void main() {
         markTestSkipped('no Turkish keyboard installed');
         return;
       }
-      const ueScanCode = 0x1A; // the key right of P
-      expect(DeadKeys.isDeadOnLayout(ueScanCode, turkishQ, held: const []), isFalse);
-      expect(
-        DeadKeys.isDeadOnLayout(ueScanCode, turkishQ, held: const [VK_CONTROL, VK_LCONTROL, VK_MENU, VK_RMENU]),
-        isTrue,
+      const ueScanCode = 0x1B; // two keys right of P (Ğ is 0x1A)
+      const aScanCode = 0x1E;
+      final altGr = DeadKeys.keyOnLayout(
+        ueScanCode,
+        turkishQ,
+        held: const [VK_CONTROL, VK_LCONTROL, VK_MENU, VK_RMENU],
       );
+      expect(altGr, (text: '~', dead: true));
+      expect(DeadKeys.keyOnLayout(ueScanCode, turkishQ, held: const []), (text: 'ü', dead: false));
+      expect(DeadKeys.keyOnLayout(aScanCode, turkishQ, held: const []), (text: 'a', dead: false));
     } finally {
       calloc.free(list);
     }
