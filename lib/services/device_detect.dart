@@ -7,8 +7,8 @@ import '../models/models.dart';
 /// prompt). Nothing is ever sent to the device to find out.
 ///
 /// [settled] is set once the session has been up for a while: only then is
-/// a Debian/Ubuntu version line taken to mean plain Linux, since an
-/// appliance built on them prints its own banner a moment later.
+/// a distribution banner or version line taken to mean plain Linux, since
+/// an appliance built on Linux may print its own banner a moment later.
 ///
 /// Null when nothing gives it away; the next connection tries again.
 DeviceKind? detectDevice({String serverVersion = '', String output = '', bool settled = false}) {
@@ -22,16 +22,32 @@ DeviceKind? detectDevice({String serverVersion = '', String output = '', bool se
     if (pattern.hasMatch(text)) return kind;
   }
 
-  if (settled && RegExp(r'Ubuntu|Debian|Raspbian').hasMatch(v)) return DeviceKind.linux;
+  if (settled && (_linuxBanner.hasMatch(text) || RegExp(r'Ubuntu|Debian|Raspbian').hasMatch(v))) {
+    return DeviceKind.linux;
+  }
   return null;
 }
 
 /// Colour and cursor sequences, which sit between the words of a banner.
 final _ansi = RegExp(r'\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-Z\\-_])');
 
+final _linuxBanner = RegExp(
+  r'Welcome to (Ubuntu|Debian|CentOS|Red Hat|Rocky|AlmaLinux|Fedora|Kali|Raspbian|openSUSE|Oracle Linux|Linux Mint|Proxmox)'
+  r'|GNU/Linux',
+);
+
 /// Most specific first: an appliance's banner beats the generic Linux
 /// signs (a shell prompt, a kernel version) that it may print as well.
 final List<(DeviceKind, RegExp)> _rules = [
+  (
+    DeviceKind.dell,
+    RegExp(
+      r'\bDell(?: EMC)? Network(?:ing)? Operating System\s*\(OS10\)'
+      r'|^(?:System Description|Machine Description|Machine Type)\s*(?::|\.{2,})\s*Dell EMC Networking\b',
+      multiLine: true,
+      caseSensitive: false,
+    ),
+  ),
   (DeviceKind.vmware, RegExp(r'VMware ESXi|VMware offers supported|VMware vCenter|vCenter Server Appliance')),
   (DeviceKind.paloalto, RegExp(r'Number of failed attempts since last successful login|PAN-OS')),
   (DeviceKind.fortinet, RegExp(r'Forti(Gate|OS|Switch|Analyzer|Manager|WiFi)')),
@@ -71,10 +87,8 @@ final List<(DeviceKind, RegExp)> _rules = [
   (
     DeviceKind.linux,
     RegExp(
-      r'Welcome to (Ubuntu|Debian|CentOS|Red Hat|Rocky|AlmaLinux|Fedora|Kali|Raspbian|openSUSE|Oracle Linux|Linux Mint|Proxmox)'
-      r'|GNU/Linux'
       // A bash-style prompt, user@host:path$ (or # for root).
-      r'|^[\w.-]+@[\w.-]+:[^\r\n]*[$#] ?$',
+      r'^[\w.-]+@[\w.-]+:[^\r\n]*[$#] ?$',
       multiLine: true,
     ),
   ),

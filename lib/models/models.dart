@@ -16,6 +16,7 @@ enum DeviceKind {
   cisco('Cisco'),
   aruba('Aruba'),
   hpe('HPE'),
+  dell('Dell'),
   huawei('Huawei');
 
   const DeviceKind(this.label);
