@@ -115,7 +115,7 @@ Do not "simplify" these without reading why.
   engine through `desktop_multi_window`: same process, same taskbar button.
   It gets what it needs to connect as launch arguments, in memory only, and
   registers the generated plugins but not the RDP one.
-- **Updates are checked every five minutes from the releases feed**
+- **Updates are checked every minute from the releases feed**
   (`releases.atom`), not the API. Unauthenticated API calls are limited to 60
   an hour per network, which an office checking that often would use up; the
   API is asked only once something newer has turned up.
