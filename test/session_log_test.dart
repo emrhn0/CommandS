@@ -219,34 +219,65 @@ void main() {
     session.dispose();
   });
 
-  test('UTF-8 output uses host/date/time and never overwrites a second log', () async {
+  test('logs are kept as the connection list keeps them: folders, then the connection', () async {
     final at = DateTime(2026, 11, 11, 14, 5, 9);
+    final sep = Platform.pathSeparator;
     final first = await SessionLogRecorder.start(
       root: root.path,
-      host: 'DEVICE-01',
+      host: '192.0.2.10',
+      name: 'DEVICE-01',
+      folders: const ['Folder A', 'Folder B'],
       now: at,
     );
     first.write('Türkçe\r\n');
     first.write('ready\n');
     await first.close();
-    expect(
-      first.path,
-      endsWith(
-        'DEVICE-01${Platform.pathSeparator}2026-11-11${Platform.pathSeparator}14-05-09.log',
-      ),
-    );
+    expect(first.path, '${root.path}${sep}Folder A${sep}Folder B${sep}DEVICE-01${sep}DEVICE-01_11_11_2026.txt');
     expect(await File(first.path).readAsString(), 'Türkçe\r\nready\n');
 
+    // The same day again: a file of its own, the first one untouched.
     final second = await SessionLogRecorder.start(
       root: root.path,
-      host: 'DEVICE-01',
+      host: '192.0.2.10',
+      name: 'DEVICE-01',
+      folders: const ['Folder A', 'Folder B'],
       now: at,
     );
     second.write('second\n');
     await second.close();
-    expect(second.path, endsWith('14-05-09-1.log'));
+    expect(second.path, endsWith('${sep}DEVICE-01_11_11_2026 (2).txt'));
     expect(await File(first.path).readAsString(), 'Türkçe\r\nready\n');
     expect(await File(second.path).readAsString(), 'second\n');
+
+    // No connection name (a host typed in): the host, straight under the root.
+    final bare = await SessionLogRecorder.start(root: root.path, host: '192.0.2.10', now: at);
+    await bare.close();
+    expect(bare.path, '${root.path}${sep}192.0.2.10${sep}192.0.2.10_11_11_2026.txt');
+  });
+
+  test('the log folders of a connection are its folder and the ones above it, outermost first', () async {
+    final app = AppState();
+    final outer = ConnectionFolder(name: 'Folder A');
+    final inner = ConnectionFolder(name: 'Folder B', parentId: outer.id);
+    app.folders.addAll([outer, inner]);
+    expect(app.folderNamesOf(inner.id), ['Folder A', 'Folder B']);
+    expect(app.folderNamesOf(null), isEmpty);
+    // A loop in saved data does not hang.
+    outer.parentId = inner.id;
+    expect(app.folderNamesOf(inner.id), ['Folder A', 'Folder B']);
+  });
+
+  test('a folder name cannot climb out of the log root', () async {
+    final log = await SessionLogRecorder.start(
+      root: root.path,
+      host: '192.0.2.10',
+      name: 'DEVICE-01',
+      folders: const ['..', 'a/b'],
+      now: DateTime(2026, 11, 11),
+    );
+    expect(log.path, startsWith(root.path));
+    expect(log.path, isNot(contains('..')));
+    await log.close();
   });
 
   test('unsafe host components cannot escape the log root', () async {
@@ -436,7 +467,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('split SSH sessions offer a choice of recording target', (
+  testWidgets('in a split each pane bar has its own record button, and no Session logs button', (
     tester,
   ) async {
     final app = AppState();
@@ -477,13 +508,33 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('Session logs'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('session-log-button')));
+    expect(find.byKey(const ValueKey('session-log-button')), findsNothing);
+    expect(find.byKey(const ValueKey('pane-record-a')), findsOneWidget);
+
+    // Real file work, finished between frames.
+    Future<void> until(bool Function() done) async {
+      for (var i = 0; i < 100 && !done(); i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+      }
+    }
+
+    await tester.tap(find.byKey(const ValueKey('pane-record-b')));
+    await until(() => second.recordingPath.value != null);
     await tester.pump();
-    expect(find.textContaining('DEVICE-01 — Record session'), findsOneWidget);
-    expect(find.textContaining('DEVICE-02 — Record session'), findsOneWidget);
-    await tester.tapAt(const Offset(500, 300));
+    expect(second.recordingPath.value, isNotNull);
+    expect(first.recordingPath.value, isNull, reason: 'only the pane clicked');
+
+    await tester.tap(find.byKey(const ValueKey('pane-record-b')));
+    await until(() => second.recordingPath.value == null);
     await tester.pump();
+    expect(second.recordingPath.value, isNull);
+    // The file is closed just after; let it go before the folder is removed.
+    for (var i = 0; i < 10; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    await tester.pump(const Duration(seconds: 10));
     await tester.pumpWidget(const SizedBox());
     first.dispose();
     second.dispose();

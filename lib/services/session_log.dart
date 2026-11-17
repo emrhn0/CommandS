@@ -267,25 +267,30 @@ class SessionLogRecorder {
   bool _stopping = false;
   bool _failed = false;
 
+  /// Starts a log for the connection [name] (the host when it has none),
+  /// kept as the connection list keeps it: under [folders], the names of
+  /// its folder and the folders above it, outermost first, then a folder of
+  /// its own: root/Folder/Subfolder/Name/Name_17_11_2026.txt. A second log
+  /// of the same day gets " (2)", and so on.
   static Future<SessionLogRecorder> start({
     required String root,
     required String host,
+    String? name,
+    List<String> folders = const [],
     DateTime? now,
     void Function(Object error)? onError,
     int Function()? columns,
   }) async {
     final time = now ?? DateTime.now();
-    final safeHost = _safeHost(host);
-    final date =
-        '${time.year.toString().padLeft(4, '0')}-${_two(time.month)}-${_two(time.day)}';
-    // Colon is forbidden in Windows file names. Hyphens work on every target.
-    final stamp =
-        '${_two(time.hour)}-${_two(time.minute)}-${_two(time.second)}';
+    final safeName = _safeHost((name == null || name.trim().isEmpty) ? host : name);
+    final date = '${_two(time.day)}_${_two(time.month)}_${time.year.toString().padLeft(4, '0')}';
     final separator = Platform.pathSeparator;
-    final directory = Directory('$root$separator$safeHost$separator$date');
+    final path = [root, for (final f in folders) _safeHost(f), safeName].join(separator);
+    final directory = Directory(path);
     await directory.create(recursive: true);
     for (var suffix = 0; suffix < 10000; suffix++) {
-      final name = suffix == 0 ? '$stamp.log' : '$stamp-$suffix.log';
+      final base = '${safeName}_$date';
+      final name = suffix == 0 ? '$base.txt' : '$base (${suffix + 1}).txt';
       final file = File('${directory.path}$separator$name');
       try {
         await file.create(exclusive: true);

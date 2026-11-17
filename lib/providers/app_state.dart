@@ -976,6 +976,21 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// The names of folder [folderId] and the folders above it, outermost
+  /// first, as the connection list shows them.
+  List<String> folderNamesOf(String? folderId) {
+    final names = <String>[];
+    final seen = <String>{};
+    var id = folderId;
+    while (id != null && seen.add(id)) {
+      final folder = folders.where((f) => f.id == id).firstOrNull;
+      if (folder == null) break;
+      names.insert(0, folder.name);
+      id = folder.parentId;
+    }
+    return names;
+  }
+
   int _tabSerial = 0;
 
   /// Creates a tab for [conn] without changing what is on screen.
@@ -986,14 +1001,16 @@ class AppState extends ChangeNotifier {
         // exist, which is what opening an RDP connection on macOS used to
         // fail on.
         ? (Platform.isWindows ? RdpSessionController(conn) : MacRdpSessionController(conn))
-        : PtySessionController(
+        : (PtySessionController(
             host: conn.host,
             port: conn.port,
             username: conn.username,
             password: conn.rememberPassword ? conn.password : '',
             tabTitle: conn.name,
             recordByDefault: conn.recordSessionByDefault,
-          );
+          )
+          ..logName = conn.name
+          ..logFolders = folderNamesOf(conn.folderId));
     final tab = OpenTab(
       // Unique even when a layout opens several tabs within one microsecond.
       id: '${conn.id}-${DateTime.now().microsecondsSinceEpoch}-${_tabSerial++}',

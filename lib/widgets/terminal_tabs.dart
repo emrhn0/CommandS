@@ -178,7 +178,8 @@ class _TabBarRow extends StatelessWidget {
             ),
           ),
           if (app.activeGroupId != null) _SeparateButton(groupId: app.activeGroupId!),
-          if (sshSessions.isNotEmpty)
+          // Over a split each pane has its own record button on its bar.
+          if (sshSessions.isNotEmpty && app.paneLayout is! PaneSplit)
             _SessionLogButton(sessions: sshSessions, compact: constraints.maxWidth < 1100),
           _SplitViewButton(active: app.activeGroupId != null,
               enabled: app.tabs.length > 1, compact: constraints.maxWidth < 1100),
@@ -280,6 +281,121 @@ class _ScrollingStripState extends State<_ScrollingStrip> {
   }
 }
 
+/// Starts recording [session], or stops it and says where the log is.
+Future<void> _toggleRecording(BuildContext context, PtySessionController session) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final current = session.recordingPath.value;
+    if (current != null) {
+      await session.stopRecording();
+      messenger.showSnackBar(SnackBar(
+        content: Text(tr('Session log saved to {path}', {'path': current})),
+        // A SnackBar with an action stays until dismissed by default;
+        // this one goes away on its own when it is not used.
+        persist: false,
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: tr('Open file'),
+          onPressed: () => OpenPath.open(current),
+        ),
+      ));
+    } else {
+      final directory = await SessionLogSettings.directory();
+      await session.startRecording(directory);
+    }
+  } catch (error) {
+    messenger.showSnackBar(SnackBar(
+      content: Text(tr('Could not record session: {error}', {'error': error.toString()})),
+    ));
+  }
+}
+
+/// The record button on a split pane's bar: a click starts recording that
+/// session, another stops it. Red while it records.
+class _PaneRecordButton extends StatefulWidget {
+  const _PaneRecordButton({required this.session, required this.tabId});
+  final PtySessionController session;
+  final String tabId;
+
+  @override
+  State<_PaneRecordButton> createState() => _PaneRecordButtonState();
+}
+
+class _PaneRecordButtonState extends State<_PaneRecordButton> {
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.session.recordingError.addListener(_onError);
+  }
+
+  @override
+  void didUpdateWidget(_PaneRecordButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
+      oldWidget.session.recordingError.removeListener(_onError);
+      widget.session.recordingError.addListener(_onError);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.session.recordingError.removeListener(_onError);
+    super.dispose();
+  }
+
+  void _onError() {
+    final error = widget.session.recordingError.value;
+    if (error == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(tr('Session recording stopped: {error}', {'error': error})),
+        ));
+      }
+    });
+  }
+
+  Future<void> _pressed() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await _toggleRecording(context, widget.session);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = widget.session;
+    return AnimatedBuilder(
+      animation: Listenable.merge([session.recordingPath, session.recordingError]),
+      builder: (context, _) {
+        final on = session.recordingPath.value != null;
+        final enabled = !_busy && (on || session.status == SessionStatus.running);
+        final scheme = Theme.of(context).colorScheme;
+        return Tooltip(
+          message: tr(on ? 'Stop recording' : 'Record session'),
+          child: InkWell(
+            key: ValueKey('pane-record-${widget.tabId}'),
+            onTap: enabled ? _pressed : null,
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(
+                on ? Icons.fiber_manual_record : Icons.radio_button_unchecked,
+                size: 13,
+                color: on ? Colors.red : enabled ? null : scheme.onSurface.withValues(alpha: 0.3),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _SessionLogButton extends StatefulWidget {
   const _SessionLogButton({required this.sessions, required this.compact});
 
@@ -337,32 +453,7 @@ class _SessionLogButtonState extends State<_SessionLogButton> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final current = session.recordingPath.value;
-      if (current != null) {
-        await session.stopRecording();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(tr('Session log saved to {path}', {'path': current})),
-            // A SnackBar with an action stays until dismissed by default;
-            // this one goes away on its own when it is not used.
-            persist: false,
-            duration: const Duration(seconds: 8),
-            action: SnackBarAction(
-              label: tr('Open file'),
-              onPressed: () => OpenPath.open(current),
-            ),
-          ));
-        }
-      } else {
-        final directory = await SessionLogSettings.directory();
-        await session.startRecording(directory);
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(tr('Could not record session: {error}', {'error': error.toString()})),
-        ));
-      }
+      await _toggleRecording(context, session);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1358,6 +1449,10 @@ class _PaneHeaderState extends State<_PaneHeader> {
             child: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5)),
           ),
           _AgentMark(tabIds: [tab.id]),
+          if (tab.controller is PtySessionController) ...[
+            _PaneRecordButton(session: tab.controller as PtySessionController, tabId: tab.id),
+            const SizedBox(width: 4),
+          ],
           Tooltip(
             message: tr('Close tab'),
             child: InkWell(

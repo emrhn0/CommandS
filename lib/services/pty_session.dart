@@ -135,6 +135,12 @@ class PtySessionController implements TerminalSessionController {
   final _autoRecordingBuffer = StringBuffer();
   static const _autoRecordingBufferLimit = 4 * 1024 * 1024;
 
+  /// Where this session's logs go, as the connection list keeps it: the
+  /// connection's name, and its folder with the folders above it,
+  /// outermost first. Without a name the host is used.
+  String? logName;
+  List<String> logFolders = const [];
+
   Future<String> startRecording(String directory) {
     final pending = _startingRecording;
     if (pending != null) return pending;
@@ -152,6 +158,8 @@ class PtySessionController implements TerminalSessionController {
       recorder = await SessionLogRecorder.start(
         root: directory,
         host: host,
+        name: logName ?? tabTitle,
+        folders: logFolders,
         columns: () => terminal.viewWidth,
         onError: (error) => _recordingFailed(recorder, error),
       );
