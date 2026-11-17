@@ -1,6 +1,7 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/services/pty_session.dart';
+import 'package:commands/theme/app_mark.dart';
 import 'package:commands/widgets/launch_splash.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:commands/widgets/welcome_panel.dart';
@@ -125,11 +126,31 @@ void main() {
       await closeAll(tester, app);
     });
 
-    test('the greeting follows the time of day', () {
-      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 8)), 'Good morning');
-      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 14)), 'Good afternoon');
-      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 21)), 'Good evening');
-      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 2)), 'Good evening');
+    test('the greeting follows the part of the day', () {
+      DateTime at(int hour) => DateTime(2026, 1, 1, hour);
+      expect(WelcomePanel.greetingsFor(at(5)).first, 'Good morning');
+      expect(WelcomePanel.greetingsFor(at(11)).first, 'Good morning');
+      expect(WelcomePanel.greetingsFor(at(12)).first, 'Good afternoon');
+      expect(WelcomePanel.greetingsFor(at(18)).first, 'Good evening');
+      expect(WelcomePanel.greetingsFor(at(23)).first, 'Good night');
+      expect(WelcomePanel.greetingsFor(at(3)).first, 'Good night');
+      for (var hour = 0; hour < 24; hour++) {
+        for (var seed = 0; seed < 8; seed++) {
+          expect(WelcomePanel.greetingsFor(at(hour)), contains(WelcomePanel.greetingFor(at(hour), seed: seed)));
+        }
+      }
+    });
+
+    test('the line holds within an hour and moves on with the next one', () {
+      final nine = WelcomePanel.greetingFor(DateTime(2026, 1, 1, 9, 5), seed: 3);
+      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 9, 55), seed: 3), nine);
+      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 10, 5), seed: 3), isNot(nine));
+      expect(WelcomePanel.greetingFor(DateTime(2026, 1, 1, 9, 5), seed: 4), isNot(nine), reason: 'another launch, another line');
+    });
+
+    test('twenty-two different lines in all', () {
+      final lines = {for (var h = 0; h < 24; h++) ...WelcomePanel.greetingsFor(DateTime(2026, 1, 1, h))};
+      expect(lines, hasLength(22));
     });
   });
 
@@ -153,13 +174,49 @@ void main() {
       ));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byKey(const Key('launch-splash')), findsOneWidget);
-      expect(find.text('S'), findsNothing, reason: 'the name is one rich text');
       await tester.tap(find.text('app'), warnIfMissed: false);
       expect(taps, 1, reason: 'the app underneath is already live');
       await tester.pump(LaunchSplash.duration);
       await tester.pump();
       expect(find.byKey(const Key('launch-splash')), findsNothing);
       expect(find.text('app'), findsOneWidget);
+    });
+
+    testWidgets('mark, name, version pill and a bar that fills in about two seconds', (tester) async {
+      LaunchSplash.enabled = true;
+      await tester.pumpWidget(const MaterialApp(home: LaunchSplash(child: SizedBox())));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(AppMark), findsOneWidget);
+      expect(find.byKey(const Key('launch-splash-version')), findsOneWidget);
+      expect(find.textContaining('SSH'), findsNothing, reason: 'no protocol line any more');
+      double fill() => tester
+          .widget<LinearProgressIndicator>(
+            find.descendant(of: find.byKey(const Key('launch-splash-bar')), matching: find.byType(LinearProgressIndicator)),
+          )
+          .value!;
+      final early = fill();
+      await tester.pump(const Duration(milliseconds: 1000));
+      expect(fill(), greaterThan(early));
+      expect(fill(), lessThan(1));
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(fill(), 1.0, reason: 'full after about two seconds');
+      await tester.pump(LaunchSplash.duration);
+    });
+
+    testWidgets('its text sits on a Material, so it has no yellow underline', (tester) async {
+      LaunchSplash.enabled = true;
+      await tester.pumpWidget(const MaterialApp(home: LaunchSplash(child: SizedBox())));
+      await tester.pump(const Duration(milliseconds: 500));
+      final version = find.descendant(of: find.byKey(const Key('launch-splash-version')), matching: find.byType(Text));
+      expect(find.ancestor(of: version, matching: find.byType(Material)), findsWidgets);
+      final style = DefaultTextStyle.of(tester.element(version)).style;
+      expect(style.decoration, isNot(TextDecoration.underline));
+      await tester.pump(LaunchSplash.duration);
+    });
+
+    test('the version reads as a pill label', () {
+      expect(LaunchSplash.versionLabel('v1.6.0-beta.3'), 'v1.6.0 beta 3');
+      expect(LaunchSplash.versionLabel('v1.6.0'), 'v1.6.0');
     });
   });
 }

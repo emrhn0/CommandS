@@ -1,5 +1,7 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
@@ -13,7 +15,7 @@ import 'new_connection_dialog.dart';
 /// What the session area shows while no tab is open: the mark and a
 /// greeting, the two ways to add a connection, and the saved connections
 /// opened most recently, each one click away.
-class WelcomePanel extends StatelessWidget {
+class WelcomePanel extends StatefulWidget {
   const WelcomePanel({super.key, this.sidebarVisible = true, this.now});
 
   final bool sidebarVisible;
@@ -21,12 +23,91 @@ class WelcomePanel extends StatelessWidget {
   /// The time the greeting is picked for; tests pass one in.
   final DateTime? now;
 
-  /// Morning before noon, afternoon until six, evening after.
-  static String greetingFor(DateTime time) => time.hour >= 5 && time.hour < 12
-      ? tr('Good morning')
-      : time.hour >= 12 && time.hour < 18
-          ? tr('Good afternoon')
-          : tr('Good evening');
+  /// Picked once a launch, so each start can open on a different line.
+  static final int launchSeed = Random().nextInt(1 << 16);
+
+  /// The lines for the part of the day [time] falls in: morning from five,
+  /// afternoon from noon, evening from six, night from eleven. The first of
+  /// each is the plain greeting.
+  static List<String> greetingsFor(DateTime time) {
+    final h = time.hour;
+    if (h >= 5 && h < 12) {
+      return [
+        tr('Good morning'),
+        tr('Good morning. Coffee ready? Let us start'),
+        tr('Good morning. Which device today?'),
+        tr('Early at the console'),
+        tr('Good morning. The logs are waiting'),
+        tr('A new day, a clean session'),
+      ];
+    }
+    if (h >= 12 && h < 18) {
+      return [
+        tr('Good afternoon'),
+        tr('The afternoon shift is on'),
+        tr('Pick up where you left off'),
+        tr('One more connection, then tea'),
+        tr('Everything looks fine'),
+        tr('Hope it goes easy'),
+      ];
+    }
+    if (h >= 18 && h < 23) {
+      return [
+        tr('Good evening'),
+        tr('Good evening. One last check?'),
+        tr('Work is over, but the switches never sleep'),
+        tr('A session in the quiet of the evening'),
+        tr('Evening already, and the screen is still on'),
+      ];
+    }
+    return [
+      tr('Good night'),
+      tr('It is late. A change window?'),
+      tr('Night shift, quiet and calm'),
+      tr('Maintenance work at this hour, probably'),
+      tr('Midnight, and it is just you on screen'),
+    ];
+  }
+
+  /// One line for [time]. It stays the same within an hour, so the panel
+  /// does not flicker as the app redraws, and moves on at the next hour.
+  static String greetingFor(DateTime time, {int seed = 0}) {
+    final lines = greetingsFor(time);
+    return lines[(seed + time.hour) % lines.length];
+  }
+
+  @override
+  State<WelcomePanel> createState() => _WelcomePanelState();
+}
+
+class _WelcomePanelState extends State<WelcomePanel> {
+  Timer? _hourly;
+
+  bool get sidebarVisible => widget.sidebarVisible;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleNextHour();
+  }
+
+  /// Redraws at the top of the next hour, for the next line.
+  void _scheduleNextHour() {
+    if (widget.now != null) return;
+    final now = DateTime.now();
+    final next = DateTime(now.year, now.month, now.day, now.hour + 1);
+    _hourly = Timer(next.difference(now), () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleNextHour();
+    });
+  }
+
+  @override
+  void dispose() {
+    _hourly?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,16 +127,16 @@ class WelcomePanel extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  SvgPicture.asset(AppMark.darkAsset, width: 60, height: 60),
+                  const AppMark(size: 60),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          greetingFor(now ?? DateTime.now()),
+                          WelcomePanel.greetingFor(widget.now ?? DateTime.now(), seed: WelcomePanel.launchSeed),
                           style: TextStyle(
-                            fontSize: 26,
+                            fontSize: 24,
                             fontWeight: FontWeight.w600,
                             letterSpacing: -0.4,
                             color: palette.text,

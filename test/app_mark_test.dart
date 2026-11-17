@@ -32,30 +32,20 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('the title bar shows the light mark on the dark theme', (tester) async {
-    await pumpBar(tester, ThemeMode.dark);
-    expect(drawnAsset(tester), AppMark.lightAsset);
-  });
-
-  testWidgets('the title bar shows the dark mark on the light theme', (tester) async {
+  testWidgets('the title bar shows the same mark on a light and a dark theme', (tester) async {
     await pumpBar(tester, ThemeMode.light);
-    expect(drawnAsset(tester), AppMark.darkAsset);
-  });
-
-  testWidgets('the mark changes when the theme changes', (tester) async {
-    await pumpBar(tester, ThemeMode.light);
-    expect(drawnAsset(tester), AppMark.darkAsset);
+    expect(drawnAsset(tester), AppMark.asset);
     await pumpBar(tester, ThemeMode.dark);
     // MaterialApp fades from one theme to the other.
     await tester.pump(const Duration(seconds: 1));
-    expect(drawnAsset(tester), AppMark.lightAsset);
+    expect(drawnAsset(tester), AppMark.asset);
   });
 
-  test('both marks are listed assets and are SVG files', () {
+  test('the mark is a listed asset, an SVG, and the only one', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
-    for (final asset in [AppMark.lightAsset, AppMark.darkAsset]) {
-      expect(pubspec, contains('- $asset'));
-      expect(File(asset).readAsStringSync(), startsWith('<svg'));
-    }
+    expect(pubspec, contains('- ${AppMark.asset}'));
+    expect(File(AppMark.asset).readAsStringSync(), startsWith('<svg'));
+    expect(pubspec, isNot(contains('commands_mark_light')));
+    expect(pubspec, isNot(contains('commands_mark_dark')));
   });
 }

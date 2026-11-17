@@ -6,7 +6,7 @@ drawings of it exist: the full one, and a slightly larger bolt for 32 px and
 below, so it still fills the tile when small.
 
 Writes:
-  assets/icon/commands_mark_light.svg, commands_mark_dark.svg  (title bar)
+  assets/icon/commands_mark.svg                                (title bar, splash, welcome)
   windows/runner/resources/app_icon.ico                         (exe, taskbar, installer)
   macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png
 
@@ -20,15 +20,11 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# The two looks: dark (the app icon, and the title bar on light themes) and
-# light (the title bar on dark themes). The tile runs from top to bottom.
+# One look everywhere, whatever the theme: the warm dark tile, running from
+# top to bottom.
 DARK = {
     "tile": ("#2A1712", "#120907"), "upper": "#FF7B5C", "lower": "#C2372A", "fold": "#8C2219",
     "edge": None,
-}
-LIGHT = {
-    "tile": ("#FFF6F2", "#F6E2DA"), "upper": "#FF7B5C", "lower": "#C2372A", "fold": "#8C2219",
-    "edge": (0, 0, 0, 36),
 }
 
 # In a 1024 grid. The upper fold is a triangle pointing up-right, the lower
@@ -40,7 +36,7 @@ CENTER = (522, 512)
 
 FULL = {"rx": 232, "scale": 1.0}
 SMALL = {"rx": 200, "scale": 1.1}
-EDGE = 12  # the light tile's outline, so it does not melt into a light bar
+EDGE = 12  # an optional outline around the tile
 
 
 def _shape(points, scale):
@@ -126,8 +122,7 @@ def geometry(size):
 
 def main():
     icon_dir = ROOT / "assets" / "icon"
-    (icon_dir / "commands_mark_light.svg").write_text(svg(SMALL, LIGHT), encoding="utf-8")
-    (icon_dir / "commands_mark_dark.svg").write_text(svg(SMALL, DARK), encoding="utf-8")
+    (icon_dir / "commands_mark.svg").write_text(svg(SMALL, DARK), encoding="utf-8")
 
     # Windows: the dark icon, each size drawn on its own.
     sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]

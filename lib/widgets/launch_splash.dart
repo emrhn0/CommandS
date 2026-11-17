@@ -1,10 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../app_version.dart';
-import '../l10n/strings.dart';
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
 
@@ -19,8 +17,13 @@ class LaunchSplash extends StatefulWidget {
   /// Off under `flutter test`, where widget tests want the app itself.
   static bool enabled = !Platform.environment.containsKey('FLUTTER_TEST');
 
-  /// The whole show: the mark rises in, holds, and fades out.
-  static const duration = Duration(milliseconds: 1600);
+  /// The whole show: the mark rises in, the bar fills in about two
+  /// seconds, then everything fades out.
+  static const duration = Duration(milliseconds: 2600);
+
+  /// "v1.6.0-beta.2" as "v1.6.0 beta 2", for the version pill.
+  static String versionLabel(String version) =>
+      version.replaceFirstMapped(RegExp(r'-beta\.(\d+)$'), (m) => ' beta ${m[1]}');
 
   @override
   State<LaunchSplash> createState() => _LaunchSplashState();
@@ -78,52 +81,84 @@ class SplashView extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     final accent = Theme.of(context).colorScheme.primary;
-    final fadeOut = 1 - _interval(0.72, 1.0, Curves.easeInCubic);
+    final fadeOut = 1 - _interval(0.86, 1.0, Curves.easeInCubic);
     Widget rise(Widget child, double begin) {
-      final t = _interval(begin, begin + 0.3);
+      final t = _interval(begin, begin + 0.14);
       return Opacity(
         opacity: t,
         child: Transform.translate(offset: Offset(0, 10 * (1 - t)), child: child),
       );
     }
 
-    return Opacity(
-      opacity: fadeOut,
-      child: DecoratedBox(
-        key: const Key('launch-splash'),
-        decoration: BoxDecoration(
-          color: palette.bg,
-          gradient: RadialGradient(
-            center: const Alignment(0, -0.1),
-            radius: 0.8,
-            colors: [Color.alphaBlend(accent.withValues(alpha: 0.10), palette.bg), palette.bg],
+    final fill = _interval(0.08, 0.85, Curves.easeInOutCubic);
+    // Under MaterialApp but above any Scaffold: without a Material of its own
+    // the text would get the yellow "missing Material" underline.
+    return Material(
+      type: MaterialType.transparency,
+      child: Opacity(
+        opacity: fadeOut,
+        child: DecoratedBox(
+          key: const Key('launch-splash'),
+          decoration: BoxDecoration(
+            color: palette.bg,
+            gradient: RadialGradient(
+              center: const Alignment(0, -0.15),
+              radius: 0.8,
+              colors: [Color.alphaBlend(accent.withValues(alpha: 0.10), palette.bg), palette.bg],
+            ),
           ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              rise(SvgPicture.asset(AppMark.darkAsset, width: 112, height: 112), 0.0),
-              const SizedBox(height: 22),
-              rise(
-                Text.rich(
-                  TextSpan(children: [
-                    const TextSpan(text: 'Command'),
-                    TextSpan(text: 'S', style: TextStyle(color: accent)),
-                  ]),
-                  style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, letterSpacing: -0.8, color: palette.text),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                rise(const AppMark(size: 132), 0.0),
+                const SizedBox(height: 26),
+                rise(
+                  Text.rich(
+                    TextSpan(children: [
+                      const TextSpan(text: 'Command'),
+                      TextSpan(text: 'S', style: TextStyle(color: accent)),
+                    ]),
+                    style: TextStyle(fontSize: 46, fontWeight: FontWeight.w700, letterSpacing: -1, color: palette.text),
+                  ),
+                  0.04,
                 ),
-                0.08,
-              ),
-              const SizedBox(height: 10),
-              rise(
-                Text(
-                  '${tr('SSH, RDP and serial')}  ·  $appVersion',
-                  style: TextStyle(fontSize: 13, color: palette.textDim),
+                const SizedBox(height: 14),
+                rise(
+                  Container(
+                    key: const Key('launch-splash-version'),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Color.alphaBlend(accent.withValues(alpha: 0.10), palette.bg),
+                      border: Border.all(color: accent.withValues(alpha: 0.35)),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      LaunchSplash.versionLabel(appVersion),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: accent),
+                    ),
+                  ),
+                  0.08,
                 ),
-                0.16,
-              ),
-            ],
+                const SizedBox(height: 24),
+                rise(
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: SizedBox(
+                      key: const Key('launch-splash-bar'),
+                      width: 180,
+                      height: 3,
+                      child: LinearProgressIndicator(
+                        value: fill,
+                        backgroundColor: palette.border,
+                        valueColor: AlwaysStoppedAnimation(accent),
+                      ),
+                    ),
+                  ),
+                  0.1,
+                ),
+              ],
+            ),
           ),
         ),
       ),
