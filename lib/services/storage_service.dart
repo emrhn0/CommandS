@@ -80,6 +80,7 @@ class StorageService {
   }
 
   static const _kPasswordEnc = 'passwordEnc';
+  static const _kEnablePasswordEnc = 'enablePasswordEnc';
 
   PasswordVault? _vaultInstance;
   PasswordVault get _vault => _vaultInstance ??= PasswordVault(PasswordVault.platformStore());
@@ -88,6 +89,7 @@ class StorageService {
   /// right now), by connection id. Saved back as they were, so a passing
   /// problem does not wipe them on the next save.
   final Map<String, String> _unopened = {};
+  final Map<String, String> _unopenedEnable = {};
 
   /// A password was found in plain text, as older versions saved it, and the
   /// next save will encrypt it.
@@ -159,6 +161,7 @@ class StorageService {
     final raw = prefs.getString(_kConnections);
     needsPasswordMigration = false;
     _unopened.clear();
+    _unopenedEnable.clear();
     if (raw == null) return [];
     final list = _decodeList(raw);
     if (list == null) return [];
@@ -182,6 +185,17 @@ class StorageService {
           _unopened[connection.id] = sealed;
         }
       } else if (connection.password.isNotEmpty) {
+        needsPasswordMigration = true;
+      }
+      final sealedEnable = json[_kEnablePasswordEnc] as String?;
+      if (sealedEnable != null) {
+        try {
+          connection.enablePassword = await _vault.decrypt(sealedEnable, '${connection.id}:enable');
+        } catch (error) {
+          debugPrint('A saved enable password could not be decrypted: ${error.runtimeType}');
+          _unopenedEnable[connection.id] = sealedEnable;
+        }
+      } else if (connection.enablePassword.isNotEmpty) {
         needsPasswordMigration = true;
       }
       connections.add(connection);
@@ -209,6 +223,18 @@ class StorageService {
         }
       } else if (c.rememberPassword && _unopened.containsKey(c.id)) {
         json[_kPasswordEnc] = _unopened[c.id];
+      }
+      final enablePassword = json['enablePassword'] as String? ?? '';
+      if (enablePassword.isNotEmpty) {
+        try {
+          json[_kEnablePasswordEnc] = await _vault.encrypt(enablePassword, '${c.id}:enable');
+          json.remove('enablePassword');
+        } catch (error) {
+          debugPrint('An enable password could not be encrypted: ${error.runtimeType}');
+          migrated = false;
+        }
+      } else if (_unopenedEnable.containsKey(c.id)) {
+        json[_kEnablePasswordEnc] = _unopenedEnable[c.id];
       }
       encoded.add(json);
     }
@@ -275,6 +301,7 @@ class StorageService {
             'port': '${c.port}',
             'username': c.username,
             'password': c.rememberPassword ? c.password : '',
+            if (c.enablePassword.isNotEmpty) 'enablePassword': c.enablePassword,
             'protocol': c.protocol.name,
             if (c.folderId != null) 'folderId': c.folderId!,
             if (c.domain != null) 'domain': c.domain!,
@@ -305,6 +332,7 @@ class StorageService {
         port: int.tryParse(e.getAttribute('port') ?? '') ?? 22,
         username: e.getAttribute('username') ?? '',
         password: e.getAttribute('password') ?? '',
+        enablePassword: e.getAttribute('enablePassword') ?? '',
         rememberPassword: (e.getAttribute('password') ?? '').isNotEmpty,
         folderId: e.getAttribute('folderId'),
         protocol: e.getAttribute('protocol') == 'rdp' ? ConnectionProtocol.rdp : ConnectionProtocol.ssh,
@@ -335,6 +363,7 @@ class StorageService {
     'port',
     'username',
     'password',
+    'enablePassword',
     'domain',
     'recordSessionByDefault',
   ];
@@ -366,6 +395,7 @@ class StorageService {
         '${c.port}',
         c.username,
         c.rememberPassword ? c.password : '',
+        c.enablePassword,
         c.domain ?? '',
         '${c.recordSessionByDefault}',
       ].map(_csvField).join(','));
@@ -468,6 +498,7 @@ class StorageService {
     final iPort = colIndex(['port']);
     final iUser = colIndex(['username', 'user', 'kullanıcı adı', 'kullanici adi', 'credentialusername']);
     final iPass = colIndex(['password', 'parola', 'şifre', 'sifre', 'credentialpassword']);
+    final iEnablePass = colIndex(['enablepassword']);
     final iDomain = colIndex(['domain', 'credentialdomain']);
     final iRecordSession = colIndex(['recordsessionbydefault']);
 
@@ -534,6 +565,7 @@ class StorageService {
           username: field(fields, iUser).trim(),
           rememberPassword: password.isNotEmpty,
           password: password,
+          enablePassword: field(fields, iEnablePass),
           folderId: folderById.containsKey(parent) ? parent : null,
           protocol: protocol,
           domain: field(fields, iDomain).trim().isEmpty ? null : field(fields, iDomain).trim(),
@@ -579,6 +611,7 @@ class StorageService {
         username: field(fields, iUser).trim(),
         rememberPassword: password.isNotEmpty,
         password: password,
+        enablePassword: field(fields, iEnablePass),
         folderId: ensureFolderPath(field(fields, iFolder)),
         protocol: protocol,
         domain: field(fields, iDomain).trim().isEmpty ? null : field(fields, iDomain).trim(),

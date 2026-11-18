@@ -39,10 +39,12 @@ void main() {
     expect(find.text('CUSTOMER-A'), findsOneWidget);
     expect(find.text('Domain'), findsNothing);
     expect(find.text('Share clipboard'), findsNothing);
+    expect(find.text('Enable password'), findsOneWidget);
 
     await tester.tap(find.text('RDP'));
     await tester.pumpAndSettle();
     expect(find.text('Domain'), findsOneWidget);
+    expect(find.text('Enable password'), findsNothing);
     expect(find.text('3389'), findsOneWidget, reason: 'the default port follows the protocol');
     await tester.ensureVisible(find.text('Show wallpaper'));
     await tester.pumpAndSettle();
@@ -95,6 +97,8 @@ void main() {
         greaterThan(tester.getTopLeft(find.text('CREDENTIALS')).dy),
       );
       expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+      await tester.ensureVisible(find.text('Record session automatically'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Record session automatically'));
       await tester.pump();
       expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
@@ -113,4 +117,37 @@ void main() {
       expect(app.connections.single.recordSessionByDefault, isFalse);
     },
   );
+
+  testWidgets('a switch keeps a separate enable password when edited', (tester) async {
+    tester.view.physicalSize = const Size(1000, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState();
+    await tester.pump();
+    final conn = SavedConnection(
+      name: 'DEVICE-01', host: '192.0.2.10', username: 'user1',
+      password: 'ssh-example-secret', rememberPassword: true,
+      enablePassword: 'old-enable-secret', device: DeviceKind.cisco,
+    );
+    app.connections.add(conn);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(
+        theme: AppTheme.light(),
+        home: Builder(builder: (context) => Scaffold(
+          body: TextButton(onPressed: () => showEditConnectionDialog(context, conn), child: const Text('open')),
+        )),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('enable-password-field'));
+    expect(tester.widget<TextField>(field).controller!.text, 'old-enable-secret');
+    await tester.enterText(field, 'new-enable-secret');
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(app.connections.single.enablePassword, 'new-enable-secret');
+    expect(app.connections.single.password, 'ssh-example-secret');
+  });
 }

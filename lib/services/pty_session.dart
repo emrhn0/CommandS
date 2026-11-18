@@ -9,6 +9,7 @@ import 'package:xterm/xterm.dart';
 import '../models/models.dart';
 import '../app_version.dart';
 import 'device_detect.dart';
+import 'enable_prompt_watcher.dart';
 import 'host_keys.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
@@ -51,15 +52,18 @@ class PtySessionController implements TerminalSessionController {
     required this.port,
     String username = '',
     String password = '',
+    String enablePassword = '',
     this.tabTitle,
     this.recordByDefault = false,
     @visibleForTesting bool startImmediately = true,
-  // Callers pass `username:` and `password:`; a named parameter cannot
+  // Callers pass credential parameters; named parameters cannot
   // initialise the private fields directly, as the lint would like.
   // ignore: prefer_initializing_formals
   }) : _username = username,
        // ignore: prefer_initializing_formals
-       _password = password {
+       _password = password,
+       // ignore: prefer_initializing_formals
+       _enablePassword = enablePassword {
     terminal = Terminal(maxLines: 10000);
     terminal.onOutput = _onKeyboard;
     terminal.onResize = (w, h, pw, ph) {
@@ -79,6 +83,7 @@ class PtySessionController implements TerminalSessionController {
   /// then kept, so Reconnect does not ask again.
   String _username;
   final String _password;
+  final String _enablePassword;
 
   /// Settings for a second, independent tab. The username may have been
   /// learned from `login as:` since this session was opened.
@@ -90,6 +95,7 @@ class PtySessionController implements TerminalSessionController {
     username: _username,
     rememberPassword: _password.isNotEmpty,
     password: _password,
+    enablePassword: _enablePassword,
     recordSessionByDefault: recordByDefault,
   );
 
@@ -124,6 +130,9 @@ class PtySessionController implements TerminalSessionController {
   /// Offered only while a recognized sudo password prompt is visible.
   final sudoPrompt = ValueNotifier<String?>(null);
 
+  /// Offered after this session's user runs `enable` and the switch asks.
+  final enablePrompt = ValueNotifier<String?>(null);
+
   /// The device showed a different host key from the one remembered for it,
   /// and OpenSSH refused to connect. Shown as a bar that explains it and
   /// offers to forget the old key.
@@ -152,6 +161,8 @@ class PtySessionController implements TerminalSessionController {
   final _sudoWatcher = SudoPromptWatcher();
   Timer? _sudoExpiry;
   static const _sudoOfferLifetime = Duration(seconds: 90);
+  final _enableWatcher = EnablePromptWatcher();
+  Timer? _enableExpiry;
 
   /// Whether the SFTP file panel is open beside this session's terminal.
   final sftpOpen = ValueNotifier<bool>(false);
@@ -268,6 +279,32 @@ class PtySessionController implements TerminalSessionController {
     _sudoExpiry?.cancel();
     _sudoExpiry = null;
     if (sudoPrompt.value != null) sudoPrompt.value = null;
+  }
+
+  void _watchEnable(String text) {
+    if (_enablePassword.isEmpty) return;
+    final prompt = _enableWatcher.feed(text);
+    if (prompt == enablePrompt.value) return;
+    _enableExpiry?.cancel();
+    enablePrompt.value = prompt;
+    if (prompt != null) {
+      _enableExpiry = Timer(const Duration(seconds: 90), dismissEnablePrompt);
+    }
+  }
+
+  /// Sends the separate enable password only after the user accepts its offer.
+  bool fillEnablePassword() {
+    if (enablePrompt.value == null || _enablePassword.isEmpty || status != SessionStatus.running) return false;
+    dismissEnablePrompt();
+    _write('$_enablePassword\r');
+    return true;
+  }
+
+  void dismissEnablePrompt() {
+    _enableWatcher.dismiss();
+    _enableExpiry?.cancel();
+    _enableExpiry = null;
+    if (enablePrompt.value != null) enablePrompt.value = null;
   }
 
   /// Opens a separate SFTP channel with this tab's resolved login and SSH
@@ -467,6 +504,8 @@ class PtySessionController implements TerminalSessionController {
     // Answered by hand in the terminal: the bar has nothing left to ask.
     if (loginQuestion.value != null && data.contains('\r')) loginQuestion.value = null;
     if (sudoPrompt.value != null && data.isNotEmpty) dismissSudoPrompt();
+    if (enablePrompt.value != null && data.isNotEmpty) dismissEnablePrompt();
+    if (_enablePassword.isNotEmpty) _enableWatcher.input(data);
     _write(data);
   }
 
@@ -1002,6 +1041,7 @@ class PtySessionController implements TerminalSessionController {
     _sniffAdd(text);
     _watchLogin(text);
     _watchSudo(text);
+    _watchEnable(text);
     _watchHostKey(text);
   }
 
@@ -1065,6 +1105,7 @@ class PtySessionController implements TerminalSessionController {
     _endRecording();
     dismissSudoPrompt();
     _sudoWatcher.reset();
+    dismissEnablePrompt();
     try {
       _pty?.kill();
     } catch (_) {}
@@ -1092,6 +1133,7 @@ class PtySessionController implements TerminalSessionController {
     _lineInput = null;
     _stopProcess();
     sudoPrompt.dispose();
+    enablePrompt.dispose();
     recordingPath.dispose();
     recordingError.dispose();
     _statusController.close();

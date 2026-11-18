@@ -1781,17 +1781,25 @@ class _TerminalPaneState extends State<_TerminalPane> {
         left: 12,
         right: 12,
         bottom: 18,
-        child: Center(child: ValueListenableBuilder<String?>(
-          valueListenable: session.sudoPrompt,
-          builder: (context, prompt, _) => prompt == null
-              ? const SizedBox.shrink()
-              : _SudoPasswordOffer(
-                  onFill: () {
-                    session.fillSudoPassword();
-                    _focusNode.requestFocus();
-                  },
-                  onDismiss: session.dismissSudoPrompt,
-                ),
+        child: Center(child: ListenableBuilder(
+          listenable: Listenable.merge([session.sudoPrompt, session.enablePrompt]),
+          builder: (context, _) {
+            final enable = session.enablePrompt.value != null;
+            if (!enable && session.sudoPrompt.value == null) return const SizedBox.shrink();
+            return _PasswordOffer(
+              title: enable ? tr('Saved enable password') : tr('Saved password for sudo'),
+              keyPrefix: enable ? 'enable' : 'sudo',
+              onFill: () {
+                if (enable) {
+                  session.fillEnablePassword();
+                } else {
+                  session.fillSudoPassword();
+                }
+                _focusNode.requestFocus();
+              },
+              onDismiss: enable ? session.dismissEnablePrompt : session.dismissSudoPrompt,
+            );
+          },
         )),
       ),
     ]);
@@ -1921,12 +1929,16 @@ class _TerminalPaneState extends State<_TerminalPane> {
           return KeyEventResult.handled;
         }
         if (session is PtySessionController &&
-            session.sudoPrompt.value != null &&
+            (session.sudoPrompt.value != null || session.enablePrompt.value != null) &&
             event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.keyY &&
             keyboard.isControlPressed && keyboard.isShiftPressed &&
             !keyboard.isAltPressed) {
-          session.fillSudoPassword();
+          if (session.enablePrompt.value != null) {
+            session.fillEnablePassword();
+          } else {
+            session.fillSudoPassword();
+          }
           return KeyEventResult.handled;
         }
         return _clipboard.handleKey(node, event);
@@ -1946,8 +1958,10 @@ class _TerminalPaneState extends State<_TerminalPane> {
   }
 }
 
-class _SudoPasswordOffer extends StatelessWidget {
-  const _SudoPasswordOffer({required this.onFill, required this.onDismiss});
+class _PasswordOffer extends StatelessWidget {
+  const _PasswordOffer({required this.title, required this.keyPrefix, required this.onFill, required this.onDismiss});
+  final String title;
+  final String keyPrefix;
   final VoidCallback onFill;
   final VoidCallback onDismiss;
 
@@ -1972,7 +1986,7 @@ class _SudoPasswordOffer extends StatelessWidget {
             Row(children: [
               Icon(Icons.key_outlined, size: 14, color: muted),
               const SizedBox(width: 6),
-              Expanded(child: Text(tr('Saved password for sudo'),
+              Expanded(child: Text(title,
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11, color: foreground))),
               Text('Ctrl+Shift+Y', style: TextStyle(fontSize: 10, color: muted)),
@@ -1980,7 +1994,7 @@ class _SudoPasswordOffer extends StatelessWidget {
             const SizedBox(height: 7),
             Row(children: [
               Expanded(child: InkWell(
-                key: const ValueKey('sudo-fill-button'),
+                key: ValueKey('$keyPrefix-fill-button'),
                 onTap: onFill,
                 borderRadius: BorderRadius.circular(4),
                 child: Container(
@@ -1994,7 +2008,7 @@ class _SudoPasswordOffer extends StatelessWidget {
               )),
               const SizedBox(width: 6),
               Expanded(child: InkWell(
-                key: const ValueKey('sudo-cancel-button'),
+                key: ValueKey('$keyPrefix-cancel-button'),
                 onTap: onDismiss,
                 borderRadius: BorderRadius.circular(4),
                 child: Container(

@@ -10,6 +10,7 @@ void main() {
       SavedConnection(
         id: 'c1', name: 'Şüphe "Test"', host: '10.0.0.1', port: 22, username: 'admin',
         rememberPassword: true, password: 'p@ss<w>ord&"\'', folderId: 'f1',
+        enablePassword: 'enable<&"',
         protocol: ConnectionProtocol.ssh, domain: null, rdpClipboard: true, rdpWallpaper: false,
       ),
     ];
@@ -20,6 +21,7 @@ void main() {
     expect(parsed.folders.length, 1);
     expect(parsed.connections.length, 1);
     expect(parsed.connections.first.password, 'p@ss<w>ord&"\'');
+    expect(parsed.connections.first.enablePassword, 'enable<&"');
     expect(parsed.connections.first.name, 'Şüphe "Test"');
   });
 }

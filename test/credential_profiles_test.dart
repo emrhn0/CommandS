@@ -49,16 +49,19 @@ void main() {
     final conn = SavedConnection(
       name: 'DEVICE-01', host: '192.0.2.10', username: 'old-user', password: 'old', rememberPassword: true,
       credentialProfileId: profile.id,
+      enablePassword: 'enable-example-secret',
     );
     app.connections.add(conn);
     expect(app.resolved(conn).username, 'user1');
     expect(app.resolved(conn).password, 'example-secret');
+    expect(app.resolved(conn).enablePassword, 'enable-example-secret');
     expect(conn.username, 'old-user', reason: 'the saved connection is not changed');
 
     await app.openConnection(conn);
     final session = app.tabs.single.controller as PtySessionController;
     expect(session.connectionForDuplicate().username, 'user1');
     expect(session.hasSavedPassword, isTrue);
+    expect(session.connectionForDuplicate().enablePassword, 'enable-example-secret');
     expect(app.tabs.single.connectionId, conn.id);
 
     // A changed profile password is what the next connection uses.

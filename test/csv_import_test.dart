@@ -14,6 +14,7 @@ void main() {
       SavedConnection(
         id: 'c1', name: 'BB', host: '198.51.100.1', port: 22, username: 'admin',
         rememberPassword: true, password: 'ExamplePass1', folderId: 'p2',
+        enablePassword: 'EnableExample1',
         protocol: ConnectionProtocol.ssh, domain: null, rdpClipboard: true, rdpWallpaper: false,
       ),
     ];
@@ -21,6 +22,7 @@ void main() {
     final parsed = svc.parseCsv(csv);
     expect(parsed.connections.length, 1);
     expect(parsed.connections.first.password, 'ExamplePass1');
+    expect(parsed.connections.first.enablePassword, 'EnableExample1');
     expect(parsed.connections.first.host, '198.51.100.1');
     // folder path EXAMPLE CORP/Switches recreated as two nested folders
     expect(parsed.folders.length, 2);
