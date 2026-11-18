@@ -258,6 +258,112 @@ void main() {
     expect(sftp.downloads, ['/home/user/report.txt -> C:/Files/report.txt']);
   });
 
+  testWidgets('Ctrl-click selects and uploads multiple local files', (tester) async {
+    final sftp = _FakeSftp();
+    await _pumpBrowser(tester, sftp);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-local.txt')));
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-report.txt')));
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    bool selected(String name) =>
+        (tester.widget(find.byKey(ValueKey('sftp-entry-$name'))) as dynamic).selected as bool;
+    expect(selected('local.txt'), isTrue);
+    expect(selected('report.txt'), isTrue);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-report.txt')));
+    await tester.pump();
+    expect(selected('report.txt'), isFalse);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-report.txt')));
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(selected('report.txt'), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('sftp-upload')));
+    await tester.pumpAndSettle();
+    expect(sftp.uploads, [
+      'C:/Files/local.txt -> /home/user/local.txt',
+      'C:/Files/report.txt -> /home/user/report.txt',
+    ]);
+    expect(find.text('Completed'), findsNWidgets(2));
+  });
+
+  testWidgets('Shift-click selects a range and a plain click replaces it', (tester) async {
+    final local = _FakeLocal()
+      ..entries.add(const LocalFileEntry('third.txt', isDirectory: false, size: 4));
+    await _pumpBrowser(tester, _FakeSftp(), local: local);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-local.txt')));
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-third.txt')));
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+
+    bool selected(String name) =>
+        (tester.widget(find.byKey(ValueKey('sftp-entry-$name'))) as dynamic).selected as bool;
+    expect(selected('local.txt'), isTrue);
+    expect(selected('report.txt'), isTrue);
+    expect(selected('third.txt'), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-report.txt')));
+    await tester.pump();
+    expect(selected('local.txt'), isFalse);
+    expect(selected('report.txt'), isTrue);
+    expect(selected('third.txt'), isFalse);
+  });
+
+  testWidgets('Ctrl+A selects remote files; changing folder clears selection', (tester) async {
+    final sftp = _FakeSftp();
+    await _pumpBrowser(tester, sftp);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-remote.txt')));
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(
+      (tester.widget(find.byKey(const ValueKey('sftp-entry-archive'))) as dynamic).selected,
+      isTrue,
+    );
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-archive')));
+    await tester.pumpAndSettle();
+    expect(find.text('older.txt'), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(find.byKey(const ValueKey('sftp-download'))).onPressed, isNull);
+  });
+
+  testWidgets('batch download skips a declined replacement and continues', (tester) async {
+    final sftp = _FakeSftp();
+    sftp.folders['/home/user']!.addAll(const [
+      SftpEntry('report.txt', isDirectory: false, size: 3),
+      SftpEntry('last.txt', isDirectory: false, size: 4),
+    ]);
+    await _pumpBrowser(tester, sftp);
+    await tester.tap(find.byKey(const ValueKey('sftp-entry-remote.txt')));
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('sftp-download')));
+    await tester.pumpAndSettle();
+    expect(find.text('Replace file?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(sftp.downloads, [
+      '/home/user/remote.txt -> C:/Files/remote.txt',
+      '/home/user/last.txt -> C:/Files/last.txt',
+    ]);
+    expect(find.text('Completed'), findsNWidgets(2));
+  });
+
   testWidgets('verification failure shows error without retrying transfer', (
     tester,
   ) async {

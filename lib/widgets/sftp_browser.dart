@@ -149,8 +149,8 @@ class _SftpBrowserState extends State<SftpBrowser> {
   SftpClient? _client;
   String? _remoteError;
   String? _localError;
-  String? _selectedRemote;
-  String? _selectedLocal;
+  Set<String> _selectedRemote = {};
+  Set<String> _selectedLocal = {};
   bool _remoteLoading = true;
   bool _localLoading = true;
   bool _busy = false;
@@ -212,7 +212,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
       setState(() {
         _remotePath = target;
         _remoteEntries = entries;
-        _selectedRemote = null;
+        _selectedRemote = {};
         _remoteLoading = false;
       });
     } catch (error) {
@@ -237,7 +237,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
       setState(() {
         _localPath = target;
         _localEntries = entries;
-        _selectedLocal = null;
+        _selectedLocal = {};
         _localLoading = false;
       });
     } catch (error) {
@@ -276,53 +276,67 @@ class _SftpBrowserState extends State<SftpBrowser> {
 
   Future<void> _transfer({required bool upload}) async {
     final client = _client;
-    final name = upload ? _selectedLocal : _selectedRemote;
-    if (client == null || name == null || _busy) return;
-    final valid = upload
-        ? _localEntries.any((e) => e.name == name && !e.isDirectory)
-        : _remoteEntries.any((e) => e.name == name && !e.isDirectory);
-    if (!valid) return;
-    final exists = upload
-        ? _remoteEntries.any((e) => e.name == name)
-        : _localEntries.any((e) => e.name == name);
-    if (exists && !await _confirmOverwrite(name)) return;
-    if (!mounted) return;
-    final localPath = _local.join(_localPath, name);
-    final remotePath = OpenSshSftpClient.joinRemote(_remotePath, name);
-    final item = SftpTransfer(
-      name,
-      upload ? 'upload' : 'download',
-      localPath: localPath,
-      remotePath: remotePath,
-    );
-    setState(() {
-      _busy = true;
-      _transfers.insert(0, item);
-    });
+    if (client == null || _busy) return;
+    final names = upload
+        ? [
+            for (final e in _localEntries)
+              if (!e.isDirectory && _selectedLocal.contains(e.name)) e.name,
+          ]
+        : [
+            for (final e in _remoteEntries)
+              if (!e.isDirectory && _selectedRemote.contains(e.name)) e.name,
+          ];
+    if (names.isEmpty) return;
+    final localDirectory = _localPath;
+    final remoteDirectory = _remotePath;
+    final existing = upload
+        ? _remoteEntries.map((e) => e.name).toSet()
+        : _localEntries.map((e) => e.name).toSet();
+    setState(() => _busy = true);
+    var attempted = false;
     try {
-      void updateProgress(SftpProgress progress) {
-        if (!mounted) return;
-        setState(() {
-          item.progress = progress;
-          item.status = 'Transferring';
-        });
-      }
-
-      if (upload) {
-        await client.upload(localPath, remotePath, onProgress: updateProgress);
-        await _loadRemote();
-      } else {
-        await client.download(
-          remotePath,
-          localPath,
-          onProgress: updateProgress,
+      for (final name in names) {
+        if (!mounted || _client != client) return;
+        if (existing.contains(name) && !await _confirmOverwrite(name)) continue;
+        if (!mounted || _client != client) return;
+        final localPath = _local.join(localDirectory, name);
+        final remotePath = OpenSshSftpClient.joinRemote(remoteDirectory, name);
+        final item = SftpTransfer(
+          name,
+          upload ? 'upload' : 'download',
+          localPath: localPath,
+          remotePath: remotePath,
         );
-        await _loadLocal();
+        setState(() => _transfers.insert(0, item));
+        attempted = true;
+        try {
+          void updateProgress(SftpProgress progress) {
+            if (!mounted) return;
+            setState(() {
+              item.progress = progress;
+              item.status = 'Transferring';
+            });
+          }
+
+          if (upload) {
+            await client.upload(localPath, remotePath, onProgress: updateProgress);
+          } else {
+            await client.download(remotePath, localPath, onProgress: updateProgress);
+          }
+          item.status = 'Completed';
+        } catch (error) {
+          item.status = 'Failed';
+          item.error = '$error';
+        }
+        if (mounted) setState(() {});
       }
-      item.status = 'Completed';
-    } catch (error) {
-      item.status = 'Failed';
-      item.error = '$error';
+      if (attempted && mounted && _client == client) {
+        if (upload) {
+          await _loadRemote();
+        } else {
+          await _loadLocal();
+        }
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -472,13 +486,15 @@ class _SftpBrowserState extends State<SftpBrowser> {
 
   bool get _canDownload =>
       !_busy &&
-      _selectedRemote != null &&
-      _remoteEntries.any((e) => e.name == _selectedRemote && !e.isDirectory);
+      _remoteEntries.any(
+        (e) => _selectedRemote.contains(e.name) && !e.isDirectory,
+      );
 
   bool get _canUpload =>
       !_busy &&
-      _selectedLocal != null &&
-      _localEntries.any((e) => e.name == _selectedLocal && !e.isDirectory);
+      _localEntries.any(
+        (e) => _selectedLocal.contains(e.name) && !e.isDirectory,
+      );
 
   /// The remote files over the whole app window, beside this computer's, as
   /// in a file manager. The window can be resized as usual.
@@ -519,7 +535,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
                     .map((e) => (e.name, e.isDirectory, e.size))
                     .toList(),
                 selected: _selectedRemote,
-                onSelect: (name) => setState(() => _selectedRemote = name),
+                onSelect: (names) => setState(() => _selectedRemote = names),
                 onOpen: (name) => _loadRemote(
                   OpenSshSftpClient.joinRemote(_remotePath, name),
                 ),
@@ -554,7 +570,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
                     .map((e) => (e.name, e.isDirectory, e.size))
                     .toList(),
                 selected: _selectedLocal,
-                onSelect: (name) => setState(() => _selectedLocal = name),
+                onSelect: (names) => setState(() => _selectedLocal = names),
                 onOpen: (name) => _loadLocal(_local.join(_localPath, name)),
                 onUp: () => _loadLocal(_local.parent(_localPath)),
               ),
@@ -877,8 +893,8 @@ class _SftpBrowserState extends State<SftpBrowser> {
 
   Widget _fileList(
     List<(String, bool, int)> entries, {
-    required String? selected,
-    required ValueChanged<String> onSelect,
+    required Set<String> selected,
+    required ValueChanged<Set<String>> onSelect,
     required ValueChanged<String> onOpen,
     VoidCallback? onUp,
   }) {
@@ -903,7 +919,7 @@ class _SftpBrowserState extends State<SftpBrowser> {
     if (path.isEmpty) return;
     if (await File(path).exists()) {
       await _loadLocal(_local.parent(path));
-      if (mounted) setState(() => _selectedLocal = baseName(path));
+      if (mounted) setState(() => _selectedLocal = {baseName(path)});
       return;
     }
     await _loadLocal(path);
@@ -1173,8 +1189,8 @@ class _FileList extends StatefulWidget {
 
   /// Name, folder, size text.
   final List<(String, bool, String?)> entries;
-  final String? selected;
-  final ValueChanged<String> onSelect;
+  final Set<String> selected;
+  final ValueChanged<Set<String>> onSelect;
   final ValueChanged<String> onOpen;
   final VoidCallback? onUp;
 
@@ -1188,6 +1204,8 @@ class _FileListState extends State<_FileList> {
   static const _rowExtent = 30.0;
   String _typed = '';
   DateTime _typedAt = DateTime(0);
+  String? _anchor;
+  String? _active;
 
   @override
   void dispose() {
@@ -1196,11 +1214,38 @@ class _FileListState extends State<_FileList> {
     super.dispose();
   }
 
-  int get _index => widget.entries.indexWhere((e) => e.$1 == widget.selected);
+  int get _index {
+    final active = _active ?? (widget.selected.isEmpty ? null : widget.selected.last);
+    return widget.entries.indexWhere((e) => e.$1 == active);
+  }
 
-  void _select(int index) {
+  void _select(int index, {bool toggle = false, bool extend = false}) {
     if (index < 0 || index >= widget.entries.length) return;
-    widget.onSelect(widget.entries[index].$1);
+    final name = widget.entries[index].$1;
+    final anchor = _anchor ?? (widget.selected.isEmpty ? null : widget.selected.last);
+    if (extend && anchor != null) {
+      final start = widget.entries.indexWhere((e) => e.$1 == anchor);
+      if (start >= 0) {
+        final first = start < index ? start : index;
+        final last = start > index ? start : index;
+        final range = {
+          for (var i = first; i <= last; i++) widget.entries[i].$1,
+        };
+        widget.onSelect(toggle ? {...widget.selected, ...range} : range);
+      } else {
+        widget.onSelect({name});
+        _anchor = name;
+      }
+    } else if (toggle) {
+      final next = {...widget.selected};
+      if (!next.add(name)) next.remove(name);
+      widget.onSelect(next);
+      _anchor = name;
+    } else {
+      widget.onSelect({name});
+      _anchor = name;
+    }
+    _active = name;
     if (!_scroll.hasClients) return;
     final top = index * _rowExtent;
     final view = _scroll.position.viewportDimension;
@@ -1238,14 +1283,20 @@ class _FileListState extends State<_FileList> {
       return KeyEventResult.ignored;
     }
     final key = event.logicalKey;
+    final keyboard = HardwareKeyboard.instance;
+    if (key == LogicalKeyboardKey.keyA &&
+        (keyboard.isControlPressed || keyboard.isMetaPressed)) {
+      widget.onSelect({for (final entry in widget.entries) entry.$1});
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.arrowDown) {
-      _select(_index < 0 ? 0 : _index + 1);
+      _select(_index < 0 ? 0 : _index + 1, extend: keyboard.isShiftPressed);
     } else if (key == LogicalKeyboardKey.arrowUp) {
-      _select(_index < 0 ? 0 : _index - 1);
+      _select(_index < 0 ? 0 : _index - 1, extend: keyboard.isShiftPressed);
     } else if (key == LogicalKeyboardKey.home) {
-      _select(0);
+      _select(0, extend: keyboard.isShiftPressed);
     } else if (key == LogicalKeyboardKey.end) {
-      _select(widget.entries.length - 1);
+      _select(widget.entries.length - 1, extend: keyboard.isShiftPressed);
     } else if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
       final i = _index;
@@ -1260,8 +1311,7 @@ class _FileListState extends State<_FileList> {
           char.codeUnitAt(0) < 32) {
         return KeyEventResult.ignored;
       }
-      if (HardwareKeyboard.instance.isControlPressed ||
-          HardwareKeyboard.instance.isAltPressed) {
+      if (keyboard.isControlPressed || keyboard.isAltPressed) {
         return KeyEventResult.ignored;
       }
       _typeAhead(char.toLowerCase());
@@ -1286,10 +1336,15 @@ class _FileListState extends State<_FileList> {
             name: name,
             folder: folder,
             size: size,
-            selected: widget.selected == name,
+            selected: widget.selected.contains(name),
             onSelect: () {
               _focus.requestFocus();
-              widget.onSelect(name);
+              final keyboard = HardwareKeyboard.instance;
+              _select(
+                index,
+                toggle: keyboard.isControlPressed || keyboard.isMetaPressed,
+                extend: keyboard.isShiftPressed,
+              );
             },
             onOpen: folder ? () => widget.onOpen(name) : null,
           );
