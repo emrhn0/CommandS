@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
 import 'app_dialog.dart';
+import 'app_select.dart';
 import 'credential_profiles.dart';
 import 'device_icon.dart';
 import 'folder_picker.dart';
@@ -184,31 +185,23 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     final known = _profileId == null || profiles.any((p) => p.id == _profileId);
     return LabeledField(
       label: 'Log in with',
-      child: DropdownButtonFormField<String?>(
-        // Rebuilt when the choice changes from outside (a new profile).
-        key: ValueKey('profile-field-$_profileId-${profiles.length}'),
-        initialValue: known ? _profileId : null,
-        isExpanded: true,
-        borderRadius: BorderRadius.circular(6),
-        decoration: const InputDecoration(isDense: true),
+      child: AppSelect<String?>(
+        key: const ValueKey('profile-field'),
+        value: known ? _profileId : null,
         items: [
-          DropdownMenuItem(value: null, child: Text(tr('Its own user name and password'))),
+          AppSelectItem(null, tr('Its own user name and password'), leading: const Icon(Icons.person_outline, size: 16)),
           for (final p in profiles)
-            DropdownMenuItem(
-              value: p.id,
-              child: Row(children: [
-                const Icon(Icons.badge_outlined, size: 15),
-                const SizedBox(width: 8),
-                Flexible(child: Text(tr('Profile: {name}', {'name': p.name}), overflow: TextOverflow.ellipsis)),
-              ]),
+            AppSelectItem(
+              p.id,
+              tr('Profile: {name}', {'name': p.name}),
+              leading: const Icon(Icons.badge_outlined, size: 16),
             ),
-          DropdownMenuItem(
-            value: _newProfile,
-            child: Row(children: [
-              const Icon(Icons.add, size: 15),
-              const SizedBox(width: 8),
-              Text(tr('New profile…')),
-            ]),
+          AppSelectItem(
+            _newProfile,
+            tr('New profile…'),
+            leading: const Icon(Icons.add, size: 16),
+            dividerBefore: true,
+            action: true,
           ),
         ],
         onChanged: _pickProfile,
@@ -216,36 +209,24 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     );
   }
 
-  Widget _deviceRow(DeviceKind? kind, String label) => Row(
-        children: [
-          SizedBox(width: 22, child: kind == null ? const Icon(Icons.auto_awesome_outlined, size: 15) : DeviceIcon(kind)),
-          const SizedBox(width: 10),
-          Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-        ],
-      );
-
   Widget _deviceField() {
     final detected = _detectedDevice;
     return LabeledField(
       label: 'Device',
-      child: DropdownButtonFormField<DeviceKind?>(
+      child: AppSelect<DeviceKind?>(
         key: const ValueKey('device-field'),
-        initialValue: _pickedDevice,
-        isExpanded: true,
-        borderRadius: BorderRadius.circular(6),
-        decoration: const InputDecoration(isDense: true),
+        value: _pickedDevice,
         items: [
-          DropdownMenuItem(
-            value: null,
-            child: _deviceRow(
-              null,
-              detected == null
-                  ? tr('Automatic (learnt when you connect)')
-                  : tr('Automatic ({device})', {'device': detected.label}),
-            ),
+          AppSelectItem(
+            null,
+            detected == null
+                ? tr('Automatic (learnt when you connect)')
+                : tr('Automatic ({device})', {'device': detected.label}),
+            leading: const Icon(Icons.auto_awesome_outlined, size: 16),
           ),
           for (final k in DeviceKind.values)
-            if (k != DeviceKind.windows) DropdownMenuItem(value: k, child: _deviceRow(k, k.label)),
+            if (k != DeviceKind.windows)
+              AppSelectItem(k, k.label, leading: DeviceIcon(k), dividerBefore: k == DeviceKind.values.first),
         ],
         onChanged: (v) => setState(() => _pickedDevice = v),
       ),

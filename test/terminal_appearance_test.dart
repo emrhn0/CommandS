@@ -108,21 +108,19 @@ void main() {
       await tester.pumpAndSettle();
 
       for (final f in bundledTerminalFonts) {
-        expect(find.widgetWithText(PopupMenuItem<String>, f), findsOneWidget, reason: f);
+        expect(find.widgetWithText(MenuItemButton, f), findsOneWidget, reason: f);
       }
-      final item = tester.widget<PopupMenuItem<String>>(
-        find.widgetWithText(PopupMenuItem<String>, 'Hack'),
-      );
-      expect(item.height, lessThan(40), reason: 'compact desktop rows');
+      expect(tester.getSize(find.widgetWithText(MenuItemButton, 'Hack')).height, lessThan(40),
+          reason: 'compact desktop rows');
 
-      await tester.tap(find.widgetWithText(PopupMenuItem<String>, 'JetBrains Mono'));
+      await tester.tap(find.widgetWithText(MenuItemButton, 'JetBrains Mono'));
       await tester.pumpAndSettle();
       expect(app.terminalFontFamily, 'JetBrains Mono');
-      expect(find.byType(PopupMenuItem<String>), findsNothing, reason: 'menu closed');
+      expect(find.byType(MenuItemButton), findsNothing, reason: 'menu closed');
 
       await tester.tap(find.byKey(const ValueKey('terminal-font')));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(PopupMenuItem<String>, 'Other font by name…'));
+      await tester.tap(find.widgetWithText(MenuItemButton, 'Other font by name…'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextField, 'Font name, as installed (e.g. JetBrains Mono)'), findsOneWidget);
     });

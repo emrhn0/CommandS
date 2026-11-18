@@ -14,6 +14,7 @@ import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_presets.dart';
+import '../widgets/app_select.dart';
 import '../widgets/backups_panel.dart';
 import '../widgets/color_picker_dialog.dart';
 import '../widgets/credential_profiles.dart';
@@ -1078,10 +1079,8 @@ class _MenuChoice<T> {
   final bool dividerBefore;
 }
 
-/// A field that opens the app's own desktop menu (hairline border, soft
-/// shadow, compact rows) instead of Material's tall dropdown sheet, with a
-/// tick on the current choice. Used for the font and the language, and for
-/// anything with more choices to come.
+/// A labelled [AppSelect]: the app's own select field and desktop menu,
+/// with a tick on the current choice. Used for the font and the language.
 class _MenuField<T> extends StatelessWidget {
   const _MenuField({
     super.key,
@@ -1097,56 +1096,14 @@ class _MenuField<T> extends StatelessWidget {
   final ValueChanged<T> onSelected;
 
   @override
-  Widget build(BuildContext context) {
-    _MenuChoice<T>? chosen;
-    for (final c in choices) {
-      if (c.value == current) chosen = c;
-    }
-    return LayoutBuilder(
-      builder: (context, constraints) => PopupMenuButton<T>(
-        tooltip: label,
-        position: PopupMenuPosition.under,
-        offset: const Offset(0, 4),
-        constraints: BoxConstraints(
-          minWidth: constraints.maxWidth,
-          maxWidth: constraints.maxWidth,
-          maxHeight: 360,
-        ),
-        initialValue: current,
-        onSelected: onSelected,
-        itemBuilder: (_) => [
-          for (final c in choices) ...[
-            if (c.dividerBefore) const PopupMenuDivider(height: 9),
-            PopupMenuItem<T>(
-              value: c.value,
-              height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 22,
-                    child: c.value == current ? const Icon(Icons.check, size: 15) : null,
-                  ),
-                  Expanded(
-                    child: Text(c.label, style: c.style ?? const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-            ),
-          ],
+  Widget build(BuildContext context) => AppSelect<T>(
+        label: label,
+        value: current,
+        onChanged: onSelected,
+        items: [
+          for (final c in choices) AppSelectItem(c.value, c.label, style: c.style, dividerBefore: c.dividerBefore),
         ],
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: label,
-            isDense: true,
-            suffixIcon: const Icon(Icons.expand_more, size: 18),
-            suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 20),
-          ),
-          child: Text(chosen?.label ?? '', style: chosen?.style, overflow: TextOverflow.ellipsis),
-        ),
-      ),
-    );
-  }
+      );
 }
 
 /// The font picker: each font shown in itself.
