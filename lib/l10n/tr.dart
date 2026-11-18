@@ -27,6 +27,8 @@ const turkish = <String, String>{
   'Unknown error.': 'Bilinmeyen hata.',
   'Something went wrong.': 'Bir şeyler ters gitti.',
   'Saved password for sudo': 'Sudo için kayıtlı şifre',
+  'Saved enable password': 'Kayıtlı enable şifresi',
+  'Enable password': 'Enable şifresi',
   'Fill': 'Doldur',
   'Session logs': 'Oturum kayıtları',
   'Other': 'Diğer',

@@ -58,8 +58,10 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   final _port = TextEditingController(text: '22');
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _enablePassword = TextEditingController();
   final _domain = TextEditingController();
   bool _obscure = true;
+  bool _obscureEnable = true;
   String? _folderId;
   ConnectionProtocol _protocol = ConnectionProtocol.ssh;
   bool _rdpClipboard = true;
@@ -89,6 +91,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       _port.text = '${existing.port}';
       _username.text = existing.username;
       _password.text = existing.password;
+      _enablePassword.text = existing.enablePassword;
       _domain.text = existing.domain ?? '';
       _folderId = existing.folderId;
       _protocol = existing.protocol;
@@ -108,6 +111,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
         _host.text = prefill.host;
         _port.text = '${prefill.port}';
         _protocol = prefill.protocol;
+        _enablePassword.text = prefill.enablePassword;
         _recordSessionByDefault = prefill.recordSessionByDefault;
       }
     }
@@ -122,6 +126,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     _port.dispose();
     _username.dispose();
     _password.dispose();
+    _enablePassword.dispose();
     _domain.dispose();
     super.dispose();
   }
@@ -157,6 +162,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       // means "ask at connect time", same as before.
       rememberPassword: true,
       password: _password.text,
+      enablePassword: _protocol == ConnectionProtocol.ssh ? _enablePassword.text : '',
       folderId: _folderId,
       protocol: _protocol,
       domain: _domain.text.trim().isEmpty ? null : _domain.text.trim(),
@@ -268,23 +274,48 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     }
   }
 
-  Widget _passwordField() => LabeledField(
-    label: 'Password',
+  Widget _secretField({
+    required String label,
+    required TextEditingController controller,
+    required bool obscure,
+    required VoidCallback onToggle,
+    required String hint,
+    Key? fieldKey,
+  }) => LabeledField(
+    label: label,
     child: TextField(
-      controller: _password,
-      obscureText: _obscure,
+      key: fieldKey,
+      controller: controller,
+      obscureText: obscure,
       decoration: InputDecoration(
-        hintText: tr('Ask on connect'),
+        hintText: tr(hint),
         suffixIcon: IconButton(
-          icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 16),
-          tooltip: _obscure ? tr('Show password') : tr('Hide password'),
+          icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 16),
+          tooltip: obscure ? tr('Show password') : tr('Hide password'),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints.tightFor(width: 30, height: 30),
           style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-          onPressed: () => setState(() => _obscure = !_obscure),
+          onPressed: onToggle,
         ),
       ),
     ),
+  );
+
+  Widget _passwordField() => _secretField(
+    label: 'Password',
+    controller: _password,
+    obscure: _obscure,
+    onToggle: () => setState(() => _obscure = !_obscure),
+    hint: 'Ask on connect',
+  );
+
+  Widget _enablePasswordField() => _secretField(
+    label: 'Enable password',
+    controller: _enablePassword,
+    obscure: _obscureEnable,
+    onToggle: () => setState(() => _obscureEnable = !_obscureEnable),
+    hint: 'Optional',
+    fieldKey: const ValueKey('enable-password-field'),
   );
 
   @override
@@ -406,6 +437,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
           ),
           if (rdp) _passwordField(),
           ],
+          if (!rdp) _enablePasswordField(),
           if (!rdp) ...[
             const _Section('Other'),
             InkWell(

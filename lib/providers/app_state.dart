@@ -950,6 +950,7 @@ class AppState extends ChangeNotifier {
       username: source.username,
       rememberPassword: source.rememberPassword,
       password: source.password,
+      enablePassword: source.enablePassword,
       folderId: source.folderId,
       protocol: source.protocol,
       domain: source.domain,
@@ -1171,6 +1172,7 @@ class AppState extends ChangeNotifier {
             port: conn.port,
             username: conn.username,
             password: conn.rememberPassword ? conn.password : '',
+            enablePassword: conn.enablePassword,
             tabTitle: conn.name,
             recordByDefault: conn.recordSessionByDefault,
           )

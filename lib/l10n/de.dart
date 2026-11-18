@@ -26,6 +26,8 @@ const german = <String, String>{
   'Unknown error.': 'Unbekannter Fehler.',
   'Something went wrong.': 'Etwas ist schiefgelaufen.',
   'Saved password for sudo': 'Gespeichertes Passwort für sudo',
+  'Saved enable password': 'Gespeichertes Enable-Passwort',
+  'Enable password': 'Enable-Passwort',
   'Fill': 'Einfügen',
   'Session logs': 'Sitzungsprotokolle',
   'Other': 'Sonstiges',

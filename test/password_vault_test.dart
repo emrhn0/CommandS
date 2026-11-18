@@ -44,6 +44,55 @@ void main() {
     expect(loaded.single.password, secret);
   });
 
+  test('the enable password is encrypted separately and old saves need no field', () async {
+    final c = connection()..enablePassword = 'enable-example-secret';
+    await StorageService().saveConnections([c]);
+    final raw = await stored();
+    final json = (jsonDecode(raw) as List).single as Map<String, dynamic>;
+    expect(raw, isNot(contains('enable-example-secret')));
+    expect(json.containsKey('enablePassword'), isFalse);
+    expect(json['enablePasswordEnc'], isNotNull);
+    expect(json['enablePasswordEnc'], isNot(json['passwordEnc']));
+    expect((await StorageService().loadConnections()).single.enablePassword, 'enable-example-secret');
+    expect(SavedConnection.fromJson({'name': 'DEVICE-02', 'host': '192.0.2.11'}).enablePassword, '');
+  });
+
+  test('an unopened enable password survives a save', () async {
+    final c = connection()..enablePassword = 'enable-example-secret';
+    await StorageService().saveConnections([c]);
+    final before = (jsonDecode(await stored()) as List).single['enablePasswordEnc'];
+    PasswordVault.storeOverride = _BrokenKeyStore();
+    final storage = StorageService();
+    final loaded = await storage.loadConnections();
+    expect(loaded.single.enablePassword, '');
+    await storage.saveConnections(loaded);
+    expect((jsonDecode(await stored()) as List).single['enablePasswordEnc'], before);
+  });
+
+  test('a plain enable password is migrated without losing it', () async {
+    final old = SavedConnection(
+      id: 'id-1', name: 'DEVICE-01', host: '192.0.2.10',
+      enablePassword: 'enable-example-secret',
+    );
+    SharedPreferences.setMockInitialValues({'commands.connections': jsonEncode([old.toJson()])});
+    final storage = StorageService();
+    final loaded = await storage.loadConnections();
+    expect(storage.needsPasswordMigration, isTrue);
+    await storage.saveConnections(loaded);
+    expect(storage.needsPasswordMigration, isFalse);
+    expect(await stored(), isNot(contains('enable-example-secret')));
+    expect((await StorageService().loadConnections()).single.enablePassword, 'enable-example-secret');
+  });
+
+  test('enable encryption failure retains the value for a later save', () async {
+    PasswordVault.storeOverride = _BrokenKeyStore();
+    final storage = StorageService();
+    final c = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10', enablePassword: 'enable-example-secret');
+    await storage.saveConnections([c]);
+    expect(storage.needsPasswordMigration, isTrue);
+    expect((jsonDecode(await stored()) as List).single['enablePassword'], 'enable-example-secret');
+  });
+
   test('a password saved in plain text by an older version is moved over', () async {
     final old = connection().toJson();
     SharedPreferences.setMockInitialValues({

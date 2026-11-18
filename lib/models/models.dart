@@ -59,6 +59,7 @@ class SavedConnection {
   String username;
   bool rememberPassword;
   String password;
+  String enablePassword; // SSH switch privilege password, separate from login
   String? folderId;
   ConnectionProtocol protocol;
   String? domain; // RDP only
@@ -88,6 +89,7 @@ class SavedConnection {
     this.username = '',
     this.rememberPassword = false,
     this.password = '',
+    this.enablePassword = '',
     this.folderId,
     this.protocol = ConnectionProtocol.ssh,
     this.domain,
@@ -108,6 +110,7 @@ class SavedConnection {
         'username': username,
         'rememberPassword': rememberPassword,
         'password': rememberPassword ? password : '',
+        if (enablePassword.isNotEmpty) 'enablePassword': enablePassword,
         'folderId': folderId,
         'protocol': protocol.name,
         'domain': domain,
@@ -128,6 +131,7 @@ class SavedConnection {
         username: json['username'] as String? ?? '',
         rememberPassword: json['rememberPassword'] as bool? ?? false,
         password: json['password'] as String? ?? '',
+        enablePassword: json['enablePassword'] as String? ?? '',
         folderId: json['folderId'] as String?,
         protocol: ConnectionProtocol.values.firstWhere(
           (p) => p.name == (json['protocol'] as String? ?? 'ssh'),

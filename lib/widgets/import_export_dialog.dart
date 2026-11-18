@@ -197,6 +197,7 @@ Future<void> _confirmAndImportParsed(
     if (!picked.passwordIds.contains(c.id)) {
       c.password = '';
       c.rememberPassword = false;
+      c.enablePassword = '';
     }
     return c;
   }).toList();
