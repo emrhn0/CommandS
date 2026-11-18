@@ -16,14 +16,16 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('capture IP sorting preview with example connections', (tester) async {
-    final uiFont = FontLoader('Segoe UI')
-      ..addFont(File(r'C:\Windows\Fonts\segoeui.ttf')
-          .readAsBytes()
-          .then((bytes) => ByteData.sublistView(bytes)));
-    await uiFont.load();
-    final icons = FontLoader('MaterialIcons')
-      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
-    await icons.load();
+    await tester.runAsync(() async {
+      final uiFont = FontLoader('Segoe UI')
+        ..addFont(File(r'C:\Windows\Fonts\segoeui.ttf')
+            .readAsBytes()
+            .then((bytes) => ByteData.sublistView(bytes)));
+      await uiFont.load();
+      final icons = FontLoader('MaterialIcons')
+        ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+      await icons.load();
+    });
     tester.view.devicePixelRatio = 2;
     addTearDown(() => tester.view.resetDevicePixelRatio());
     await tester.binding.setSurfaceSize(const Size(360, 520));
