@@ -369,18 +369,38 @@ class PtySessionController implements TerminalSessionController {
     }
   }
 
+  /// The connection said yes to its login question before, with "Remember":
+  /// the question is answered yes by itself, without the bar, and the saved
+  /// password typed at the prompt after it as usual.
+  bool answerLoginQuestionYes = false;
+
+  /// Told when the user answers yes and keeps "Remember", so the connection
+  /// is saved with [answerLoginQuestionYes]. Null for an unsaved connection.
+  void Function()? onLoginAnswerRemembered;
+
+  /// Whether the bar can offer to remember the answer.
+  bool get canRememberLoginAnswer => onLoginAnswerRemembered != null;
+
   /// Answers [loginQuestion] from its bar. The password prompt that follows a
-  /// yes is filled in from the saved password, if there is one.
-  void answerLoginQuestion({required bool yes}) {
+  /// yes is filled in from the saved password, if there is one. A yes with
+  /// [remember] is answered by itself from then on.
+  void answerLoginQuestion({required bool yes, bool remember = false}) {
     if (loginQuestion.value == null) return;
     loginQuestion.value = null;
     if (!yes) _login?.declined();
     _write(yes ? 'yes\r' : 'no\r');
+    if (yes && remember && onLoginAnswerRemembered != null) {
+      answerLoginQuestionYes = true;
+      onLoginAnswerRemembered!();
+    }
   }
 
   void _watchLogin(String text) {
     final event = _login?.feed(text);
-    if (event is LoginQuestion) {
+    if (event is LoginQuestion && answerLoginQuestionYes) {
+      // Remembered: as if yes were pressed on the bar.
+      _write('yes\r');
+    } else if (event is LoginQuestion) {
       loginQuestion.value = event.text;
     } else if (event is LoginPasswordPrompt) {
       loginQuestion.value = null;

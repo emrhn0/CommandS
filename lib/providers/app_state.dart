@@ -185,6 +185,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// From now on, the login question of connection [id] is answered yes by
+  /// itself (see SavedConnection.answerLoginQuestionYes).
+  Future<void> _rememberLoginYes(String id) async {
+    final conn = connections.where((c) => c.id == id).firstOrNull;
+    if (conn == null || conn.answerLoginQuestionYes) return;
+    conn.answerLoginQuestionYes = true;
+    await _storage.saveConnections(connections);
+    notifyListeners();
+  }
+
   /// How many saved connections log in with profile [id].
   int profileUseCount(String id) => connections.where((c) => c.credentialProfileId == id).length;
 
@@ -1186,6 +1196,11 @@ class AppState extends ChangeNotifier {
     );
     if (controller is PtySessionController) {
       controller.onDeviceDetected = (kind) => _deviceDetected(conn.id, kind);
+      controller.answerLoginQuestionYes = conn.answerLoginQuestionYes;
+      // Only a saved connection can remember the answer.
+      if (connections.any((c) => c.id == conn.id)) {
+        controller.onLoginAnswerRemembered = () => _rememberLoginYes(conn.id);
+      }
       if (conn.autoNamePending && !_hostnameWatchers.containsKey(conn.id)) {
         _hostnameWatchers[conn.id] = HostnameDiscovery(
           output: controller.outputStream,

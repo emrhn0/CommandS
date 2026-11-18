@@ -81,6 +81,11 @@ class SavedConnection {
   /// own [username] and [password]. Null to use its own.
   String? credentialProfileId;
 
+  /// SSH: the yes/no question some devices ask at login (a firewall's banner
+  /// acknowledgement) is answered yes by itself, and the saved password
+  /// typed after it. Set when the user answers yes and keeps "Remember".
+  bool answerLoginQuestionYes;
+
   SavedConnection({
     String? id,
     required this.name,
@@ -100,6 +105,7 @@ class SavedConnection {
     this.deviceManual = false,
     this.autoNamePending = false,
     this.credentialProfileId,
+    this.answerLoginQuestionYes = false,
   }) : id = id ?? _uuid.v4();
 
   Map<String, dynamic> toJson() => {
@@ -121,6 +127,7 @@ class SavedConnection {
         if (deviceManual) 'deviceManual': true,
         if (autoNamePending) 'autoNamePending': true,
         if (credentialProfileId != null) 'credentialProfileId': credentialProfileId,
+        if (answerLoginQuestionYes) 'answerLoginQuestionYes': true,
       };
 
   factory SavedConnection.fromJson(Map<String, dynamic> json) => SavedConnection(
@@ -145,6 +152,7 @@ class SavedConnection {
         deviceManual: json['deviceManual'] as bool? ?? false,
         autoNamePending: json['autoNamePending'] as bool? ?? false,
         credentialProfileId: json['credentialProfileId'] as String?,
+        answerLoginQuestionYes: json['answerLoginQuestionYes'] as bool? ?? false,
       );
 
   String get label => '$name - $host';

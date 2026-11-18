@@ -527,4 +527,8 @@ const turkish = <String, String>{
   'Favorites': 'Favoriler',
   'Remove from favorites': 'Favorilerden çıkar',
   'Add to favorites': 'Favorilere ekle',
+  'Next time, answer yes and log in by itself': 'Bir dahaki sefere evet de ve kendiliğinden giriş yap',
+  'Remember': 'Hatırla',
+  'Answer yes to the login question (yes/no) by itself': 'Girişteki (yes/no) sorusuna kendiliğinden evet de',
+  'Restore backup': 'Geri yükle',
 };

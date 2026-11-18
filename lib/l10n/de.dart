@@ -531,4 +531,8 @@ const german = <String, String>{
   'Favorites': 'Favoriten',
   'Remove from favorites': 'Aus Favoriten entfernen',
   'Add to favorites': 'Zu Favoriten hinzufügen',
+  'Next time, answer yes and log in by itself': 'Beim nächsten Mal von selbst mit Ja antworten und anmelden',
+  'Remember': 'Merken',
+  'Answer yes to the login question (yes/no) by itself': 'Die Anmeldefrage (yes/no) von selbst mit Ja beantworten',
+  'Restore backup': 'Wiederherstellen',
 };

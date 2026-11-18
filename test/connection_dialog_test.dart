@@ -65,6 +65,13 @@ void main() {
   testWidgets(
     'SSH connection has an off-by-default recording checkbox under Other',
     (tester) async {
+      // The recording box, among the others under Other.
+      bool? recording(WidgetTester tester) => tester
+          .widget<Checkbox>(find.descendant(
+            of: find.ancestor(of: find.text('Record session automatically'), matching: find.byType(Row)).first,
+            matching: find.byType(Checkbox),
+          ))
+          .value;
       tester.view.physicalSize = const Size(1000, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -96,19 +103,19 @@ void main() {
         tester.getTopLeft(find.text('OTHER')).dy,
         greaterThan(tester.getTopLeft(find.text('CREDENTIALS')).dy),
       );
-      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+      expect(recording(tester), isFalse);
       await tester.ensureVisible(find.text('Record session automatically'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Record session automatically'));
       await tester.pump();
-      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+      expect(recording(tester), isTrue);
       await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
       await tester.pumpAndSettle();
       expect(app.connections.single.recordSessionByDefault, isTrue);
 
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+      expect(recording(tester), isTrue);
       await tester.tap(find.text('RDP'));
       await tester.pumpAndSettle();
       expect(find.text('Record session automatically'), findsNothing);

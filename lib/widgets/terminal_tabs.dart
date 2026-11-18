@@ -1830,8 +1830,9 @@ class _TerminalPaneState extends State<_TerminalPane> {
               : _LoginQuestionBar(
                   question: question,
                   hasPassword: session.hasSavedPassword,
-                  onAnswer: (yes) {
-                    session.answerLoginQuestion(yes: yes);
+                  canRemember: session.canRememberLoginAnswer,
+                  onAnswer: (yes, remember) {
+                    session.answerLoginQuestion(yes: yes, remember: remember);
                     _focusNode.requestFocus();
                   },
                 ),
@@ -2100,15 +2101,34 @@ class _HostKeyChangedBarState extends State<_HostKeyChangedBar> {
   }
 }
 
-class _LoginQuestionBar extends StatelessWidget {
-  const _LoginQuestionBar({required this.question, required this.hasPassword, required this.onAnswer});
+class _LoginQuestionBar extends StatefulWidget {
+  const _LoginQuestionBar({
+    required this.question,
+    required this.hasPassword,
+    required this.canRemember,
+    required this.onAnswer,
+  });
 
   final String question;
   final bool hasPassword;
-  final ValueChanged<bool> onAnswer;
+
+  /// A saved connection: "Remember" is offered, ticked, so the next login
+  /// answers yes by itself.
+  final bool canRemember;
+  final void Function(bool yes, bool remember) onAnswer;
+
+  @override
+  State<_LoginQuestionBar> createState() => _LoginQuestionBarState();
+}
+
+class _LoginQuestionBarState extends State<_LoginQuestionBar> {
+  bool _remember = true;
 
   @override
   Widget build(BuildContext context) {
+    final question = widget.question;
+    final hasPassword = widget.hasPassword;
+    void onAnswer(bool yes) => widget.onAnswer(yes, widget.canRemember && _remember);
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surface,
@@ -2133,6 +2153,31 @@ class _LoginQuestionBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            if (widget.canRemember)
+              Tooltip(
+                message: tr('Next time, answer yes and log in by itself'),
+                child: InkWell(
+                  key: const Key('login-question-remember'),
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => setState(() => _remember = !_remember),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _remember ? Icons.check_box : Icons.check_box_outline_blank,
+                          size: 15,
+                          color: _remember ? theme.colorScheme.primary : theme.textTheme.bodySmall?.color,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(tr('Remember'), style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(width: 6),
             TextButton(onPressed: () => onAnswer(false), child: Text(tr('No'))),
             const SizedBox(width: 4),
             FilledButton(onPressed: () => onAnswer(true), child: Text(tr('Yes'))),

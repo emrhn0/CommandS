@@ -79,7 +79,7 @@ class _BackupsPanelState extends State<BackupsPanel> {
           ElevatedButton(
             key: const Key('backup-restore-confirm'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(tr('Restore')),
+            child: Text(tr('Restore backup')),
           ),
         ],
       ),
@@ -172,7 +172,7 @@ class _BackupsPanelState extends State<BackupsPanel> {
                     ),
                   TextButton(
                     onPressed: _busy ? null : () => _restore(e),
-                    child: Text(tr('Restore')),
+                    child: Text(tr('Restore backup')),
                   ),
                 ],
               ),

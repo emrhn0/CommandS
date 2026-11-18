@@ -69,6 +69,9 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   bool _rdpWallpaper = false;
   bool _recordSessionByDefault = false;
 
+  /// SSH: answer the login yes/no question by itself.
+  bool _answerLoginYes = false;
+
   /// The credential profile to log in with; null for this connection's own
   /// user name and password.
   String? _profileId;
@@ -99,6 +102,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       _rdpClipboard = existing.rdpClipboard;
       _rdpWallpaper = existing.rdpWallpaper;
       _recordSessionByDefault = existing.recordSessionByDefault;
+      _answerLoginYes = existing.answerLoginQuestionYes;
       _profileId = existing.credentialProfileId;
       if (existing.deviceManual) {
         _pickedDevice = existing.device;
@@ -173,6 +177,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       device: _pickedDevice ?? _detectedDevice,
       deviceManual: _pickedDevice != null,
       credentialProfileId: _profileId,
+      answerLoginQuestionYes: _protocol == ConnectionProtocol.ssh && _answerLoginYes,
     );
   }
 
@@ -433,6 +438,27 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                   ),
                   const SizedBox(width: 4),
                   Expanded(child: Text(tr('Record session automatically'), style: const TextStyle(fontSize: 13))),
+                ],
+              ),
+            ),
+            InkWell(
+              key: const Key('answer-login-yes'),
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => setState(() => _answerLoginYes = !_answerLoginYes),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: _answerLoginYes,
+                    onChanged: (v) => setState(() => _answerLoginYes = v ?? false),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      tr('Answer yes to the login question (yes/no) by itself'),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
                 ],
               ),
             ),
