@@ -1210,7 +1210,11 @@ class _SelectionBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final actionSize = constraints.maxWidth < 210 ? 20.0 : 24.0;
+          final actionSize = constraints.maxWidth < 190
+              ? 18.0
+              : constraints.maxWidth < 210
+                  ? 20.0
+                  : 24.0;
           return Row(
             children: [
               Container(

@@ -133,6 +133,8 @@ void main() {
         ['DEVICE-02', 'DEVICE-10']);
     expect(tester.getCenter(find.text('DEVICE-02')).dy,
         lessThan(tester.getCenter(find.text('DEVICE-10')).dy));
+    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.pumpAndSettle();
     await tester.binding.setSurfaceSize(const Size(200, 500));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
