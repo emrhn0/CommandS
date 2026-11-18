@@ -465,7 +465,16 @@ class RdpChannel {
     final generation = ++_holdGeneration;
     if (now) {
       _freezeThenSuspend(generation);
+      // Said again while held: a session that was starting, or that came
+      // back for any reason, steps aside as well. The native side does
+      // nothing when a session is already hidden.
+      _reassert?.cancel();
+      _reassert = Timer.periodic(reassertEvery, (_) {
+        if (_holds > 0) _safely(setSuspended(true));
+      });
     } else {
+      _reassert?.cancel();
+      _reassert = null;
       // At once, so anything sent to a session next finds it back.
       _safely(setSuspended(false));
       // The picture stays a moment, or the pane flashes black as the window
@@ -476,11 +485,32 @@ class RdpChannel {
     }
   }
 
+  Timer? _reassert;
+
+  /// How often a hold is said again while it lasts.
+  static const reassertEvery = Duration(milliseconds: 400);
+
+  /// The longest a dialog waits for the sessions' pictures before they step
+  /// aside anyway.
+  static const captureTimeout = Duration(milliseconds: 150);
+
   void _safely(Future<void> call) => call.catchError((Object _) {});
 
+  /// Takes a picture of each session, then has them step aside at once. The
+  /// pictures are decoded afterwards: a dialog must never wait behind a
+  /// session for that, and a session left up while the app is busy (or in
+  /// the background) is what once covered the update prompt.
   Future<void> _freezeThenSuspend(int generation) async {
+    List<Object?>? frames;
     try {
-      final frames = await _channel.invokeListMethod<Object?>('captureFrames');
+      frames = await _channel.invokeListMethod<Object?>('captureFrames').timeout(captureTimeout);
+    } catch (_) {
+      // No picture is only cosmetic. The session still has to step aside.
+    }
+    // Let go of in the meantime: the session stays where it is.
+    if (generation != _holdGeneration) return;
+    _safely(setSuspended(true));
+    try {
       for (final f in frames ?? const <Object?>[]) {
         final frame = (f as Map).cast<String, Object?>();
         final target = _frameTargets[frame['id'] as int];
@@ -498,12 +528,7 @@ class RdpChannel {
         target.value = image;
         old?.dispose();
       }
-    } catch (_) {
-      // No picture is only cosmetic. The session still has to step aside.
-    }
-    // Let go of in the meantime: the session stays where it is.
-    if (generation != _holdGeneration) return;
-    _safely(setSuspended(true));
+    } catch (_) {}
   }
 
   Future<ui.Image> _decode(Uint8List pixels, int width, int height) {
