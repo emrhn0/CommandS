@@ -1216,6 +1216,8 @@ class _SelectionBar extends StatelessWidget {
                   ? 20.0
                   : 24.0;
           return Row(
+            // Remount animated buttons at their new width during a resize.
+            key: ValueKey(actionSize),
             children: [
               Container(
                 height: 20,
