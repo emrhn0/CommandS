@@ -73,6 +73,73 @@ void main() {
     app.dispose();
   });
 
+  testWidgets('selected hosts sort by numeric IP, preserving other slots and folders', (tester) async {
+    final app = AppState();
+    await tester.pump();
+    final folder = ConnectionFolder(name: 'CUSTOMER-A');
+    final otherFolder = ConnectionFolder(name: 'CUSTOMER-B');
+    app.folders.addAll([folder, otherFolder]);
+    SavedConnection host(String name, String address, String folderId) =>
+        SavedConnection(name: name, host: address, folderId: folderId);
+    final ten = host('DEVICE-10', '192.0.2.10', folder.id);
+    final untouched = host('KEEP', '192.0.2.99', folder.id);
+    final hostname = host('HOSTNAME', 'device.example', folder.id);
+    final two = host('DEVICE-02', '192.0.2.2', folder.id);
+    final ipv6 = host('DEVICE-V6', '2001:db8::1', folder.id);
+    final otherTen = host('OTHER-10', '198.51.100.10', otherFolder.id);
+    final otherTwo = host('OTHER-02', '198.51.100.2', otherFolder.id);
+    app.connections.addAll([ten, untouched, hostname, two, ipv6, otherTen, otherTwo]);
+    app.connectionOrder = app.connections.map((c) => c.id).toList();
+
+    await app.sortConnectionsByIp([
+      ten.id, hostname.id, two.id, ipv6.id, otherTen.id, otherTwo.id,
+    ]);
+    List<String> namesIn(String folderId) => app
+        .sortConnections(app.connections.where((c) => c.folderId == folderId).toList())
+        .map((c) => c.name)
+        .toList();
+    expect(namesIn(folder.id), [
+      'DEVICE-02', 'KEEP', 'DEVICE-10', 'DEVICE-V6', 'HOSTNAME',
+    ]);
+    expect(namesIn(otherFolder.id), ['OTHER-02', 'OTHER-10']);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('commands.connectionOrder'), app.connectionOrder);
+    app.dispose();
+  });
+
+  testWidgets('host selection offers IP sorting and updates visible order', (tester) async {
+    final app = AppState();
+    await tester.pump();
+    final folder = ConnectionFolder(name: 'CUSTOMER-A');
+    app.folders.add(folder);
+    final ten = SavedConnection(name: 'DEVICE-10', host: '192.0.2.10', folderId: folder.id);
+    final two = SavedConnection(name: 'DEVICE-02', host: '192.0.2.2', folderId: folder.id);
+    app.connections.addAll([ten, two]);
+    app.connectionOrder = [ten.id, two.id];
+    await showTree(tester, app);
+    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('select-mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DEVICE-10'));
+    await tester.pump();
+    await tester.tap(find.text('DEVICE-02'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('sort-selected-by-ip')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sort-selected-by-ip')));
+    await tester.pumpAndSettle();
+    expect(app.sortConnections([...app.connections]).map((c) => c.name).toList(),
+        ['DEVICE-02', 'DEVICE-10']);
+    expect(tester.getCenter(find.text('DEVICE-02')).dy,
+        lessThan(tester.getCenter(find.text('DEVICE-10')).dy));
+    await tester.binding.setSurfaceSize(const Size(200, 500));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    app.dispose();
+  });
+
   testWidgets('host-only selection offers A–Z and reorders the visible hosts', (
     tester,
   ) async {
@@ -146,6 +213,7 @@ void main() {
       await tester.tap(find.text('HOST-B'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('sort-selected')), findsNothing);
+      expect(find.byKey(const ValueKey('sort-selected-by-ip')), findsNothing);
       await tester.pumpWidget(const SizedBox());
       app.dispose();
     },
