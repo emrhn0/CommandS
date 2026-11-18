@@ -26,7 +26,9 @@ jobs:
         run: |
           flutter pub get
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          flutter analyze lib test
+          # Warnings and errors stop the build; info notes (such as a newer
+          # Flutter marking an import as deprecated) do not.
+          flutter analyze --no-fatal-infos lib test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           flutter test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

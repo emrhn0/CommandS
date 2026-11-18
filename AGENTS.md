@@ -22,7 +22,7 @@ saved with `shared_preferences`.
 
 ```sh
 flutter pub get
-flutter analyze lib test           # must be clean: CI runs it, and a release is not built otherwise
+flutter analyze lib test           # no warnings or errors: CI runs it (info notes allowed), and a release is not built otherwise
 flutter test                       # unit + widget tests, all must pass
 flutter run -d windows             # debug run
 flutter build windows --release
