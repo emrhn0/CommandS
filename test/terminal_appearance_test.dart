@@ -51,6 +51,8 @@ void main() {
 
     test('font choice is remembered and can be reset', () async {
       final app = AppState();
+      // As in the app, which shows nothing before the saved state is read.
+      await app.ready;
       await app.setTerminalFont(family: 'Fira Code', size: 17);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('commands.terminalFont'), 'Fira Code');

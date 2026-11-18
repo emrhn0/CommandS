@@ -57,8 +57,29 @@ jobs:
             fi
           fi
 
+  # Nothing is built unless the analyzer is clean and every test passes. A
+  # failure stops here: the draft above stays a draft, which the in-app
+  # updater never sees.
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Analyze and test
+        run: |
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter analyze lib test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   windows:
-    needs: version
+    needs: [version, test]
     runs-on: windows-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -78,17 +99,34 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The fallback SSH client, for a Windows without the OpenSSH client.
+      # Straight from PuTTY's own site, one fixed version, and checked against
+      # the SHA-256 PuTTY publishes for it: no package manager in between.
       - name: Bundle plink.exe
         shell: pwsh
+        env:
+          PLINK_URL: https://the.earth.li/~sgtatham/putty/0.85/w64/plink.exe
+          PLINK_SHA256: 969f36879d5716aa1a9811f43a6a6510e8f08372dbeb9695b810b9c776f39c75
         run: |
-          choco install putty.install --no-progress -y
-          $plink = Get-ChildItem -Path "C:\Program Files\PuTTY","C:\Program Files (x86)\PuTTY" `
-            -Filter plink.exe -ErrorAction SilentlyContinue -Recurse | Select-Object -First 1
-          if (-not $plink) { throw "plink.exe not found after chocolatey install" }
-          Copy-Item $plink.FullName "build\windows\x64\runner\Release\plink.exe"
+          $out = "build\windows\x64\runner\Release\plink.exe"
+          for ($i = 1; $i -le 5; $i++) {
+            try { Invoke-WebRequest -Uri $env:PLINK_URL -OutFile $out -UseBasicParsing; break }
+            catch { if ($i -eq 5) { throw }; Write-Host "Download failed, retrying ($i)"; Start-Sleep -Seconds (10 * $i) }
+          }
+          $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:PLINK_SHA256) { throw "plink.exe checksum mismatch: $hash" }
 
+      # Often already on the runner; otherwise installed, with retries, as
+      # the package site has had outages.
       - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") { exit 0 }
+          for ($i = 1; $i -le 5; $i++) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "Install failed, retrying ($i)"; Start-Sleep -Seconds (15 * $i)
+          }
+          exit 1
 
       - name: Build installer (.exe)
         shell: pwsh
@@ -113,7 +151,7 @@ jobs:
         run: gh release upload "${GITHUB_REF#refs/tags/}" dist2/*.zip dist2/*Setup.exe --clobber
 
   macos:
-    needs: version
+    needs: [version, test]
     runs-on: macos-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}

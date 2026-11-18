@@ -17,6 +17,7 @@ import '../services/rdm_import.dart';
 import '../services/rdp_session.dart';
 import '../services/serial_session.dart';
 import '../services/session_controller.dart';
+import '../services/backup_service.dart';
 import '../services/storage_service.dart';
 import '../services/pty_session.dart';
 import '../services/hostname_discovery.dart';
@@ -62,6 +63,133 @@ class AppState extends ChangeNotifier {
   late final Future<void> ready;
 
   final _storage = StorageService();
+
+  /// Copies of the saved connections, taken daily and before big changes.
+  final BackupService backups = BackupService();
+
+  /// The saved connections could not be read at start. Nothing is saved
+  /// over them until a backup is restored (see [StorageService.loadFailed]).
+  bool get storageLoadFailed => _storage.loadFailed;
+
+  /// SSH tabs ticked for typing into several sessions at once: what is typed
+  /// into one goes to all of them, while at least two are ticked.
+  final Set<String> broadcastTabIds = {};
+
+  bool isBroadcasting(String tabId) => broadcastTabIds.contains(tabId);
+
+  /// Ticks or unticks [tabId] for typing into several sessions at once.
+  void toggleBroadcast(String tabId) {
+    final tab = tabs.where((t) => t.id == tabId).firstOrNull;
+    final session = tab?.controller;
+    if (tab == null || session is! PtySessionController) return;
+    if (broadcastTabIds.remove(tabId)) {
+      session.onTyped = null;
+    } else {
+      broadcastTabIds.add(tabId);
+      session.onTyped = (data) => _broadcastFrom(tabId, data);
+    }
+    notifyListeners();
+  }
+
+  void _leaveBroadcast(OpenTab tab) {
+    if (!broadcastTabIds.remove(tab.id)) return;
+    final session = tab.controller;
+    if (session is PtySessionController) session.onTyped = null;
+  }
+
+  void _broadcastFrom(String sourceId, String data) {
+    if (broadcastTabIds.length < 2 || !broadcastTabIds.contains(sourceId)) return;
+    for (final t in tabs) {
+      if (t.id == sourceId || !broadcastTabIds.contains(t.id)) continue;
+      final session = t.controller;
+      if (session is PtySessionController) session.receiveTyped(data);
+    }
+  }
+
+  /// Connections starred from their menu, in the order they were starred.
+  List<String> favoriteConnectionIds = [];
+
+  bool isFavorite(String connectionId) => favoriteConnectionIds.contains(connectionId);
+
+  /// The starred connections that still exist.
+  List<SavedConnection> get favoriteConnections => [
+        for (final id in favoriteConnectionIds) ?connections.where((c) => c.id == id).firstOrNull,
+      ];
+
+  Future<void> toggleFavorite(String connectionId) async {
+    if (!favoriteConnectionIds.remove(connectionId)) favoriteConnectionIds.add(connectionId);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kFavorites, favoriteConnectionIds);
+  }
+
+  /// A folder or connection to show in the connection list: its folders are
+  /// opened, it is selected and scrolled to (see ConnectionTree).
+  final revealRequest = ValueNotifier<String?>(null);
+
+  void reveal(String id) {
+    if (!sidebarVisible) setSidebarVisible(true);
+    revealRequest.value = null;
+    revealRequest.value = id;
+  }
+
+  /// Shared user names and passwords (Settings > Connections).
+  List<CredentialProfile> credentialProfiles = [];
+
+  CredentialProfile? profileOf(SavedConnection conn) {
+    final id = conn.credentialProfileId;
+    return id == null ? null : credentialProfiles.where((p) => p.id == id).firstOrNull;
+  }
+
+  /// [conn] as it logs in: with its profile's user name and password when it
+  /// uses one, and as it is otherwise. The saved connection is not changed.
+  SavedConnection resolved(SavedConnection conn) {
+    final profile = profileOf(conn);
+    if (profile == null) return conn;
+    return SavedConnection.fromJson(conn.toJson())
+      ..password = profile.password
+      ..rememberPassword = true
+      ..username = profile.username;
+  }
+
+  Future<void> upsertProfile(CredentialProfile profile) async {
+    final i = credentialProfiles.indexWhere((p) => p.id == profile.id);
+    if (i == -1) {
+      credentialProfiles.add(profile);
+    } else {
+      credentialProfiles[i] = profile;
+    }
+    await _storage.saveProfiles(credentialProfiles);
+    notifyListeners();
+  }
+
+  /// Connections using the profile keep working: each takes its user name
+  /// and password as its own.
+  Future<void> deleteProfile(String id) async {
+    final profile = credentialProfiles.where((p) => p.id == id).firstOrNull;
+    if (profile == null) return;
+    await backups.backUp(BackupReason.beforeDelete);
+    var changed = false;
+    for (final c in connections) {
+      if (c.credentialProfileId != id) continue;
+      c
+        ..credentialProfileId = null
+        ..username = profile.username
+        ..password = profile.password
+        ..rememberPassword = true;
+      changed = true;
+    }
+    credentialProfiles.removeWhere((p) => p.id == id);
+    await _storage.saveProfiles(credentialProfiles);
+    if (changed) await _storage.saveConnections(connections);
+    notifyListeners();
+  }
+
+  /// How many saved connections log in with profile [id].
+  int profileUseCount(String id) => connections.where((c) => c.credentialProfileId == id).length;
+
+  /// The day's backup, taken in the background after the start.
+  Future<void> dailyBackup = Future.value();
   final HostnameDetectionLog _hostnameLog;
   final Map<String, HostnameDiscovery> _hostnameWatchers = {};
 
@@ -87,6 +215,7 @@ class AppState extends ChangeNotifier {
   static const _kFolderOrder = 'commands.folderOrder';
   static const _kConnectionOrder = 'commands.connectionOrder';
   static const _kRecentConnections = 'commands.recentConnections';
+  static const _kFavorites = 'commands.favorites';
   static const _kSidebarWidth = 'commands.sidebarWidth';
   static const _kSidebarVisible = 'commands.sidebarVisible';
   static const _kCustomLayouts = 'commands.customLayouts';
@@ -189,6 +318,10 @@ class AppState extends ChangeNotifier {
     folders = await _storage.loadFolders();
     connections = await _storage.loadConnections();
     layouts = await _storage.loadLayouts();
+    credentialProfiles = await _storage.loadProfiles();
+    // Only a store that was read is worth a copy. It is not waited for: a
+    // backup never holds up the start.
+    if (!_storage.loadFailed) dailyBackup = backups.dailyIfDue();
     final changed = _dedupeExisting();
     if (changed) {
       await _storage.saveFolders(folders);
@@ -202,6 +335,7 @@ class AppState extends ChangeNotifier {
     folderOrder = prefs.getStringList(_kFolderOrder) ?? [];
     connectionOrder = prefs.getStringList(_kConnectionOrder) ?? [];
     recentConnectionIds = prefs.getStringList(_kRecentConnections) ?? [];
+    favoriteConnectionIds = prefs.getStringList(_kFavorites) ?? [];
     sidebarWidth = (prefs.getDouble(_kSidebarWidth) ?? defaultSidebarWidth).clamp(minSidebarWidth, maxSidebarWidth);
     sidebarVisible = prefs.getBool(_kSidebarVisible) ?? true;
     customLayouts = [
@@ -404,7 +538,7 @@ class AppState extends ChangeNotifier {
     final keptFolders = <String, ConnectionFolder>{};
     final orderedFolderKeys = <String>[];
     for (final f in folders) {
-      final key = '${f.parentId ?? ''} ${f.name.trim().toLowerCase()}';
+      final key = '${f.parentId ?? ''}\u0000${f.name.trim().toLowerCase()}';
       final existing = keptFolders[key];
       if (existing == null) {
         keptFolders[key] = f;
@@ -435,7 +569,7 @@ class AppState extends ChangeNotifier {
         }
       }
       final key =
-          '${c.host.trim().toLowerCase()} ${c.port} ${c.protocol.name} ${c.username.trim().toLowerCase()}';
+          '${c.host.trim().toLowerCase()}\u0000${c.port}\u0000${c.protocol.name}\u0000${c.username.trim().toLowerCase()}';
       final existing = keptConnections[key];
       if (existing == null) {
         keptConnections[key] = c;
@@ -493,6 +627,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteFolder(String id) async {
+    await backups.backUp(BackupReason.beforeDelete);
     folders.removeWhere((e) => e.id == id);
     // Children lose their folder, they are not deleted.
     for (final c in connections) {
@@ -705,6 +840,7 @@ class AppState extends ChangeNotifier {
     Iterable<String> connectionIds = const [],
     Iterable<String> layoutIds = const [],
   }) async {
+    await backups.backUp(BackupReason.beforeDelete);
     final goneFolders = <String>{for (final id in folderIds) ...folderTree(id)};
     final goneConnections = {
       ...connectionIds,
@@ -789,6 +925,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteConnection(String id) async {
+    await backups.backUp(BackupReason.beforeDelete);
     _hostnameWatchers.remove(id)?.dispose();
     connections.removeWhere((e) => e.id == id);
     await _storage.saveConnections(connections);
@@ -896,6 +1033,7 @@ class AppState extends ChangeNotifier {
     List<SavedConnection> parsedConnections, {
     List<SavedLayout> parsedLayouts = const [],
   }) async {
+    await backups.backUp(BackupReason.beforeImport);
     for (final f in parsedFolders) {
       final i = folders.indexWhere((e) => e.id == f.id);
       if (i == -1) {
@@ -934,6 +1072,7 @@ class AppState extends ChangeNotifier {
   /// of duplicating them. A locally-remembered password survives a re-import
   /// even though RDM never supplies one.
   Future<void> importRdm(RdmImportResult result) async {
+    await backups.backUp(BackupReason.beforeImport);
     for (final f in result.folders) {
       final i = folders.indexWhere((e) => e.id == f.id);
       if (i == -1) {
@@ -1019,7 +1158,8 @@ class AppState extends ChangeNotifier {
   int _tabSerial = 0;
 
   /// Creates a tab for [conn] without changing what is on screen.
-  OpenTab _openTab(SavedConnection conn) {
+  OpenTab _openTab(SavedConnection saved) {
+    final conn = resolved(saved);
     final SessionController controller = conn.protocol == ConnectionProtocol.rdp
         // The embedding controller talks to a win32-only method channel
         // (windows/runner/rdp_plugin.cpp); anywhere else that channel does not
@@ -1173,6 +1313,20 @@ class AppState extends ChangeNotifier {
     layouts.firstWhere((l) => l.id == id).folderId = folderId;
     await _storage.saveLayouts(layouts);
     notifyListeners();
+  }
+
+  /// Puts the folders, connections and layouts of [entry] back, and shows
+  /// them. Open tabs stay as they are. Returns false if the backup could not
+  /// be read; nothing changes then.
+  Future<bool> restoreBackup(BackupEntry entry) async {
+    if (!await backups.restore(entry)) return false;
+    _storage.loadFailed = false;
+    folders = await _storage.loadFolders();
+    connections = await _storage.loadConnections();
+    layouts = await _storage.loadLayouts();
+    credentialProfiles = await _storage.loadProfiles();
+    notifyListeners();
+    return !_storage.loadFailed;
   }
 
   Future<void> deleteLayout(String id) async {
@@ -1474,6 +1628,7 @@ class AppState extends ChangeNotifier {
 
   void closeTab(int index) {
     final tab = tabs.removeAt(index);
+    _leaveBroadcast(tab);
     tab.controller.dispose();
     final group = groupOf(tab.id);
     if (group != null) {

@@ -358,6 +358,53 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
   }
 
+  AppState? _revealSource;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = context.read<AppState>();
+    if (!identical(app, _revealSource)) {
+      _revealSource?.revealRequest.removeListener(_onReveal);
+      _revealSource = app..revealRequest.addListener(_onReveal);
+    }
+  }
+
+  /// Quick search asked to show a folder or connection: its folders open,
+  /// the search box clears, and the row is selected, flashed and scrolled to.
+  void _onReveal() {
+    final app = _revealSource;
+    final id = app?.revealRequest.value;
+    if (app == null || id == null || !mounted) return;
+    final folder = app.folders.where((f) => f.id == id).firstOrNull;
+    final conn = app.connections.where((c) => c.id == id).firstOrNull;
+    if (folder == null && conn == null) return;
+    final parentOf = {for (final f in app.folders) f.id: f.parentId};
+    var cursor = folder?.parentId ?? conn?.folderId;
+    final seen = <String>{};
+    setState(() {
+      _search.clear();
+      _query = '';
+      while (cursor != null && seen.add(cursor!)) {
+        _expanded.add(cursor!);
+        cursor = parentOf[cursor];
+      }
+      if (folder != null) _expanded.add(folder.id);
+      _selected
+        ..clear()
+        ..add(id);
+    });
+    _flashRows([id]);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final index = _visibleRows(app).indexWhere((r) => _rowId(r) == id);
+      if (index < 0) return;
+      final p = _scroll.position;
+      final to = (index * kTreeRowHeight - p.viewportDimension / 3).clamp(p.minScrollExtent, p.maxScrollExtent);
+      _scroll.animateTo(to, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
+    });
+  }
+
   /// A click anywhere else in the app drops the selection, as in Explorer. Not
   /// while a menu or dialog is open: those act on the selection.
   void _clearIfNothingOnTop() {
@@ -375,6 +422,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _revealSource?.revealRequest.removeListener(_onReveal);
     _search.dispose();
     _scroll.dispose();
     _autoScroll?.cancel();
@@ -1444,8 +1492,12 @@ class _ConnectionRow extends StatelessWidget {
       // meaning, so it gets the weight and the host trails behind it, dimmer.
       title: _displayName(conn),
       subtitle: conn.host,
+      favorite: app.isFavorite(conn.id),
       menuItems: [
         const MenuAction('connect', 'Connect', Icons.play_arrow_outlined),
+        app.isFavorite(conn.id)
+            ? const MenuAction('favorite', 'Remove from favorites', Icons.star_rounded)
+            : const MenuAction('favorite', 'Add to favorites', Icons.star_border_rounded),
         if (_mcpGateway(context) case final gateway? when conn.protocol == ConnectionProtocol.ssh)
           gateway.isAllowed(conn.id)
               ? const MenuAction('mcp', 'Remove agent access', Icons.smart_toy_outlined)
@@ -1459,6 +1511,8 @@ class _ConnectionRow extends StatelessWidget {
       onMenu: (key) async {
         if (key == 'connect') {
           await app.openConnection(conn);
+        } else if (key == 'favorite') {
+          await app.toggleFavorite(conn.id);
         } else if (key == 'mcp') {
           final gateway = _mcpGateway(context);
           if (gateway != null) await gateway.setAllowed(conn.id, !gateway.isAllowed(conn.id));
@@ -1598,6 +1652,7 @@ class _TreeRow extends StatefulWidget {
     this.onToggle,
     this.openStatus,
     this.bold = false,
+    this.favorite = false,
   });
 
   /// The folder, connection or layout this row shows.
@@ -1637,6 +1692,9 @@ class _TreeRow extends StatefulWidget {
   final SessionStatus? openStatus;
 
   final bool bold;
+
+  /// A starred connection: a small star after its name.
+  final bool favorite;
   final List<MenuAction> menuItems;
   final ValueChanged<String> onMenu;
 
@@ -1835,6 +1893,15 @@ class _TreeRowState extends State<_TreeRow> {
                                       ),
                                     ),
                                   ),
+                                  if (widget.favorite) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.star_rounded,
+                                      key: ValueKey('favorite-star-${widget.rowId}'),
+                                      size: 12,
+                                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
+                                    ),
+                                  ],
                                   if (widget.subtitle != null && widget.subtitle!.isNotEmpty) ...[
                                     const SizedBox(width: 8),
                                     ConstrainedBox(

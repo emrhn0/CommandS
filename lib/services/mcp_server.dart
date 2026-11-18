@@ -115,7 +115,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
         'name': c.name,
         'host': c.host,
         'port': c.port,
-        'username': c.username,
+        'username': app.resolved(c).username,
         'device_type': c.device?.label ?? 'Unknown',
       },
   ];

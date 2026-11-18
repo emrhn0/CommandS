@@ -14,7 +14,9 @@ import '../services/terminal_appearance.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_presets.dart';
+import '../widgets/backups_panel.dart';
 import '../widgets/color_picker_dialog.dart';
+import '../widgets/credential_profiles.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/import_export_dialog.dart';
 import '../widgets/update_dialog.dart';
@@ -22,9 +24,9 @@ import '../l10n/strings.dart';
 import '../models/models.dart';
 import '../widgets/device_icon.dart';
 
-/// Opens the Settings page.
-Future<void> showSettings(BuildContext context) {
-  return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
+/// Opens the Settings page, on [page].
+Future<void> showSettings(BuildContext context, {SettingsPage page = SettingsPage.general}) {
+  return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => SettingsScreen(initialPage: page)));
 }
 
 /// The pages of Settings, in the order the sidebar lists them.
@@ -77,7 +79,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _Section(title: 'SSH terminal', children: [_TerminalAppearance()]),
         ];
       case SettingsPage.connections:
-        return const [_Section(children: [_ImportExport()])];
+        return const [
+          _Section(children: [_ImportExport()]),
+          SizedBox(height: 18),
+          _Section(title: 'Credential profiles', children: [CredentialProfilesPanel()]),
+          SizedBox(height: 18),
+          _Section(title: 'Backups', children: [BackupsPanel()]),
+        ];
       case SettingsPage.sessionLogs:
         return const [_Section(children: [_SessionLogSettings()])];
       case SettingsPage.privacy:

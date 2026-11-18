@@ -9,6 +9,7 @@ import 'package:xterm/xterm.dart';
 import '../models/models.dart';
 import '../app_version.dart';
 import 'device_detect.dart';
+import 'host_keys.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
 import 'session_log.dart';
@@ -53,10 +54,14 @@ class PtySessionController implements TerminalSessionController {
     this.tabTitle,
     this.recordByDefault = false,
     @visibleForTesting bool startImmediately = true,
+  // Callers pass `username:` and `password:`; a named parameter cannot
+  // initialise the private fields directly, as the lint would like.
+  // ignore: prefer_initializing_formals
   }) : _username = username,
+       // ignore: prefer_initializing_formals
        _password = password {
     terminal = Terminal(maxLines: 10000);
-    terminal.onOutput = _onTerminalInput;
+    terminal.onOutput = _onKeyboard;
     terminal.onResize = (w, h, pw, ph) {
       _pty?.resize(h, w);
     };
@@ -118,6 +123,32 @@ class PtySessionController implements TerminalSessionController {
 
   /// Offered only while a recognized sudo password prompt is visible.
   final sudoPrompt = ValueNotifier<String?>(null);
+
+  /// The device showed a different host key from the one remembered for it,
+  /// and OpenSSH refused to connect. Shown as a bar that explains it and
+  /// offers to forget the old key.
+  final hostKeyChanged = ValueNotifier<bool>(false);
+
+  /// The end of the previous output chunk, so the warning from OpenSSH is found even
+  /// when it arrives split in two.
+  String _hostKeyTail = '';
+
+  void _watchHostKey(String text) {
+    if (hostKeyChanged.value) return;
+    final seen = _hostKeyTail + text;
+    if (HostKeys.changedText.hasMatch(seen)) hostKeyChanged.value = true;
+    _hostKeyTail = seen.length > 64 ? seen.substring(seen.length - 64) : seen;
+  }
+
+  /// Forgets the old host key and connects again, for when the user says the
+  /// device was changed. Returns what went wrong, or null.
+  Future<String?> forgetHostKeyAndReconnect() async {
+    final error = await HostKeys.forget(host: host, port: port);
+    if (error != null) return error;
+    hostKeyChanged.value = false;
+    reconnect();
+    return null;
+  }
   final _sudoWatcher = SudoPromptWatcher();
   Timer? _sudoExpiry;
   static const _sudoOfferLifetime = Duration(seconds: 90);
@@ -442,6 +473,20 @@ class PtySessionController implements TerminalSessionController {
   /// Sends input through the same login handling as the terminal keyboard.
   void sendInput(String data) => _onTerminalInput(data);
 
+  /// Told what the user types or pastes into this terminal, and nothing
+  /// else (not what an agent sends), for typing into several sessions at
+  /// once (see AppState.toggleBroadcast).
+  void Function(String data)? onTyped;
+
+  void _onKeyboard(String data) {
+    _onTerminalInput(data);
+    onTyped?.call(data);
+  }
+
+  /// What another session's keyboard typed, while both are ticked for
+  /// typing into several sessions.
+  void receiveTyped(String data) => _onTerminalInput(data);
+
   /// Hosts and usernames end up inside a batch file, so anything that could
   /// start a second command there is rejected outright rather than escaped.
   /// Legitimate hostnames, IPv4/IPv6 literals and `DOMAIN\user` / `user@realm`
@@ -495,6 +540,8 @@ class PtySessionController implements TerminalSessionController {
     _sniffStop();
     _login = null;
     loginQuestion.value = null;
+    hostKeyChanged.value = false;
+    _hostKeyTail = '';
     try {
       if (!_safeHost.hasMatch(host)) {
         throw UnsafeTargetError('Refusing to connect: "$host" is not a valid host name or address.');
@@ -955,6 +1002,7 @@ class PtySessionController implements TerminalSessionController {
     _sniffAdd(text);
     _watchLogin(text);
     _watchSudo(text);
+    _watchHostKey(text);
   }
 
   @visibleForTesting
@@ -1039,6 +1087,7 @@ class PtySessionController implements TerminalSessionController {
   void dispose() {
     _disposed = true;
     loginQuestion.dispose();
+    hostKeyChanged.dispose();
     sftpOpen.dispose();
     _lineInput = null;
     _stopProcess();

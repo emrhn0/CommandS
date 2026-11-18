@@ -24,15 +24,37 @@ class StorageService {
   static const _kConnections = 'commands.connections';
   static const _kLayouts = 'commands.layouts';
 
+  /// A stored list could not be read. Until it is restored, nothing is saved:
+  /// writing the empty list the app started with would overwrite the
+  /// connections that are still there, only unreadable.
+  bool loadFailed = false;
+
+  /// [raw] as a JSON list, or null after marking [loadFailed].
+  List? _decodeList(String raw) {
+    try {
+      return jsonDecode(raw) as List;
+    } catch (_) {
+      loadFailed = true;
+      return null;
+    }
+  }
+
   Future<List<SavedLayout>> loadLayouts() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kLayouts);
     if (raw == null) return [];
-    final list = jsonDecode(raw) as List;
-    return list.map((e) => SavedLayout.fromJson(e as Map<String, dynamic>)).toList();
+    final list = _decodeList(raw);
+    if (list == null) return [];
+    try {
+      return list.map((e) => SavedLayout.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (_) {
+      loadFailed = true;
+      return [];
+    }
   }
 
   Future<void> saveLayouts(List<SavedLayout> layouts) async {
+    if (loadFailed) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLayouts, jsonEncode(layouts.map((l) => l.toJson()).toList()));
   }
@@ -41,11 +63,18 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kFolders);
     if (raw == null) return [];
-    final list = jsonDecode(raw) as List;
-    return list.map((e) => ConnectionFolder.fromJson(e as Map<String, dynamic>)).toList();
+    final list = _decodeList(raw);
+    if (list == null) return [];
+    try {
+      return list.map((e) => ConnectionFolder.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (_) {
+      loadFailed = true;
+      return [];
+    }
   }
 
   Future<void> saveFolders(List<ConnectionFolder> folders) async {
+    if (loadFailed) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kFolders, jsonEncode(folders.map((f) => f.toJson()).toList()));
   }
@@ -64,17 +93,86 @@ class StorageService {
   /// next save will encrypt it.
   bool needsPasswordMigration = false;
 
+  static const _kProfiles = 'commands.credentialProfiles';
+
+  /// Encrypted profile passwords that could not be opened, kept as they were.
+  final Map<String, String> _unopenedProfiles = {};
+
+  Future<List<CredentialProfile>> loadProfiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kProfiles);
+    _unopenedProfiles.clear();
+    if (raw == null) return [];
+    final list = _decodeList(raw);
+    if (list == null) return [];
+    final profiles = <CredentialProfile>[];
+    for (final e in list) {
+      final Map<String, dynamic> json;
+      final CredentialProfile profile;
+      try {
+        json = e as Map<String, dynamic>;
+        profile = CredentialProfile.fromJson(json);
+      } catch (_) {
+        loadFailed = true;
+        return [];
+      }
+      final sealed = json[_kPasswordEnc] as String?;
+      if (sealed != null) {
+        try {
+          profile.password = await _vault.decrypt(sealed, profile.id);
+        } catch (error) {
+          debugPrint('A profile password could not be decrypted: ${error.runtimeType}');
+          _unopenedProfiles[profile.id] = sealed;
+        }
+      }
+      profiles.add(profile);
+    }
+    return profiles;
+  }
+
+  Future<void> saveProfiles(List<CredentialProfile> profiles) async {
+    if (loadFailed) return;
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = <Map<String, dynamic>>[];
+    for (final p in profiles) {
+      final json = p.toJson();
+      final password = json['password'] as String? ?? '';
+      json['password'] = '';
+      if (password.isNotEmpty) {
+        try {
+          json[_kPasswordEnc] = await _vault.encrypt(password, p.id);
+        } catch (error) {
+          // Never lose it: kept as it was until encryption works again.
+          debugPrint('A profile password could not be encrypted: ${error.runtimeType}');
+          json['password'] = password;
+        }
+      } else if (_unopenedProfiles.containsKey(p.id)) {
+        json[_kPasswordEnc] = _unopenedProfiles[p.id];
+      }
+      encoded.add(json);
+    }
+    await prefs.setString(_kProfiles, jsonEncode(encoded));
+  }
+
   Future<List<SavedConnection>> loadConnections() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kConnections);
     needsPasswordMigration = false;
     _unopened.clear();
     if (raw == null) return [];
-    final list = jsonDecode(raw) as List;
+    final list = _decodeList(raw);
+    if (list == null) return [];
     final connections = <SavedConnection>[];
     for (final e in list) {
-      final json = e as Map<String, dynamic>;
-      final connection = SavedConnection.fromJson(json);
+      final Map<String, dynamic> json;
+      final SavedConnection connection;
+      try {
+        json = e as Map<String, dynamic>;
+        connection = SavedConnection.fromJson(json);
+      } catch (_) {
+        loadFailed = true;
+        return [];
+      }
       final sealed = json[_kPasswordEnc] as String?;
       if (sealed != null) {
         try {
@@ -92,6 +190,7 @@ class StorageService {
   }
 
   Future<void> saveConnections(List<SavedConnection> connections) async {
+    if (loadFailed) return;
     final prefs = await SharedPreferences.getInstance();
     final encoded = <Map<String, dynamic>>[];
     var migrated = true;

@@ -155,6 +155,7 @@ class _WelcomePanelState extends State<WelcomePanel> {
     final app = context.watch<AppState>();
     final palette = AppPalette.of(context);
     final accent = Theme.of(context).colorScheme.primary;
+    final favorites = app.favoriteConnections.take(8).toList();
     final recent = app.recentConnections.take(5).toList();
     return Center(
       child: SingleChildScrollView(
@@ -231,6 +232,39 @@ class _WelcomePanelState extends State<WelcomePanel> {
                 ],
               ),
               const SizedBox(height: 22),
+              if (favorites.isNotEmpty) ...[
+                Container(
+                  key: const Key('welcome-favorites'),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                  decoration: BoxDecoration(
+                    color: palette.panel,
+                    border: Border.all(color: palette.border),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(children: [
+                        Icon(Icons.star_rounded, size: 13, color: accent),
+                        const SizedBox(width: 5),
+                        Text(
+                          tr('Favorites').toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            letterSpacing: 0.8,
+                            color: palette.textDim,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 6),
+                      for (final conn in favorites)
+                        _RecentRow(conn: conn, accent: accent, palette: palette, keyPrefix: 'welcome-favorite'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               Container(
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
                 decoration: BoxDecoration(
@@ -272,9 +306,12 @@ class _WelcomePanelState extends State<WelcomePanel> {
 /// One recent connection: a click opens it. On hover the row lights up in
 /// the accent colour and an arrow shows, so it reads as clickable.
 class _RecentRow extends StatefulWidget {
-  const _RecentRow({required this.conn, required this.accent, required this.palette});
+  const _RecentRow({required this.conn, required this.accent, required this.palette, this.keyPrefix = 'welcome-recent'});
 
   final SavedConnection conn;
+
+  /// Keeps the keys apart when a connection is both a favorite and recent.
+  final String keyPrefix;
   final Color accent;
   final AppPalette palette;
 
@@ -302,7 +339,7 @@ class _RecentRowState extends State<_RecentRow> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
-        key: Key('welcome-recent-${conn.id}'),
+        key: Key('${widget.keyPrefix}-${conn.id}'),
         behavior: HitTestBehavior.opaque,
         onTap: () => context.read<AppState>().openConnection(conn),
         child: AnimatedContainer(
@@ -356,7 +393,7 @@ class _RecentRowState extends State<_RecentRow> {
                       Flexible(
                         child: Text(
                           site,
-                          key: Key('welcome-recent-site-${conn.id}'),
+                          key: Key('${widget.keyPrefix}-site-${conn.id}'),
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 11.5, color: palette.textDim.withValues(alpha: 0.75)),
                         ),
@@ -374,7 +411,7 @@ class _RecentRowState extends State<_RecentRow> {
                 opacity: _hover ? 1 : 0,
                 child: Padding(
                   padding: const EdgeInsets.only(left: 8),
-                  child: Icon(Icons.arrow_forward_rounded, key: Key('welcome-recent-arrow-${conn.id}'), size: 16, color: accent),
+                  child: Icon(Icons.arrow_forward_rounded, key: Key('${widget.keyPrefix}-arrow-${conn.id}'), size: 16, color: accent),
                 ),
               ),
             ],

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
 import 'app_dialog.dart';
+import 'credential_profiles.dart';
 import 'device_icon.dart';
 import 'folder_picker.dart';
 import '../l10n/strings.dart';
@@ -65,6 +66,11 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   bool _rdpWallpaper = false;
   bool _recordSessionByDefault = false;
 
+  /// The credential profile to log in with; null for this connection's own
+  /// user name and password.
+  String? _profileId;
+  static const _newProfile = '__new_profile__';
+
   /// Picked in the Device menu; null is "Automatic".
   DeviceKind? _pickedDevice;
 
@@ -89,6 +95,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       _rdpClipboard = existing.rdpClipboard;
       _rdpWallpaper = existing.rdpWallpaper;
       _recordSessionByDefault = existing.recordSessionByDefault;
+      _profileId = existing.credentialProfileId;
       if (existing.deviceManual) {
         _pickedDevice = existing.device;
       } else {
@@ -158,6 +165,54 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       recordSessionByDefault: _protocol == ConnectionProtocol.ssh && _recordSessionByDefault,
       device: _pickedDevice ?? _detectedDevice,
       deviceManual: _pickedDevice != null,
+      credentialProfileId: _profileId,
+    );
+  }
+
+  Future<void> _pickProfile(String? value) async {
+    if (value != _newProfile) {
+      setState(() => _profileId = value);
+      return;
+    }
+    final created = await showCredentialProfileDialog(context);
+    if (!mounted) return;
+    setState(() => _profileId = created?.id ?? _profileId);
+  }
+
+  Widget _profileField(AppState app) {
+    final profiles = [...app.credentialProfiles]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final known = _profileId == null || profiles.any((p) => p.id == _profileId);
+    return LabeledField(
+      label: 'Log in with',
+      child: DropdownButtonFormField<String?>(
+        // Rebuilt when the choice changes from outside (a new profile).
+        key: ValueKey('profile-field-$_profileId-${profiles.length}'),
+        initialValue: known ? _profileId : null,
+        isExpanded: true,
+        borderRadius: BorderRadius.circular(6),
+        decoration: const InputDecoration(isDense: true),
+        items: [
+          DropdownMenuItem(value: null, child: Text(tr('Its own user name and password'))),
+          for (final p in profiles)
+            DropdownMenuItem(
+              value: p.id,
+              child: Row(children: [
+                const Icon(Icons.badge_outlined, size: 15),
+                const SizedBox(width: 8),
+                Flexible(child: Text(tr('Profile: {name}', {'name': p.name}), overflow: TextOverflow.ellipsis)),
+              ]),
+            ),
+          DropdownMenuItem(
+            value: _newProfile,
+            child: Row(children: [
+              const Icon(Icons.add, size: 15),
+              const SizedBox(width: 8),
+              Text(tr('New profile…')),
+            ]),
+          ),
+        ],
+        onChanged: _pickProfile,
+      ),
     );
   }
 
@@ -307,6 +362,25 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
           ),
           if (!rdp) _deviceField(),
           const _Section('Credentials'),
+          _profileField(app),
+          if (_profileId != null && app.credentialProfiles.any((p) => p.id == _profileId)) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 2, bottom: 8),
+              child: Text(
+                tr("Logs in as {user} with the profile's password. Change them in the profile.", {
+                  'user': app.credentialProfiles.firstWhere((p) => p.id == _profileId).username.isEmpty
+                      ? '—'
+                      : app.credentialProfiles.firstWhere((p) => p.id == _profileId).username,
+                }),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+              ),
+            ),
+            if (rdp)
+              LabeledField(
+                label: 'Domain',
+                child: TextField(controller: _domain, decoration: InputDecoration(hintText: tr('Optional'))),
+              ),
+          ] else ...[
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -331,6 +405,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             ],
           ),
           if (rdp) _passwordField(),
+          ],
           if (!rdp) ...[
             const _Section('Other'),
             InkWell(

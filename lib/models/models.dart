@@ -76,6 +76,10 @@ class SavedConnection {
   /// the hostname shown by the remote prompt.
   bool autoNamePending;
 
+  /// The credential profile this connection logs in with, in place of its
+  /// own [username] and [password]. Null to use its own.
+  String? credentialProfileId;
+
   SavedConnection({
     String? id,
     required this.name,
@@ -93,6 +97,7 @@ class SavedConnection {
     this.device,
     this.deviceManual = false,
     this.autoNamePending = false,
+    this.credentialProfileId,
   }) : id = id ?? _uuid.v4();
 
   Map<String, dynamic> toJson() => {
@@ -112,6 +117,7 @@ class SavedConnection {
         if (device != null) 'device': device!.name,
         if (deviceManual) 'deviceManual': true,
         if (autoNamePending) 'autoNamePending': true,
+        if (credentialProfileId != null) 'credentialProfileId': credentialProfileId,
       };
 
   factory SavedConnection.fromJson(Map<String, dynamic> json) => SavedConnection(
@@ -134,9 +140,32 @@ class SavedConnection {
         device: DeviceKind.byName(json['device'] as String?),
         deviceManual: json['deviceManual'] as bool? ?? false,
         autoNamePending: json['autoNamePending'] as bool? ?? false,
+        credentialProfileId: json['credentialProfileId'] as String?,
       );
 
   String get label => '$name - $host';
+}
+
+/// A user name and password kept once and used by many connections, so a
+/// changed password is changed in one place. The password is encrypted in
+/// storage like a connection's.
+class CredentialProfile {
+  CredentialProfile({String? id, required this.name, this.username = '', this.password = ''})
+      : id = id ?? _uuid.v4();
+
+  String id;
+  String name;
+  String username;
+  String password;
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'username': username, 'password': password};
+
+  factory CredentialProfile.fromJson(Map<String, dynamic> json) => CredentialProfile(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '',
+        username: json['username'] as String? ?? '',
+        password: json['password'] as String? ?? '',
+      );
 }
 
 /// A split-view arrangement saved into a folder together with the

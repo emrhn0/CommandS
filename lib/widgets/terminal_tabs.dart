@@ -29,6 +29,8 @@ import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
 import 'terminal_drag_select.dart';
 import 'terminal_hover_scrollbar.dart';
+import 'terminal_search.dart';
+import 'quick_search.dart';
 import 'sftp_browser.dart';
 import 'sftp_window.dart';
 import 'threshold_draggable.dart';
@@ -1389,11 +1391,12 @@ class _PaneHeaderState extends State<_PaneHeader> {
     final scheme = Theme.of(context).colorScheme;
     final tab = widget.tab;
     final title = _tabTitle(tab);
+    final broadcasting = context.select<AppState, bool>((a) => a.isBroadcasting(tab.id));
     final bar = Container(
       height: 26,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.06),
+        color: scheme.primary.withValues(alpha: broadcasting ? 0.16 : 0.06),
         border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
       ),
       child: Row(
@@ -1418,6 +1421,8 @@ class _PaneHeaderState extends State<_PaneHeader> {
           ),
           _AgentMark(tabIds: [tab.id]),
           if (tab.controller is PtySessionController) ...[
+            _BroadcastTick(tabId: tab.id, on: broadcasting),
+            const SizedBox(width: 6),
             _PaneRecordButton(session: tab.controller as PtySessionController, tabId: tab.id),
             const SizedBox(width: 4),
           ],
@@ -1448,6 +1453,45 @@ class _PaneHeaderState extends State<_PaneHeader> {
         onDraggableCanceled: (_, _) => _dragEnded(),
         feedback: _TabDragFeedback(title: title, icon: _tabIcon(tab)),
         child: Opacity(opacity: _dragging ? 0.45 : 1, child: bar),
+      ),
+    );
+  }
+}
+
+/// The tick on a split pane's bar for typing into several sessions at once:
+/// what is typed into one ticked pane goes to every ticked pane. Unticked,
+/// each pane is on its own again.
+class _BroadcastTick extends StatelessWidget {
+  const _BroadcastTick({required this.tabId, required this.on});
+
+  final String tabId;
+  final bool on;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final dim = Theme.of(context).textTheme.bodySmall?.color;
+    return Tooltip(
+      message: on
+          ? tr('Typing here also goes to the other ticked panes. Click to stop.')
+          : tr('Type into several sessions: tick the panes that should get what you type'),
+      child: InkWell(
+        key: ValueKey('pane-broadcast-$tabId'),
+        borderRadius: BorderRadius.circular(4),
+        onTap: () => context.read<AppState>().toggleBroadcast(tabId),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(on ? Icons.check_box : Icons.check_box_outline_blank, size: 13, color: on ? accent : dim),
+              if (on) ...[
+                const SizedBox(width: 3),
+                Text(tr('Multi-type'), style: TextStyle(fontSize: 10.5, color: accent, fontWeight: FontWeight.w600)),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1663,6 +1707,9 @@ class _TerminalPaneState extends State<_TerminalPane> {
   final _viewKey = GlobalKey<TerminalViewState>();
   final _scroll = ScrollController();
 
+  /// The search field over the terminal is open (magnifier or Ctrl+Shift+F).
+  final _searchOpen = ValueNotifier<bool>(false);
+
   @override
   void initState() {
     super.initState();
@@ -1685,6 +1732,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
   @override
   void dispose() {
     _clipboard.dispose();
+    _searchOpen.dispose();
     _terminalController.dispose();
     _focusNode.dispose();
     _scroll.dispose();
@@ -1710,10 +1758,25 @@ class _TerminalPaneState extends State<_TerminalPane> {
         child: TerminalViewport(style: style, background: app.terminalBackground, child: _view(app, style)),
       ),
     );
-    final session = widget.controller;
-    if (session is! PtySessionController) return terminal;
-    final terminalWithOffer = Stack(children: [
+    final searchable = Stack(children: [
       Positioned.fill(child: terminal),
+      Positioned(
+        top: 8,
+        right: 22,
+        child: TerminalSearch(
+          terminal: widget.controller.terminal,
+          controller: _terminalController,
+          scroll: _scroll,
+          lineHeight: TerminalViewport.cellHeight(style, MediaQuery.textScalerOf(context)),
+          open: _searchOpen,
+          onClosed: _focusNode.requestFocus,
+        ),
+      ),
+    ]);
+    final session = widget.controller;
+    if (session is! PtySessionController) return searchable;
+    final terminalWithOffer = Stack(children: [
+      Positioned.fill(child: searchable),
       Positioned(
         left: 12,
         right: 12,
@@ -1734,6 +1797,24 @@ class _TerminalPaneState extends State<_TerminalPane> {
     ]);
     return Column(
       children: [
+        ValueListenableBuilder<bool>(
+          valueListenable: session.hostKeyChanged,
+          builder: (context, changed, _) => !changed
+              ? const SizedBox.shrink()
+              : _HostKeyChangedBar(
+                  host: session.host,
+                  onForget: () async {
+                    final error = await session.forgetHostKeyAndReconnect();
+                    if (error != null && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(tr('The old key could not be removed: {error}', {'error': error})),
+                      ));
+                    }
+                    _focusNode.requestFocus();
+                  },
+                  onDismiss: () => session.hostKeyChanged.value = false,
+                ),
+        ),
         ValueListenableBuilder<String?>(
           valueListenable: session.loginQuestion,
           builder: (context, question, _) => question == null
@@ -1823,6 +1904,22 @@ class _TerminalPaneState extends State<_TerminalPane> {
         }
         final session = widget.controller;
         final keyboard = HardwareKeyboard.instance;
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.keyF &&
+            keyboard.isControlPressed && keyboard.isShiftPressed &&
+            !keyboard.isAltPressed) {
+          _searchOpen.value = true;
+          return KeyEventResult.handled;
+        }
+        // Ctrl+K stays the session's (delete to end of line); with Shift it
+        // opens quick search, as Ctrl+K does outside a terminal.
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.keyK &&
+            keyboard.isControlPressed && keyboard.isShiftPressed &&
+            !keyboard.isAltPressed) {
+          showQuickSearch(context);
+          return KeyEventResult.handled;
+        }
         if (session is PtySessionController &&
             session.sudoPrompt.value != null &&
             event is KeyDownEvent &&
@@ -1921,6 +2018,74 @@ class _SudoPasswordOffer extends StatelessWidget {
 
 /// A yes/no question the server asked at login, so it can be answered with a
 /// click, with the saved password filled in after a yes.
+/// Shown when a device's SSH host key no longer matches the one remembered
+/// for it, in place of reading the warning from OpenSSH in the terminal.
+class _HostKeyChangedBar extends StatefulWidget {
+  const _HostKeyChangedBar({required this.host, required this.onForget, required this.onDismiss});
+
+  final String host;
+  final Future<void> Function() onForget;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_HostKeyChangedBar> createState() => _HostKeyChangedBarState();
+}
+
+class _HostKeyChangedBarState extends State<_HostKeyChangedBar> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final warn = theme.colorScheme.error;
+    return Material(
+      key: const Key('host-key-changed-bar'),
+      color: Color.alphaBlend(warn.withValues(alpha: 0.10), theme.colorScheme.surface),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.gpp_maybe_outlined, size: 18, color: warn),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    tr("{host}'s identity has changed, so the connection was refused.", {'host': widget.host}),
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    tr('If you replaced, reset or reinstalled this device, forget its old key and connect again. '
+                        'If not, someone may be in between: do not connect.'),
+                    style: TextStyle(fontSize: 11.5, color: theme.textTheme.bodySmall?.color),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(onPressed: widget.onDismiss, child: Text(tr('Close'))),
+            const SizedBox(width: 4),
+            FilledButton(
+              key: const Key('host-key-forget'),
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      setState(() => _busy = true);
+                      await widget.onForget();
+                      if (mounted) setState(() => _busy = false);
+                    },
+              child: Text(tr('Forget old key and connect')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _LoginQuestionBar extends StatelessWidget {
   const _LoginQuestionBar({required this.question, required this.hasPassword, required this.onAnswer});
 

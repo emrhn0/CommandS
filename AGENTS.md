@@ -22,7 +22,7 @@ saved with `shared_preferences`.
 
 ```sh
 flutter pub get
-flutter analyze lib test           # must be clean (two old infos in pty_session.dart are known)
+flutter analyze lib test           # must be clean: CI runs it, and a release is not built otherwise
 flutter test                       # unit + widget tests, all must pass
 flutter run -d windows             # debug run
 flutter build windows --release
@@ -33,8 +33,13 @@ flutter test integration_test/<file> -d windows   # real-window tests, Windows o
 
 | Path | What |
 |---|---|
-| `lib/providers/app_state.dart` | All app state: connections, folders, tabs, split groups, layouts, settings. **Contains a few NUL bytes**, so some tools treat it as binary. Edit it with byte-safe tools and check the NUL count is unchanged. |
+| `lib/providers/app_state.dart` | All app state: connections, folders, tabs, split groups, layouts, settings. Its duplicate-check keys join values with `\u0000`; write that escape, never a raw NUL byte, so the file stays plain text. |
+| `lib/services/backup_service.dart`, `lib/widgets/backups_panel.dart` | Backups of the saved connections: daily and before big changes, newest 30 daily and 20 others kept, restored from Settings > Connections. A store that cannot be read is never saved over (`StorageService.loadFailed`). |
 | `lib/models/models.dart` | `SavedConnection`, `ConnectionFolder`, `DeviceKind`, JSON. New fields need a default and must be optional in `fromJson` (old saves have to keep loading). |
+| `lib/widgets/credential_profiles.dart` | Credential profiles: a user name and password shared by connections (`SavedConnection.credentialProfileId`). `AppState.resolved` gives the login a connection uses; the saved connection keeps its own fields. |
+| `lib/widgets/terminal_search.dart` | Search in a terminal (magnifier, Ctrl+Shift+F), marking matches with xterm highlights. |
+| `lib/widgets/quick_search.dart` | Quick search over connections and folders (title bar, Ctrl+K outside a terminal, Ctrl+Shift+K inside one: Ctrl+K belongs to the session). |
+| `lib/services/host_keys.dart` | Forgets a changed SSH host key with `ssh-keygen -R`, after the user says so from the bar. |
 | `lib/services/pty_session.dart` | SSH session: OpenSSH (plink fallback) in ConPTY/forkpty, reach check, `login as:` prompt, output batching, device detection hook. |
 | `lib/services/device_detect.dart` | Works out the device kind (Linux, VMware, Palo Alto, Fortinet, Cisco, Aruba, Huawei, Windows) from the SSH identification line and the first output. |
 | `lib/services/serial_session.dart` | Serial console via the Win32 comm API in an isolate (9600 8N1 default). macOS uses `screen`. |
@@ -119,6 +124,9 @@ Do not "simplify" these without reading why.
   (`releases.atom`), not the API. Unauthenticated API calls are limited to 60
   an hour per network, which an office checking that often would use up; the
   API is asked only once something newer has turned up.
+- **Typing into several sessions** (the tick on a split pane's bar) repeats
+  only what the keyboard types or pastes (`PtySessionController.onTyped`),
+  never what an agent sends through MCP (`sendInput`).
 - **Terminal output is batched** (about one flush per 16 ms) and decoded as one
   UTF-8 stream. Drawing every chunk made busy sessions stutter.
 - **Keyboard** behaves as in PuTTY.

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:xterm/xterm.dart' show TerminalView;
 
 import '../providers/app_state.dart';
 
@@ -10,6 +12,8 @@ import '../widgets/quick_connect_bar.dart';
 import '../widgets/terminal_tabs.dart';
 import '../widgets/update_dialog.dart';
 import 'settings_screen.dart';
+import '../widgets/app_dialog.dart';
+import '../widgets/quick_search.dart';
 import '../l10n/strings.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,6 +25,63 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   @override
+  void initState() {
+    super.initState();
+    // Saved connections that could not be read are not saved over (see
+    // StorageService.loadFailed); say so once, and offer the backups.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && context.read<AppState>().storageLoadFailed) _offerRestore();
+    });
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  /// Ctrl+K opens quick search, anywhere but in a terminal: there Ctrl+K
+  /// belongs to the session (it deletes to the end of the line on Cisco and
+  /// in bash), and Ctrl+Shift+K opens it instead.
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyK) return false;
+    final keyboard = HardwareKeyboard.instance;
+    if (!(keyboard.isControlPressed || keyboard.isMetaPressed) || keyboard.isShiftPressed || keyboard.isAltPressed) {
+      return false;
+    }
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    final focused = FocusManager.instance.primaryFocus?.context;
+    if (focused != null && focused.findAncestorWidgetOfExactType<TerminalView>() != null) return false;
+    showQuickSearch(context);
+    return true;
+  }
+
+  Future<void> _offerRestore() async {
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        title: tr('Your connections could not be read'),
+        icon: Icons.warning_amber_rounded,
+        width: 460,
+        body: Text(
+          tr('The saved connections are still there but could not be read, so nothing is saved over them. '
+              'Restore the latest backup from Settings > Connections.'),
+          style: const TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(tr('Later'))),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(tr('Open backups')),
+          ),
+        ],
+      ),
+    );
+    if (open == true && mounted) await showSettings(context, page: SettingsPage.connections);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final width = context.select<AppState, double>((a) => a.sidebarWidth);
     final sidebarVisible = context.select<AppState, bool>((a) => a.sidebarVisible);
@@ -30,15 +91,30 @@ class _HomeScreenState extends State<HomeScreen> {
           CustomTitleBar(
             leading: Padding(
               padding: const EdgeInsets.only(left: 8),
-              child: Tooltip(
-                message: tr(sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'),
-                child: IconButton(
-                  key: const Key('sidebar-toggle'),
-                  onPressed: () => context.read<AppState>().setSidebarVisible(!sidebarVisible),
-                  icon: Icon(sidebarVisible ? Icons.menu_open : Icons.menu, size: 18),
-                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                  padding: EdgeInsets.zero,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Tooltip(
+                    message: tr(sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'),
+                    child: IconButton(
+                      key: const Key('sidebar-toggle'),
+                      onPressed: () => context.read<AppState>().setSidebarVisible(!sidebarVisible),
+                      icon: Icon(sidebarVisible ? Icons.menu_open : Icons.menu, size: 18),
+                      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                  Tooltip(
+                    message: tr('Quick search (Ctrl+K)'),
+                    child: IconButton(
+                      key: const Key('quick-search-button'),
+                      onPressed: () => showQuickSearch(context),
+                      icon: const Icon(Icons.search, size: 18),
+                      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

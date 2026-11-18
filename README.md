@@ -39,6 +39,15 @@ click; on macOS it opens the download page.
   the message shown when recording stops.
 - **Import** from JSON, XML or CSV, including exports from Remote Desktop
   Manager. **Export** whenever you like.
+- **Search** inside a terminal (Ctrl+Shift+F), and **quick search** over all
+  connections and folders (Ctrl+K).
+- **Type into several sessions at once** in split view: tick the panes that
+  should get what you type.
+- **Credential profiles**: one user name and password shared by many
+  connections, changed in one place.
+- **Favorites** for the connections you open most.
+- **Backups** of your connections every day and before big changes, restored
+  with one click from Settings.
 - **Themes**, terminal fonts and colours. English, Turkish and German.
 
 ## What's different
