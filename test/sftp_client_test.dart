@@ -1,7 +1,22 @@
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:commands/services/sftp_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// The local SFTP tests start the real sftp-server through flutter_pty,
+/// whose native library exists only once the app has been built for
+/// Windows. On a machine that has not built it (the CI test job, which tests
+/// before it builds) they are skipped, with this reason.
+final String? _noPtyLibrary = () {
+  if (!Platform.isWindows) return null;
+  try {
+    DynamicLibrary.open('flutter_pty.dll');
+    return null;
+  } catch (_) {
+    return 'flutter_pty.dll comes with the Windows build, which this machine has not made';
+  }
+}();
 
 void main() {
   test('parses live SFTP upload meter as bytes per second', () {
@@ -396,6 +411,7 @@ void main() {
         await temp.delete(recursive: true);
       }
     },
+    skip: _noPtyLibrary,
   );
 
   test('reports upload speed from the local SFTP server', () async {
@@ -428,5 +444,5 @@ void main() {
       client.dispose();
       await temp.delete(recursive: true);
     }
-  });
+  }, skip: _noPtyLibrary);
 }
