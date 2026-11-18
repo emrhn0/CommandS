@@ -1,9 +1,13 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/theme/app_theme.dart';
 import 'package:commands/widgets/connection_tree.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +16,16 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('capture IP sorting preview with example connections', (tester) async {
+    final uiFont = FontLoader('Segoe UI')
+      ..addFont(File(r'C:\Windows\Fonts\segoeui.ttf')
+          .readAsBytes()
+          .then((bytes) => ByteData.sublistView(bytes)));
+    await uiFont.load();
+    final icons = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
+    tester.view.devicePixelRatio = 2;
+    addTearDown(() => tester.view.resetDevicePixelRatio());
     await tester.binding.setSurfaceSize(const Size(360, 520));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final app = AppState();
@@ -30,6 +44,7 @@ void main() {
       ChangeNotifierProvider.value(
         value: app,
         child: MaterialApp(
+          debugShowCheckedModeBanner: false,
           theme: AppTheme.dark(),
           home: const Scaffold(body: ConnectionTree()),
         ),
@@ -51,6 +66,7 @@ void main() {
     await mouse.addPointer();
     await mouse.moveTo(tester.getCenter(find.byKey(const ValueKey('sort-selected-by-ip'))));
     await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('ip-sort-preview.png'));
     await mouse.removePointer();
     await tester.pumpWidget(const SizedBox());
