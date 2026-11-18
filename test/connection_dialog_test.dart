@@ -97,6 +97,8 @@ void main() {
         greaterThan(tester.getTopLeft(find.text('CREDENTIALS')).dy),
       );
       expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+      await tester.ensureVisible(find.text('Record session automatically'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Record session automatically'));
       await tester.pump();
       expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);

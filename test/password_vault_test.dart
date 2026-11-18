@@ -54,7 +54,7 @@ void main() {
     expect(json['enablePasswordEnc'], isNotNull);
     expect(json['enablePasswordEnc'], isNot(json['passwordEnc']));
     expect((await StorageService().loadConnections()).single.enablePassword, 'enable-example-secret');
-    expect(SavedConnection.fromJson({'name': 'DEVICE-02', 'host': '192.0.2.11'}).enablePassword, '');
+    expect(SavedConnection.fromJson({'id': 'id-2', 'name': 'DEVICE-02', 'host': '192.0.2.11'}).enablePassword, '');
   });
 
   test('an unopened enable password survives a save', () async {
