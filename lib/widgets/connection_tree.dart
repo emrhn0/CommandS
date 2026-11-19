@@ -653,16 +653,20 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     _clearSelection();
   }
 
-  /// Sort selected folders and hosts A-Z within their respective levels.
-  Future<void> _sortSelected(AppState app) async {
-    await app.sortFoldersByName(_selected.where((id) => app.folders.any((f) => f.id == id)));
-    await app.sortConnectionsByName(_selected.where((id) => app.connections.any((c) => c.id == id)));
+  /// Sorts the selected items within their own levels: folders by name (for
+  /// the name orders), connections by [order].
+  Future<void> _sortSelected(AppState app, TreeSort order) async {
+    if (order == TreeSort.nameAscending || order == TreeSort.nameDescending) {
+      await app.sortFoldersByName(
+        _selected.where((id) => app.folders.any((f) => f.id == id)),
+        descending: order == TreeSort.nameDescending,
+      );
+    }
+    await app.sortConnectionsBy(_selected.where((id) => app.connections.any((c) => c.id == id)), order);
   }
 
-  Future<void> _sortSelectedByIp(AppState app) =>
-      app.sortConnectionsByIp(_selected.where((id) => app.connections.any((c) => c.id == id)));
-
-  bool _canSortSelectedByIp(AppState app) {
+  /// At least two selected connections share a folder.
+  bool _canSortSelectedConnections(AppState app) {
     final folderIds = <String?>{};
     for (final connection in app.connections) {
       if (_selected.contains(connection.id) && !folderIds.add(connection.folderId)) return true;
@@ -798,12 +802,13 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
                       ? _SelectionBar(
                           count: _selected.length,
                           allSelected: _selected.isNotEmpty && _selected.containsAll(_allIds(app)),
-                          canSort: _canSortSelected(app),
-                          canSortByIp: _canSortSelectedByIp(app),
+                          sortActions: treeSortActions(
+                            names: _canSortSelected(app),
+                            connections: _canSortSelectedConnections(app),
+                          ),
                           onDelete: () => _deleteSelected(app),
                           onMove: () => _moveSelected(app),
-                          onSort: () => _sortSelected(app),
-                          onSortByIp: () => _sortSelectedByIp(app),
+                          onSort: (order) => _sortSelected(app, order),
                           onToggleAll: () => _toggleAll(app),
                           onCancel: () => _selectMode ? _toggleSelectMode() : _clearSelection(),
                         )
@@ -1169,29 +1174,58 @@ class _DragFeedback extends StatelessWidget {
   }
 }
 
+/// The orders the tree can sort by, as menu items keyed by [TreeSort] name.
+/// [names]: folders or connections sorted by name; [connections]: at least
+/// two connections, which can also go by address and device type.
+List<MenuAction> treeSortActions({required bool names, required bool connections}) => [
+      if (names) const MenuAction('nameAscending', 'Name (A–Z)', Icons.arrow_downward_rounded),
+      if (names) const MenuAction('nameDescending', 'Name (Z–A)', Icons.arrow_upward_rounded),
+      if (connections)
+        MenuAction('ipAddress', 'IP address', Icons.lan_outlined, separatorBefore: names),
+      if (connections) const MenuAction('deviceType', 'Device type', Icons.devices_other_outlined),
+    ];
+
+/// Shows [actions] as a menu under [anchorContext]'s widget and returns the
+/// order picked, if any.
+Future<TreeSort?> showTreeSortMenu(
+  BuildContext anchorContext, {
+  required List<MenuAction> actions,
+  required String header,
+}) async {
+  final box = anchorContext.findRenderObject() as RenderBox?;
+  if (box == null || !box.attached) return null;
+  final key = await showContextMenu(
+    anchorContext,
+    actions: actions,
+    anchor: box.localToGlobal(Offset.zero) & box.size,
+    header: header,
+    minWidth: 180,
+  );
+  return key == null ? null : TreeSort.values.byName(key);
+}
+
+/// The bar over the tree while several items are selected: a box that
+/// selects or clears everything, the count, a Sort menu that names its
+/// orders, and Move, Delete and Close.
 class _SelectionBar extends StatelessWidget {
   const _SelectionBar({
     required this.count,
     required this.allSelected,
-    required this.canSort,
-    required this.canSortByIp,
+    required this.sortActions,
     required this.onDelete,
     required this.onMove,
     required this.onSort,
-    required this.onSortByIp,
     required this.onToggleAll,
     required this.onCancel,
   });
   final int count;
   final bool allSelected;
 
-  /// At least two selected folders share a parent or two hosts share a folder.
-  final bool canSort;
-  final bool canSortByIp;
+  /// Empty when nothing selected can be sorted (fewer than two items at one level).
+  final List<MenuAction> sortActions;
   final VoidCallback onDelete;
   final VoidCallback onMove;
-  final VoidCallback onSort;
-  final VoidCallback onSortByIp;
+  final ValueChanged<TreeSort> onSort;
   final VoidCallback onToggleAll;
   final VoidCallback onCancel;
 
@@ -1202,7 +1236,7 @@ class _SelectionBar extends StatelessWidget {
       key: const ValueKey('selection-bar'),
       height: 30,
       margin: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-      padding: const EdgeInsets.only(left: 4, right: 3),
+      padding: const EdgeInsets.only(left: 2, right: 3),
       decoration: BoxDecoration(
         color: scheme.onSurface.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
@@ -1215,10 +1249,28 @@ class _SelectionBar extends StatelessWidget {
               : constraints.maxWidth < 210
                   ? 20.0
                   : 24.0;
+          // "Sort" is spelled out when there is room; the icon alone otherwise.
+          final sortLabel = constraints.maxWidth >= 250;
           return Row(
             // Remount animated buttons at their new width during a resize.
             key: ValueKey(actionSize),
             children: [
+              Tooltip(
+                message: allSelected ? tr('Deselect all') : tr('Select all'),
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Checkbox(
+                    key: const ValueKey('select-all'),
+                    tristate: true,
+                    value: allSelected ? true : (count == 0 ? false : null),
+                    onChanged: (_) => onToggleAll(),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               Container(
                 height: 20,
                 constraints: const BoxConstraints(minWidth: 20),
@@ -1230,7 +1282,7 @@ class _SelectionBar extends StatelessWidget {
                   style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onPrimary),
                 ),
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   tr('selected'),
@@ -1238,35 +1290,19 @@ class _SelectionBar extends StatelessWidget {
                   style: TextStyle(fontSize: 11.5, color: scheme.onSurface.withValues(alpha: 0.7)),
                 ),
               ),
-              ToolButton(
-                key: const ValueKey('select-all'),
-                icon: allSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
-                tooltip: allSelected ? tr('Deselect all') : tr('Select all'),
-                onPressed: onToggleAll,
-                size: actionSize,
-              ),
-              const SizedBox(width: 2),
-              if (canSort) ...[
-                ToolButton(
+              if (sortActions.isNotEmpty) ...[
+                _SortMenuButton(
                   key: const ValueKey('sort-selected'),
-                  icon: Icons.sort_by_alpha_rounded,
-                  tooltip: tr('Sort A–Z'),
-                  onPressed: onSort,
-                  size: actionSize,
-                ),
-                const SizedBox(width: 2),
-              ],
-              if (canSortByIp) ...[
-                ToolButton(
-                  key: const ValueKey('sort-selected-by-ip'),
-                  icon: Icons.numbers_rounded,
-                  tooltip: tr('Sort by IP address'),
-                  onPressed: onSortByIp,
-                  size: actionSize,
+                  actions: sortActions,
+                  header: tr('Sort selected'),
+                  showLabel: sortLabel,
+                  height: actionSize,
+                  onSort: onSort,
                 ),
                 const SizedBox(width: 2),
               ],
               ToolButton(
+                key: const ValueKey('move-selected'),
                 icon: Icons.drive_file_move_rounded,
                 tooltip: tr('Move to folder'),
                 onPressed: count == 0 ? null : onMove,
@@ -1286,6 +1322,79 @@ class _SelectionBar extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// "Sort ▾": opens the list of orders, each with its name, instead of one
+/// unlabeled button per order.
+class _SortMenuButton extends StatefulWidget {
+  const _SortMenuButton({
+    super.key,
+    required this.actions,
+    required this.header,
+    required this.showLabel,
+    required this.height,
+    required this.onSort,
+  });
+  final List<MenuAction> actions;
+  final String header;
+  final bool showLabel;
+  final double height;
+  final ValueChanged<TreeSort> onSort;
+
+  @override
+  State<_SortMenuButton> createState() => _SortMenuButtonState();
+}
+
+class _SortMenuButtonState extends State<_SortMenuButton> {
+  bool _hover = false;
+  bool _open = false;
+
+  Future<void> _openMenu() async {
+    setState(() => _open = true);
+    final order = await showTreeSortMenu(context, actions: widget.actions, header: widget.header);
+    if (!mounted) return;
+    setState(() => _open = false);
+    if (order != null) widget.onSort(order);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final lit = _hover || _open;
+    final color = lit ? scheme.primary : scheme.onSurface.withValues(alpha: 0.75);
+    return Tooltip(
+      message: tr('Sort selected'),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _openMenu,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            height: widget.height,
+            padding: EdgeInsets.symmetric(horizontal: widget.showLabel ? 6 : 2),
+            decoration: BoxDecoration(
+              color: lit ? scheme.primary.withValues(alpha: 0.12) : Colors.transparent,
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.sort_rounded, size: widget.height * 0.7, color: color),
+                if (widget.showLabel) ...[
+                  const SizedBox(width: 3),
+                  Text(tr('Sort'), style: TextStyle(fontSize: 11.5, color: color)),
+                ],
+                Icon(Icons.expand_more_rounded, size: widget.height * 0.6, color: color),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1376,6 +1485,7 @@ class _FolderRowState extends State<_FolderRow> {
         MenuAction('new', 'New connection here', Icons.add, separatorBefore: true),
         MenuAction('newFolder', 'New folder here', Icons.create_new_folder_outlined),
         MenuAction('rename', 'Rename', Icons.edit_outlined),
+        MenuAction('sort', 'Sort contents', Icons.sort_rounded, separatorBefore: true),
         MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
       onMenu: (key) async {
@@ -1397,11 +1507,28 @@ class _FolderRowState extends State<_FolderRow> {
             initial: widget.folder.name,
           );
           if (name != null) app.renameFolder(widget.folder.id, name);
+        } else if (key == 'sort') {
+          await _sortContents(context, app);
         } else if (key == 'delete') {
           _confirmDeleteFolder(context, app);
         }
       },
     );
+  }
+
+  /// Sorts what is directly inside this folder, from a menu that names each
+  /// order: no need to select the items first.
+  Future<void> _sortContents(BuildContext context, AppState app) async {
+    final id = widget.folder.id;
+    final order = await showTreeSortMenu(
+      context,
+      actions: treeSortActions(
+        names: true,
+        connections: app.connections.where((c) => c.folderId == id).length > 1,
+      ),
+      header: tr('Sort "{name}"', {'name': widget.folder.name}),
+    );
+    if (order != null) await app.sortFolderContents(id, order);
   }
 
   /// Opens every connection in this folder and the folders inside it. Many
