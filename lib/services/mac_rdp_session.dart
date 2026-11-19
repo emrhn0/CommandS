@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
 import '../models/models.dart';
@@ -40,6 +41,12 @@ class MacRdpSessionController implements SessionController {
   MacRdpSessionController(this.conn) : host = conn.host {
     tabTitle = conn.name;
     unawaited(_start());
+  }
+
+  /// A controller that launches nothing, so a test never opens a real client.
+  @visibleForTesting
+  MacRdpSessionController.idle(this.conn) : host = conn.host {
+    tabTitle = conn.name;
   }
 
   final SavedConnection conn;
@@ -133,30 +140,11 @@ class MacRdpSessionController implements SessionController {
   }
 
   Future<void> _startFreeRdp(String binary) async {
-    final args = <String>[
-      '/v:$host:$_port',
-      if (conn.username.isNotEmpty) '/u:${conn.username}',
-      if (conn.domain != null && conn.domain!.isNotEmpty) '/d:${conn.domain}',
-      if (_password.isNotEmpty) '/p:$_password',
-      // Resize the window, and the remote desktop is re-rendered at the new
-      // size rather than scaled — the same behaviour the Windows side gets from
-      // UpdateSessionDisplaySettings.
-      '/dynamic-resolution',
-      // These servers are typically on the user's own network with a
-      // self-signed certificate, and there is no dialog to show for it here.
-      '/cert:ignore',
-      '+auto-reconnect',
-      '+fonts',
-      if (conn.rdpClipboard) '+clipboard' else '-clipboard',
-      if (conn.rdpWallpaper) '+wallpaper' else '-wallpaper',
-      '/audio-mode:0',
-      '/t:${conn.name}',
-    ];
     // The password is on the command line, which is as private as the process
     // list: on macOS only root and the owning user can read another process's
     // arguments. That is the same audience as the `.rdp` file the Microsoft
     // path writes, and it buys the user not having to type the password at all.
-    _process = await Process.start(binary, args);
+    _process = await Process.start(binary, freeRdpArguments());
     backend = MacRdpBackend.freerdp;
     backendName = 'FreeRDP';
     _setStatus(SessionStatus.running);
@@ -170,6 +158,31 @@ class MacRdpSessionController implements SessionController {
       }
     }));
   }
+
+  /// What FreeRDP is started with.
+  @visibleForTesting
+  List<String> freeRdpArguments() => [
+      '/v:$host:$_port',
+      if (conn.username.isNotEmpty) '/u:${conn.username}',
+      if (conn.domain != null && conn.domain!.isNotEmpty) '/d:${conn.domain}',
+      if (_password.isNotEmpty) '/p:$_password',
+      // Resize the window, and the remote desktop is re-rendered at the new
+      // size rather than scaled — the same behaviour the Windows side gets from
+      // UpdateSessionDisplaySettings.
+      '/dynamic-resolution',
+      // These servers usually have a self-signed certificate, so there is no
+      // authority to check it against. Trust on first use, like SSH's
+      // known_hosts: the first certificate is remembered without a question,
+      // and if a later one differs FreeRDP stops and asks, rather than
+      // letting anyone in between read the session (which /cert:ignore did).
+      '/cert:tofu',
+      '+auto-reconnect',
+      '+fonts',
+      if (conn.rdpClipboard) '+clipboard' else '-clipboard',
+      if (conn.rdpWallpaper) '+wallpaper' else '-wallpaper',
+      '/audio-mode:0',
+      '/t:${conn.name}',
+    ];
 
   /// Current name first, then the name it shipped under for years — both are
   /// on machines in the wild.
@@ -238,10 +251,34 @@ class MacRdpSessionController implements SessionController {
   /// Puts the saved password on the clipboard so the Microsoft client's prompt
   /// is one paste. Offered as a button rather than done automatically —
   /// silently replacing whatever the user had copied is not this app's call.
+  ///
+  /// The password is taken back off the clipboard after
+  /// [clipboardClearDelay], if it is still what the clipboard holds: left
+  /// there, it would sit in clipboard managers' history and reach the user's
+  /// other Apple devices through Universal Clipboard. Anything the user copied
+  /// in the meantime is left alone. The timer outlives the tab on purpose, so
+  /// closing the tab early does not leave the password behind.
   Future<bool> copyPasswordToClipboard() async {
-    if (_password.isEmpty) return false;
-    await Clipboard.setData(ClipboardData(text: _password));
+    final password = _password;
+    if (password.isEmpty) return false;
+    await Clipboard.setData(ClipboardData(text: password));
+    _clipboardTimer?.cancel();
+    _clipboardTimer = Timer(clipboardClearDelay, () => unawaited(_clearClipboardIfStill(password)));
     return true;
+  }
+
+  static const clipboardClearDelay = Duration(seconds: 30);
+  Timer? _clipboardTimer;
+
+  static Future<void> _clearClipboardIfStill(String password) async {
+    try {
+      final current = await Clipboard.getData(Clipboard.kTextPlain);
+      if (current?.text == password) {
+        await Clipboard.setData(const ClipboardData(text: ''));
+      }
+    } catch (_) {
+      // Best effort: a clipboard that cannot be read is not cleared blindly.
+    }
   }
 
   /// Re-launches the same session — the tab's only real control, since we do

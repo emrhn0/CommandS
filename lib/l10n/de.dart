@@ -218,6 +218,7 @@ const german = <String, String>{
   'Open again': 'Erneut öffnen',
   'Copied': 'Kopiert',
   'Copy password': 'Passwort kopieren',
+  'Copied, cleared in 30 seconds': 'Kopiert, wird nach 30 Sekunden gelöscht',
   'the RDP client': 'der RDP-Client',
   'The {client} window for {host} has closed. Open it again to reconnect.':
       'Das {client}-Fenster für {host} wurde geschlossen. Öffnen Sie es erneut, um neu zu verbinden.',

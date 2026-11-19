@@ -1677,7 +1677,7 @@ class _MacRdpPaneState extends State<_MacRdpPane> {
                       OutlinedButton.icon(
                         onPressed: _copied ? null : _copyPassword,
                         icon: Icon(_copied ? Icons.check : Icons.copy, size: 16),
-                        label: Text(tr(_copied ? 'Copied' : 'Copy password')),
+                        label: Text(tr(_copied ? 'Copied, cleared in 30 seconds' : 'Copy password')),
                       ),
                     ],
                   ],
