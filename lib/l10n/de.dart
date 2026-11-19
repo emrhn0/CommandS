@@ -88,6 +88,7 @@ const german = <String, String>{
   'Select': 'Auswählen',
   'Deselect all': 'Auswahl aufheben',
   'Sort A–Z': 'A–Z sortieren',
+  'Sort by IP address': 'Nach IP-Adresse sortieren',
   '{n} layout': '{n} Layout',
   '{n} layouts': '{n} Layouts',
   'This cannot be undone. Folders are deleted with everything in them.': 'Dies kann nicht rückgängig gemacht werden. Ordner werden mit ihrem gesamten Inhalt gelöscht.',

@@ -659,6 +659,17 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     await app.sortConnectionsByName(_selected.where((id) => app.connections.any((c) => c.id == id)));
   }
 
+  Future<void> _sortSelectedByIp(AppState app) =>
+      app.sortConnectionsByIp(_selected.where((id) => app.connections.any((c) => c.id == id)));
+
+  bool _canSortSelectedByIp(AppState app) {
+    final folderIds = <String?>{};
+    for (final connection in app.connections) {
+      if (_selected.contains(connection.id) && !folderIds.add(connection.folderId)) return true;
+    }
+    return false;
+  }
+
   bool _canSortSelected(AppState app) {
     final parents = <String?>{};
     for (final folder in app.folders) {
@@ -788,9 +799,11 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
                           count: _selected.length,
                           allSelected: _selected.isNotEmpty && _selected.containsAll(_allIds(app)),
                           canSort: _canSortSelected(app),
+                          canSortByIp: _canSortSelectedByIp(app),
                           onDelete: () => _deleteSelected(app),
                           onMove: () => _moveSelected(app),
                           onSort: () => _sortSelected(app),
+                          onSortByIp: () => _sortSelectedByIp(app),
                           onToggleAll: () => _toggleAll(app),
                           onCancel: () => _selectMode ? _toggleSelectMode() : _clearSelection(),
                         )
@@ -1161,9 +1174,11 @@ class _SelectionBar extends StatelessWidget {
     required this.count,
     required this.allSelected,
     required this.canSort,
+    required this.canSortByIp,
     required this.onDelete,
     required this.onMove,
     required this.onSort,
+    required this.onSortByIp,
     required this.onToggleAll,
     required this.onCancel,
   });
@@ -1172,9 +1187,11 @@ class _SelectionBar extends StatelessWidget {
 
   /// At least two selected folders share a parent or two hosts share a folder.
   final bool canSort;
+  final bool canSortByIp;
   final VoidCallback onDelete;
   final VoidCallback onMove;
   final VoidCallback onSort;
+  final VoidCallback onSortByIp;
   final VoidCallback onToggleAll;
   final VoidCallback onCancel;
 
@@ -1191,63 +1208,84 @@ class _SelectionBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: scheme.onSurface.withValues(alpha: 0.10)),
       ),
-      child: Row(
-        children: [
-          Container(
-            height: 20,
-            constraints: const BoxConstraints(minWidth: 20),
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(6)),
-            child: Text(
-              '$count',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onPrimary),
-            ),
-          ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: Text(
-              tr('selected'),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11.5, color: scheme.onSurface.withValues(alpha: 0.7)),
-            ),
-          ),
-          ToolButton(
-            key: const ValueKey('select-all'),
-            icon: allSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
-            tooltip: allSelected ? tr('Deselect all') : tr('Select all'),
-            onPressed: onToggleAll,
-            size: 24,
-          ),
-          const SizedBox(width: 2),
-          if (canSort) ...[
-            ToolButton(
-              key: const ValueKey('sort-selected'),
-              icon: Icons.sort_by_alpha_rounded,
-              tooltip: tr('Sort A–Z'),
-              onPressed: onSort,
-              size: 24,
-            ),
-            const SizedBox(width: 2),
-          ],
-          ToolButton(
-            icon: Icons.drive_file_move_rounded,
-            tooltip: tr('Move to folder'),
-            onPressed: count == 0 ? null : onMove,
-            size: 24,
-          ),
-          const SizedBox(width: 2),
-          ToolButton(
-            key: const ValueKey('delete-selected'),
-            icon: Icons.delete_rounded,
-            tooltip: tr('Delete'),
-            onPressed: count == 0 ? null : onDelete,
-            size: 24,
-            danger: true,
-          ),
-          const SizedBox(width: 2),
-          ToolButton(icon: Icons.close_rounded, tooltip: tr('Clear selection'), onPressed: onCancel, size: 24),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final actionSize = constraints.maxWidth < 190
+              ? 18.0
+              : constraints.maxWidth < 210
+                  ? 20.0
+                  : 24.0;
+          return Row(
+            // Remount animated buttons at their new width during a resize.
+            key: ValueKey(actionSize),
+            children: [
+              Container(
+                height: 20,
+                constraints: const BoxConstraints(minWidth: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(6)),
+                child: Text(
+                  '$count',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onPrimary),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  tr('selected'),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: scheme.onSurface.withValues(alpha: 0.7)),
+                ),
+              ),
+              ToolButton(
+                key: const ValueKey('select-all'),
+                icon: allSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
+                tooltip: allSelected ? tr('Deselect all') : tr('Select all'),
+                onPressed: onToggleAll,
+                size: actionSize,
+              ),
+              const SizedBox(width: 2),
+              if (canSort) ...[
+                ToolButton(
+                  key: const ValueKey('sort-selected'),
+                  icon: Icons.sort_by_alpha_rounded,
+                  tooltip: tr('Sort A–Z'),
+                  onPressed: onSort,
+                  size: actionSize,
+                ),
+                const SizedBox(width: 2),
+              ],
+              if (canSortByIp) ...[
+                ToolButton(
+                  key: const ValueKey('sort-selected-by-ip'),
+                  icon: Icons.numbers_rounded,
+                  tooltip: tr('Sort by IP address'),
+                  onPressed: onSortByIp,
+                  size: actionSize,
+                ),
+                const SizedBox(width: 2),
+              ],
+              ToolButton(
+                icon: Icons.drive_file_move_rounded,
+                tooltip: tr('Move to folder'),
+                onPressed: count == 0 ? null : onMove,
+                size: actionSize,
+              ),
+              const SizedBox(width: 2),
+              ToolButton(
+                key: const ValueKey('delete-selected'),
+                icon: Icons.delete_rounded,
+                tooltip: tr('Delete'),
+                onPressed: count == 0 ? null : onDelete,
+                size: actionSize,
+                danger: true,
+              ),
+              const SizedBox(width: 2),
+              ToolButton(icon: Icons.close_rounded, tooltip: tr('Clear selection'), onPressed: onCancel, size: actionSize),
+            ],
+          );
+        },
       ),
     );
   }

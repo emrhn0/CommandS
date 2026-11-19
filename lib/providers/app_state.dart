@@ -729,6 +729,45 @@ class AppState extends ChangeNotifier {
     await prefs.setStringList(_kConnectionOrder, connectionOrder);
   }
 
+  /// Sorts selected connections by numeric IP within each folder. Hostnames
+  /// follow IP addresses in their current order; unselected slots stay put.
+  Future<void> sortConnectionsByIp(Iterable<String> ids) async {
+    final chosen = ids.toSet();
+    final folderIds = {for (final c in connections) if (chosen.contains(c.id)) c.folderId};
+    var order = [...connectionOrder];
+    for (final folderId in folderIds) {
+      final level = sortConnections(connections.where((c) => c.folderId == folderId).toList());
+      final picked = level.where((c) => chosen.contains(c.id)).toList();
+      if (picked.length < 2) continue;
+      final originalIndex = {for (var i = 0; i < picked.length; i++) picked[i].id: i};
+      final addresses = {for (final c in picked) c.id: InternetAddress.tryParse(c.host.trim())};
+      picked.sort((a, b) {
+        final left = addresses[a.id], right = addresses[b.id];
+        if (left == null || right == null) {
+          if (left == null && right != null) return 1;
+          if (right == null && left != null) return -1;
+        } else {
+          final family = (left.type == InternetAddressType.IPv4 ? 0 : 1)
+              .compareTo(right.type == InternetAddressType.IPv4 ? 0 : 1);
+          if (family != 0) return family;
+          for (var i = 0; i < left.rawAddress.length; i++) {
+            final octet = left.rawAddress[i].compareTo(right.rawAddress[i]);
+            if (octet != 0) return octet;
+          }
+        }
+        return originalIndex[a.id]!.compareTo(originalIndex[b.id]!);
+      });
+      var next = 0;
+      final arranged = [for (final c in level) chosen.contains(c.id) ? picked[next++].id : c.id];
+      order = [...order.where((id) => !arranged.contains(id)), ...arranged];
+    }
+    if (listEquals(order, connectionOrder)) return;
+    connectionOrder = order;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kConnectionOrder, connectionOrder);
+  }
+
   // ---- Folder order and sidebar width ----
 
   /// Folder ids in the order the user arranged them by dragging. Folders not

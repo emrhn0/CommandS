@@ -89,6 +89,7 @@ const turkish = <String, String>{
   'Select': 'Seç',
   'Deselect all': 'Tümünün seçimini kaldır',
   'Sort A–Z': 'A–Z sırala',
+  'Sort by IP address': 'IP adresine göre sırala',
   '{n} layout': '{n} düzen',
   '{n} layouts': '{n} düzen',
   'This cannot be undone. Folders are deleted with everything in them.': 'Bu işlem geri alınamaz. Klasörler içindeki her şeyle birlikte silinir.',
