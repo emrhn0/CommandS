@@ -219,6 +219,7 @@ const turkish = <String, String>{
   'Open again': 'Yeniden aç',
   'Copied': 'Kopyalandı',
   'Copy password': 'Şifreyi kopyala',
+  'Copied, cleared in 30 seconds': 'Kopyalandı, 30 saniye sonra silinecek',
   'the RDP client': 'RDP istemcisi',
   'The {client} window for {host} has closed. Open it again to reconnect.':
       '{host} için {client} penceresi kapandı. Yeniden bağlanmak için tekrar açın.',
