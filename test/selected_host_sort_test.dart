@@ -1,6 +1,7 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/widgets/connection_tree.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -126,8 +127,10 @@ void main() {
     await tester.tap(find.text('DEVICE-02'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('sort-selected-by-ip')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('sort-selected-by-ip')));
+    expect(find.byKey(const ValueKey('sort-selected')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sort-selected')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('IP address'));
     await tester.pumpAndSettle();
     expect(app.sortConnections([...app.connections]).map((c) => c.name).toList(),
         ['DEVICE-02', 'DEVICE-10']);
@@ -174,6 +177,8 @@ void main() {
     expect(find.byKey(const ValueKey('sort-selected')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('sort-selected')));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Name (A–Z)'));
+    await tester.pumpAndSettle();
     expect(
       app.sortConnections([...app.connections]).map((c) => c.name).toList(),
       ['Ö HOST', 'R HOST'],
@@ -215,7 +220,6 @@ void main() {
       await tester.tap(find.text('HOST-B'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('sort-selected')), findsNothing);
-      expect(find.byKey(const ValueKey('sort-selected-by-ip')), findsNothing);
       await tester.pumpWidget(const SizedBox());
       app.dispose();
     },
@@ -254,6 +258,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('sort-selected')));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Name (A–Z)'));
+    await tester.pumpAndSettle();
     expect(app.sortFolders([...app.folders]).map((f) => f.name).toList(), [
       'Ö FOLDER',
       'R FOLDER',
@@ -262,6 +268,98 @@ void main() {
       app.sortConnections([...app.connections]).map((c) => c.name).toList(),
       ['Ö HOST', 'R HOST'],
     );
+    await tester.pumpWidget(const SizedBox());
+    app.dispose();
+  });
+
+  testWidgets('connections sort Z–A and by device type, unknown kinds last', (tester) async {
+    final app = AppState();
+    await tester.pump();
+    final folder = ConnectionFolder(name: 'CUSTOMER-A');
+    app.folders.add(folder);
+    final unknown = SavedConnection(name: 'DEVICE-A', host: '192.0.2.1', folderId: folder.id);
+    final win = SavedConnection(name: 'DEVICE-B', host: '192.0.2.2', folderId: folder.id, device: DeviceKind.windows);
+    final linux = SavedConnection(name: 'DEVICE-C', host: '192.0.2.3', folderId: folder.id, device: DeviceKind.linux);
+    app.connections.addAll([unknown, win, linux]);
+    app.connectionOrder = app.connections.map((c) => c.id).toList();
+    List<String> names() => app.sortConnections([...app.connections]).map((c) => c.name).toList();
+
+    await app.sortConnectionsBy(app.connections.map((c) => c.id), TreeSort.nameDescending);
+    expect(names(), ['DEVICE-C', 'DEVICE-B', 'DEVICE-A']);
+    await app.sortConnectionsBy(app.connections.map((c) => c.id), TreeSort.nameAscending);
+    expect(names(), ['DEVICE-A', 'DEVICE-B', 'DEVICE-C']);
+    await app.sortConnectionsBy(app.connections.map((c) => c.id), TreeSort.deviceType);
+    expect(names(), ['DEVICE-C', 'DEVICE-B', 'DEVICE-A']);
+    app.dispose();
+  });
+
+  testWidgets('sorting a folder by name Z–A also orders its subfolders', (tester) async {
+    final app = AppState();
+    await tester.pump();
+    final parent = ConnectionFolder(name: 'CUSTOMER-A');
+    final a = ConnectionFolder(name: 'SITE-A', parentId: parent.id);
+    final b = ConnectionFolder(name: 'SITE-B', parentId: parent.id);
+    app.folders.addAll([parent, a, b]);
+    app.folderOrder = [parent.id, a.id, b.id];
+    final one = SavedConnection(name: 'DEVICE-01', host: '192.0.2.1', folderId: parent.id);
+    final two = SavedConnection(name: 'DEVICE-02', host: '192.0.2.2', folderId: parent.id);
+    app.connections.addAll([one, two]);
+    app.connectionOrder = [one.id, two.id];
+
+    await app.sortFolderContents(parent.id, TreeSort.nameDescending);
+    expect(app.sortFolders(app.folders.where((f) => f.parentId == parent.id).toList()).map((f) => f.name).toList(),
+        ['SITE-B', 'SITE-A']);
+    expect(app.sortConnections([...app.connections]).map((c) => c.name).toList(), ['DEVICE-02', 'DEVICE-01']);
+    app.dispose();
+  });
+
+  testWidgets('a folder sorts its connections from its menu, nothing selected first', (tester) async {
+    final app = AppState();
+    await tester.pump();
+    final folder = ConnectionFolder(name: 'CUSTOMER-A');
+    app.folders.add(folder);
+    final ten = SavedConnection(name: 'DEVICE-10', host: '192.0.2.10', folderId: folder.id);
+    final two = SavedConnection(name: 'DEVICE-02', host: '192.0.2.2', folderId: folder.id);
+    app.connections.addAll([ten, two]);
+    app.connectionOrder = [ten.id, two.id];
+    await showTree(tester, app);
+
+    await tester.tap(find.text('CUSTOMER-A'), buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sort contents'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sort "CUSTOMER-A"'), findsOneWidget);
+    expect(find.text('Device type'), findsOneWidget);
+    await tester.tap(find.text('IP address'));
+    await tester.pumpAndSettle();
+
+    expect(app.sortConnections([...app.connections]).map((c) => c.name).toList(), ['DEVICE-02', 'DEVICE-10']);
+    await tester.pumpWidget(const SizedBox());
+    app.dispose();
+  });
+
+  testWidgets('the sort menu names its orders and leaves out what does not apply', (tester) async {
+    final app = AppState();
+    await tester.pump();
+    final a = ConnectionFolder(name: 'CUSTOMER-A');
+    final b = ConnectionFolder(name: 'CUSTOMER-B');
+    app.folders.addAll([a, b]);
+    await showTree(tester, app);
+    await tester.tap(find.byKey(const ValueKey('select-mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('CUSTOMER-A'));
+    await tester.pump();
+    await tester.tap(find.text('CUSTOMER-B'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('sort-selected')));
+    await tester.pumpAndSettle();
+    expect(find.text('Name (A–Z)'), findsOneWidget);
+    expect(find.text('Name (Z–A)'), findsOneWidget);
+    expect(find.text('IP address'), findsNothing, reason: 'only folders are selected');
+    await tester.tap(find.text('Name (Z–A)'));
+    await tester.pumpAndSettle();
+    expect(app.sortFolders([...app.folders]).map((f) => f.name).toList(), ['CUSTOMER-B', 'CUSTOMER-A']);
     await tester.pumpWidget(const SizedBox());
     app.dispose();
   });

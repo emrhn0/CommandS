@@ -709,15 +709,29 @@ class AppState extends ChangeNotifier {
 
   /// Sorts selected connections by name within each folder, keeping the
   /// other connections in their places and preserving each folder assignment.
-  Future<void> sortConnectionsByName(Iterable<String> ids) async {
+  Future<void> sortConnectionsByName(Iterable<String> ids) => sortConnectionsBy(ids, TreeSort.nameAscending);
+
+  /// Sorts selected connections by numeric IP within each folder. Hostnames
+  /// follow IP addresses in their current order; unselected slots stay put.
+  Future<void> sortConnectionsByIp(Iterable<String> ids) => sortConnectionsBy(ids, TreeSort.ipAddress);
+
+  /// Sorts the connections [ids] by [by] among themselves, folder by folder:
+  /// the chosen ones take the places they held, in the new order, and every
+  /// other connection stays where it was. Ties keep their current order.
+  Future<void> sortConnectionsBy(Iterable<String> ids, TreeSort by) async {
     final chosen = ids.toSet();
     final folderIds = {for (final c in connections) if (chosen.contains(c.id)) c.folderId};
     var order = [...connectionOrder];
     for (final folderId in folderIds) {
       final level = sortConnections(connections.where((c) => c.folderId == folderId).toList());
-      final picked = level.where((c) => chosen.contains(c.id)).toList()
-        ..sort((a, b) => compareTurkish(a.name, b.name));
+      final picked = level.where((c) => chosen.contains(c.id)).toList();
       if (picked.length < 2) continue;
+      final compare = _connectionComparator(by, picked);
+      final originalIndex = {for (var i = 0; i < picked.length; i++) picked[i].id: i};
+      picked.sort((a, b) {
+        final c = compare(a, b);
+        return c != 0 ? c : originalIndex[a.id]!.compareTo(originalIndex[b.id]!);
+      });
       var next = 0;
       final arranged = [for (final c in level) chosen.contains(c.id) ? picked[next++].id : c.id];
       order = [...order.where((id) => !arranged.contains(id)), ...arranged];
@@ -729,24 +743,32 @@ class AppState extends ChangeNotifier {
     await prefs.setStringList(_kConnectionOrder, connectionOrder);
   }
 
-  /// Sorts selected connections by numeric IP within each folder. Hostnames
-  /// follow IP addresses in their current order; unselected slots stay put.
-  Future<void> sortConnectionsByIp(Iterable<String> ids) async {
-    final chosen = ids.toSet();
-    final folderIds = {for (final c in connections) if (chosen.contains(c.id)) c.folderId};
-    var order = [...connectionOrder];
-    for (final folderId in folderIds) {
-      final level = sortConnections(connections.where((c) => c.folderId == folderId).toList());
-      final picked = level.where((c) => chosen.contains(c.id)).toList();
-      if (picked.length < 2) continue;
-      final originalIndex = {for (var i = 0; i < picked.length; i++) picked[i].id: i};
-      final addresses = {for (final c in picked) c.id: InternetAddress.tryParse(c.host.trim())};
-      picked.sort((a, b) {
-        final left = addresses[a.id], right = addresses[b.id];
-        if (left == null || right == null) {
-          if (left == null && right != null) return 1;
-          if (right == null && left != null) return -1;
-        } else {
+  static int Function(SavedConnection, SavedConnection) _connectionComparator(
+    TreeSort by,
+    List<SavedConnection> picked,
+  ) {
+    switch (by) {
+      case TreeSort.nameAscending:
+        return (a, b) => compareTurkish(a.name, b.name);
+      case TreeSort.nameDescending:
+        return (a, b) => compareTurkish(b.name, a.name);
+      case TreeSort.deviceType:
+        // Grouped by kind in the order the kinds are listed; unknown last.
+        int rank(SavedConnection c) => c.device?.index ?? DeviceKind.values.length;
+        return (a, b) {
+          final kind = rank(a).compareTo(rank(b));
+          return kind != 0 ? kind : compareTurkish(a.name, b.name);
+        };
+      case TreeSort.ipAddress:
+        final addresses = {for (final c in picked) c.id: InternetAddress.tryParse(c.host.trim())};
+        return (a, b) {
+          final left = addresses[a.id], right = addresses[b.id];
+          // Host names follow the addresses, in their current order.
+          if (left == null || right == null) {
+            if (left == null && right != null) return 1;
+            if (right == null && left != null) return -1;
+            return 0;
+          }
           final family = (left.type == InternetAddressType.IPv4 ? 0 : 1)
               .compareTo(right.type == InternetAddressType.IPv4 ? 0 : 1);
           if (family != 0) return family;
@@ -754,18 +776,21 @@ class AppState extends ChangeNotifier {
             final octet = left.rawAddress[i].compareTo(right.rawAddress[i]);
             if (octet != 0) return octet;
           }
-        }
-        return originalIndex[a.id]!.compareTo(originalIndex[b.id]!);
-      });
-      var next = 0;
-      final arranged = [for (final c in level) chosen.contains(c.id) ? picked[next++].id : c.id];
-      order = [...order.where((id) => !arranged.contains(id)), ...arranged];
+          return 0;
+        };
     }
-    if (listEquals(order, connectionOrder)) return;
-    connectionOrder = order;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_kConnectionOrder, connectionOrder);
+  }
+
+  /// Sorts everything directly inside [folderId] (null: the top level):
+  /// its connections by [by], and, for the name orders, its subfolders too.
+  Future<void> sortFolderContents(String? folderId, TreeSort by) async {
+    await sortConnectionsBy(connections.where((c) => c.folderId == folderId).map((c) => c.id), by);
+    if (by == TreeSort.nameAscending || by == TreeSort.nameDescending) {
+      await sortFoldersByName(
+        folders.where((f) => f.parentId == folderId).map((f) => f.id),
+        descending: by == TreeSort.nameDescending,
+      );
+    }
   }
 
   // ---- Folder order and sidebar width ----
@@ -812,14 +837,14 @@ class AppState extends ChangeNotifier {
   /// Sorts the folders [ids] by name, Turkish alphabet, among themselves:
   /// each level keeps its other folders where they were, and the chosen
   /// ones take the places they held, now in A-Z order. Parents do not change.
-  Future<void> sortFoldersByName(Iterable<String> ids) async {
+  Future<void> sortFoldersByName(Iterable<String> ids, {bool descending = false}) async {
     final chosen = ids.toSet();
     final parents = {for (final f in folders) if (chosen.contains(f.id)) f.parentId};
     var order = [...folderOrder];
     for (final parent in parents) {
       final level = sortFolders(folders.where((f) => f.parentId == parent).toList());
       final picked = level.where((f) => chosen.contains(f.id)).toList()
-        ..sort((a, b) => compareTurkish(a.name, b.name));
+        ..sort((a, b) => descending ? compareTurkish(b.name, a.name) : compareTurkish(a.name, b.name));
       if (picked.length < 2) continue;
       var next = 0;
       final arranged = [for (final f in level) chosen.contains(f.id) ? picked[next++].id : f.id];
@@ -1767,3 +1792,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+/// The orders the tree can put connections (and, by name, folders) in.
+enum TreeSort { nameAscending, nameDescending, ipAddress, deviceType }
