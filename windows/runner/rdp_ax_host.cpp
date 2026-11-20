@@ -1,11 +1,18 @@
 #include "rdp_ax_host.h"
 
 #include <objbase.h>
+#include <bcrypt.h>
+#include <shlobj.h>
 #include <olectl.h>
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <vector>
+
+#pragma comment(lib, "bcrypt.lib")
 
 namespace commands {
 namespace {
@@ -467,6 +474,7 @@ bool RdpAxHost::Connect(const RdpConnectParams& params, std::wstring* error) {
   const int height = ClampDesktop(params.desktop_height);
 
   DispPut(dispatch_, L"Server", VarStr(params.host));
+  pin_name_ = params.host + L":" + std::to_wstring(params.port);
   DispPut(dispatch_, L"UserName", VarStr(params.username));
   if (!params.domain.empty()) {
     DispPut(dispatch_, L"Domain", VarStr(params.domain));
@@ -493,6 +501,8 @@ bool RdpAxHost::Connect(const RdpConnectParams& params, std::wstring* error) {
     // server whose certificate does not verify: these are typically machines
     // on the user's own network with self-signed certificates, and mstsc's
     // answer to that is a warning dialog we have no way to show inside a tab.
+    // Instead the server's key is pinned on first use (OnReceivedTSPublicKey
+    // below), so a later impostor is refused.
     DispPut(advanced, L"AuthenticationLevel", VarLong(0));
     DispPut(advanced, L"EnableCredSspSupport", VarBool(true));
     DispPut(advanced, L"NegotiateSecurityLayer", VarBool(true));
@@ -1107,6 +1117,68 @@ HRESULT RdpAxHost::GetIDsOfNames(REFIID, LPOLESTR*, UINT, LCID, DISPID*) {
   return E_NOTIMPL;
 }
 
+namespace {
+
+// SHA-256 of the server's public key, as lowercase hex. Empty on failure.
+std::string KeyFingerprint(const BYTE* data, ULONG size) {
+  BCRYPT_ALG_HANDLE alg = nullptr;
+  if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0) {
+    return "";
+  }
+  UCHAR digest[32] = {};
+  const bool ok = BCryptHash(alg, nullptr, 0, const_cast<PUCHAR>(data), size,
+                             digest, sizeof(digest)) == 0;
+  BCryptCloseAlgorithmProvider(alg, 0);
+  if (!ok) return "";
+  static const char kHex[] = "0123456789abcdef";
+  std::string hex;
+  for (UCHAR b : digest) {
+    hex.push_back(kHex[b >> 4]);
+    hex.push_back(kHex[b & 15]);
+  }
+  return hex;
+}
+
+// %APPDATA%\CommandS\rdp_known_hosts: one "host:port fingerprint" per line,
+// kept beside the SSH known_hosts file.
+std::wstring PinFile() {
+  PWSTR roaming = nullptr;
+  if (FAILED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &roaming))) {
+    return L"";
+  }
+  std::wstring dir = std::wstring(roaming) + L"\\CommandS";
+  CoTaskMemFree(roaming);
+  CreateDirectoryW(dir.c_str(), nullptr);
+  return dir + L"\\rdp_known_hosts";
+}
+
+enum class PinResult { kFirstUse, kMatch, kChanged, kUnavailable };
+
+// Trust on first use, as with SSH: the first key seen for a host is kept,
+// and a different one later is refused.
+PinResult CheckPin(const std::string& name, const std::string& fingerprint) {
+  const std::wstring path = PinFile();
+  if (path.empty() || fingerprint.empty() || name.empty()) {
+    return PinResult::kUnavailable;
+  }
+  {
+    std::ifstream in(path);
+    std::string line;
+    while (std::getline(in, line)) {
+      std::istringstream fields(line);
+      std::string host, pin;
+      if (fields >> host >> pin && host == name) {
+        return pin == fingerprint ? PinResult::kMatch : PinResult::kChanged;
+      }
+    }
+  }
+  std::ofstream out(path, std::ios::app);
+  out << name << ' ' << fingerprint << '\n';
+  return out ? PinResult::kFirstUse : PinResult::kUnavailable;
+}
+
+}  // namespace
+
 HRESULT RdpAxHost::Invoke(DISPID dispid, REFIID, LCID, WORD,
                           DISPPARAMS* params, VARIANT* result, EXCEPINFO*,
                           UINT*) {
@@ -1212,16 +1284,42 @@ HRESULT RdpAxHost::Invoke(DISPID dispid, REFIID, LCID, WORD,
         result->boolVal = VARIANT_TRUE;
       }
       return S_OK;
-    case kOnReceivedTSPublicKey:
-      // Accept and carry on logging in; a self-signed certificate on the
-      // user's own network is the normal case here and there is no dialog to
-      // show inside a tab.
+    case kOnReceivedTSPublicKey: {
+      // OnReceivedTSPublicKey(BSTR publicKey, VARIANT_BOOL* continueLogon),
+      // reversed in rgvarg. The server's key is pinned per host on first
+      // use; a different key later means someone else may be answering, so
+      // the logon stops before the saved password is handed over.
+      VARIANT_BOOL allow = VARIANT_TRUE;
+      if (params != nullptr && params->cArgs >= 2) {
+        const VARIANT& key_arg = params->rgvarg[params->cArgs - 1];
+        BSTR key = nullptr;
+        if (key_arg.vt == VT_BSTR) key = key_arg.bstrVal;
+        if (key_arg.vt == (VT_BYREF | VT_BSTR) && key_arg.pbstrVal) key = *key_arg.pbstrVal;
+        if (key != nullptr) {
+          const std::string fingerprint = KeyFingerprint(
+              reinterpret_cast<const BYTE*>(key), SysStringByteLen(key));
+          if (CheckPin(Narrow(pin_name_), fingerprint) == PinResult::kChanged) {
+            allow = VARIANT_FALSE;
+            RdpHostEvent event;
+            event.type = "fatal";
+            event.message =
+                "The server's identity key has changed since the last "
+                "connection, so CommandS did not log on. If the server was "
+                "reinstalled, remove its line from "
+                "%APPDATA%\\CommandS\\rdp_known_hosts and connect again.";
+            Emit(event);
+          }
+        }
+        VARIANT& out = params->rgvarg[0];
+        if (out.vt == (VT_BYREF | VT_BOOL) && out.pboolVal) *out.pboolVal = allow;
+      }
       if (result != nullptr) {
         VariantInit(result);
         result->vt = VT_BOOL;
-        result->boolVal = VARIANT_TRUE;
+        result->boolVal = allow;
       }
       return S_OK;
+    }
     default:
       return S_OK;
   }

@@ -231,19 +231,41 @@ class MacRdpSessionController implements SessionController {
   /// would only be guessing at. Writing the user's password into the login
   /// keychain on a guess is worse than one prompt — and [copyPasswordToClipboard]
   /// makes that prompt a paste.
-  String _rdpContents() {
+  String _rdpContents() => rdpFileContents(
+        host: host,
+        port: _port,
+        user: _qualifiedUser,
+        clipboard: conn.rdpClipboard,
+        wallpaper: conn.rdpWallpaper,
+      );
+
+  /// The .rdp file is one setting per line, so a line break inside a host or
+  /// user name (possible in an imported file) would add settings of its own.
+  /// Control characters are removed. The Microsoft client runs in its own
+  /// window, so it can warn about a server it cannot verify
+  /// (authentication level 2) instead of connecting silently.
+  @visibleForTesting
+  static String rdpFileContents({
+    required String host,
+    required int port,
+    required String user,
+    required bool clipboard,
+    required bool wallpaper,
+  }) {
+    String clean(String v) => v.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+    final safeUser = clean(user);
     final buffer = StringBuffer()
-      ..writeln('full address:s:$host:$_port')
+      ..writeln('full address:s:${clean(host)}:$port')
       ..writeln('prompt for credentials:i:0')
       ..writeln('screen mode id:i:1')
       ..writeln('session bpp:i:32')
       ..writeln('audiomode:i:0')
-      ..writeln('redirectclipboard:i:${conn.rdpClipboard ? 1 : 0}')
-      ..writeln('disable wallpaper:i:${conn.rdpWallpaper ? 0 : 1}')
-      ..writeln('authentication level:i:0')
+      ..writeln('redirectclipboard:i:${clipboard ? 1 : 0}')
+      ..writeln('disable wallpaper:i:${wallpaper ? 0 : 1}')
+      ..writeln('authentication level:i:2')
       ..writeln('negotiate security layer:i:1');
-    if (_qualifiedUser.isNotEmpty) {
-      buffer.writeln('username:s:$_qualifiedUser');
+    if (safeUser.isNotEmpty) {
+      buffer.writeln('username:s:$safeUser');
     }
     return buffer.toString();
   }

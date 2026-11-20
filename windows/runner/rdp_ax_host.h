@@ -280,6 +280,8 @@ class RdpAxHost : public IOleClientSite,
   bool has_client9_ = false;  // UpdateSessionDisplaySettings available
   bool visible_ = true;
   bool connected_ = false;
+  // "host:port" of the current connection, for the server key pin.
+  std::wstring pin_name_;
   bool connect_called_ = false;
 
   // Whether this app asked for the disconnect. The control's own reason code

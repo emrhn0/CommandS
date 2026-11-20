@@ -14,6 +14,7 @@ import 'host_keys.dart';
 import 'login_watcher.dart';
 import 'session_controller.dart';
 import 'session_log.dart';
+import 'ssh_options.dart';
 import 'sudo_prompt_watcher.dart';
 import 'sftp_client.dart';
 import 'sftp_transfer.dart';
@@ -183,7 +184,9 @@ class PtySessionController implements TerminalSessionController {
   String? logName;
   List<String> logFolders = const [];
 
-  Future<String> startRecording(String directory) {
+  /// With [includeHistory], the log starts with what the terminal already
+  /// shows (scrollback included) instead of only the output from now on.
+  Future<String> startRecording(String directory, {bool includeHistory = false}) {
     final pending = _startingRecording;
     if (pending != null) return pending;
     final active = _recorder;
@@ -191,10 +194,10 @@ class PtySessionController implements TerminalSessionController {
     if (_disposed || status != SessionStatus.running) {
       return Future.error(StateError('SSH session is not running'));
     }
-    return _startingRecording = _startRecording(directory);
+    return _startingRecording = _startRecording(directory, includeHistory);
   }
 
-  Future<String> _startRecording(String directory) async {
+  Future<String> _startRecording(String directory, bool includeHistory) async {
     try {
       late final SessionLogRecorder recorder;
       recorder = await SessionLogRecorder.start(
@@ -211,6 +214,15 @@ class PtySessionController implements TerminalSessionController {
       }
       recordingError.value = null;
       _recorder = recorder;
+      if (includeHistory) {
+        // Taken in the same step that turns the recorder on: output reaches
+        // the terminal and the recorder together, so nothing is missed or
+        // written twice. The history already holds any early output an
+        // automatic start was keeping back.
+        _autoRecordingPending = false;
+        _autoRecordingBuffer.clear();
+        recorder.write(terminalHistoryText(terminal.buffer));
+      }
       recordingPath.value = recorder.path;
       return recorder.path;
     } finally {
@@ -869,16 +881,9 @@ class PtySessionController implements TerminalSessionController {
       String askpass;
       if (Platform.isWindows) {
         final ps1 = File('${dir.path}\\askpass.ps1');
-        await ps1.writeAsString(
-          "param([string]\$Prompt = '')\r\n"
-          "if (\$Prompt -match '\\(yes/no\\)') { [Console]::Out.Write('yes'); exit 0 }\r\n"
-          '[Console]::Out.Write(\$env:COMMANDS_SSH_PASSWORD)\r\n',
-        );
+        await ps1.writeAsString(windowsAskpassPs1);
         final cmd = File('${dir.path}\\askpass.cmd');
-        await cmd.writeAsString(
-          '@powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass '
-          '-File "%~dp0askpass.ps1" %*\r\n',
-        );
+        await cmd.writeAsString(windowsAskpassCmd);
         askpass = cmd.path;
       } else {
         final sh = File('${dir.path}/askpass.sh');
@@ -904,7 +909,7 @@ class PtySessionController implements TerminalSessionController {
       // which keeps a non-ASCII profile path out of the file's own encoding.
       final hostsDir = Directory('${Platform.environment['APPDATA']}\\$appDataDirName');
       if (!hostsDir.existsSync()) hostsDir.createSync(recursive: true);
-      final args = await _sshArgs(ssh, knownHosts: '%APPDATA%\\$appDataDirName\\known_hosts');
+      final args = await _sshArgs(ssh, knownHosts: knownHostsOption(HostKeys.knownHostsFile()));
       if (generation != _generation) return;
       // flutter_pty's Windows backend concatenates argv without quoting *and*
       // repeats the executable as argv[1]; a batch wrapper sidesteps both,
@@ -930,7 +935,7 @@ class PtySessionController implements TerminalSessionController {
       );
     } else {
       final home = Platform.environment['HOME'] ?? '';
-      final args = await _sshArgs(ssh, knownHosts: '$home/.ssh/known_hosts');
+      final args = await _sshArgs(ssh, knownHosts: knownHostsOption('$home/.ssh/known_hosts'));
       if (generation != _generation) return;
       // flutter_pty forwards a short allowlist otherwise, and a bundle started
       // from Finder has almost no environment to begin with.

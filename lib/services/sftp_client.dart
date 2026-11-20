@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 
 import '../app_version.dart';
+import 'ssh_options.dart';
 
 class SftpEntry {
   const SftpEntry(this.name, {required this.isDirectory, required this.size});
@@ -375,7 +376,7 @@ class OpenSshSftpClient implements SftpClient {
         '-o',
         'StrictHostKeyChecking=accept-new',
         '-o',
-        'UserKnownHostsFile=$knownHosts',
+        'UserKnownHostsFile=${knownHostsOption(knownHosts)}',
         '-o',
         'ConnectTimeout=15',
         '-o',
@@ -506,16 +507,9 @@ class OpenSshSftpClient implements SftpClient {
   Future<String> _writeAskpass(Directory dir) async {
     if (Platform.isWindows) {
       final ps1 = File('${dir.path}\\askpass.ps1');
-      await ps1.writeAsString(
-        "param([string]\$Prompt = '')\r\n"
-        "if (\$Prompt -match '\\(yes/no\\)') { [Console]::Out.Write('yes'); exit 0 }\r\n"
-        '[Console]::Out.Write(\$env:COMMANDS_SSH_PASSWORD)\r\n',
-      );
+      await ps1.writeAsString(windowsAskpassPs1);
       final cmd = File('${dir.path}\\askpass.cmd');
-      await cmd.writeAsString(
-        '@powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass '
-        '-File "%~dp0askpass.ps1" %*\r\n',
-      );
+      await cmd.writeAsString(windowsAskpassCmd);
       return cmd.path;
     }
     final file = File('${dir.path}/askpass.sh');

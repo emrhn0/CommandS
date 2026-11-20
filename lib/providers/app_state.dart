@@ -1068,8 +1068,31 @@ class AppState extends ChangeNotifier {
     return (folders: selectedFolders, connections: selectedConnections);
   }
 
-  String exportAll({Set<String>? connectionIds}) {
+  /// A copy of [c] without its secrets, unless [passwordIds] includes it.
+  /// Null [passwordIds] keeps everything (a backup of one's own data).
+  static SavedConnection _forExport(SavedConnection c, Set<String>? passwordIds) {
+    if (passwordIds == null || passwordIds.contains(c.id)) return c;
+    final copy = SavedConnection.fromJson(c.toJson());
+    copy.password = '';
+    copy.rememberPassword = false;
+    copy.enablePassword = '';
+    copy.credentialProfileId = null;
+    return copy;
+  }
+
+  ({List<ConnectionFolder> folders, List<SavedConnection> connections}) _exportSubset(
+    Set<String>? connectionIds,
+    Set<String>? passwordIds,
+  ) {
     final subset = _selectSubset(connectionIds);
+    return (
+      folders: subset.folders,
+      connections: [for (final c in subset.connections) _forExport(c, passwordIds)],
+    );
+  }
+
+  String exportAll({Set<String>? connectionIds, Set<String>? passwordIds}) {
+    final subset = _exportSubset(connectionIds, passwordIds);
     final exported = {for (final c in subset.connections) c.id};
     final folderIds = {for (final f in subset.folders) f.id};
     // A layout goes along when every connection it opens is exported; one
@@ -1089,13 +1112,13 @@ class AppState extends ChangeNotifier {
     return _storage.exportJson(folders: subset.folders, connections: subset.connections, layouts: outLayouts);
   }
 
-  String exportAllXml({Set<String>? connectionIds}) {
-    final subset = _selectSubset(connectionIds);
+  String exportAllXml({Set<String>? connectionIds, Set<String>? passwordIds}) {
+    final subset = _exportSubset(connectionIds, passwordIds);
     return _storage.exportXml(folders: subset.folders, connections: subset.connections);
   }
 
-  String exportAllCsv({Set<String>? connectionIds}) {
-    final subset = _selectSubset(connectionIds);
+  String exportAllCsv({Set<String>? connectionIds, Set<String>? passwordIds}) {
+    final subset = _exportSubset(connectionIds, passwordIds);
     return _storage.exportCsv(folders: subset.folders, connections: subset.connections);
   }
 
@@ -1163,8 +1186,17 @@ class AppState extends ChangeNotifier {
         connections.add(c);
       } else {
         final existing = connections[i];
-        c.password = existing.password;
-        c.rememberPassword = existing.rememberPassword;
+        // The password stays only while it still goes to the same place: a
+        // file that points a known entry at another host must not take the
+        // saved password along.
+        final samePlace = existing.host == c.host &&
+            existing.port == c.port &&
+            existing.protocol == c.protocol &&
+            existing.username == c.username;
+        if (samePlace) {
+          c.password = existing.password;
+          c.rememberPassword = existing.rememberPassword;
+        }
         connections[i] = c;
       }
     }

@@ -166,6 +166,11 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
         command.contains('\u0000')) {
       throw ArgumentError('Command must be one line of 1–4096 characters.');
     }
+    // Control and invisible characters would reach the device as keys: a
+    // Ctrl+U or backspace can erase what the user saw or the policy checked.
+    if (hasHiddenCharacters(command)) {
+      throw ArgumentError('Command must not contain control or invisible characters.');
+    }
     final session = _session(sessionId);
     if (session.controller.status == SessionStatus.closed ||
         session.controller.status == SessionStatus.error) {
@@ -293,7 +298,16 @@ class McpServer extends ChangeNotifier {
       _token =
           testToken ??
           (saved != null && saved.length >= 32 ? saved : _newToken());
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
+      final HttpServer server;
+      try {
+        server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
+      } on SocketException {
+        // Someone else holds the port, perhaps another user of this machine
+        // waiting for the agent to send the old address. That address is no
+        // longer safe, so it is replaced; the agent needs the new one.
+        if (testToken == null) await prefs.setString(_tokenKey, _newToken());
+        rethrow;
+      }
       if (_disposed) {
         await server.close(force: true);
         return;
@@ -358,7 +372,7 @@ class McpServer extends ChangeNotifier {
         origin == null ||
         origin == 'http://127.0.0.1:${_server?.port}' ||
         origin == 'http://localhost:${_server?.port}';
-    if (!validHost || !validOrigin || request.uri.path != '/mcp/$_token') {
+    if (!validHost || !validOrigin || !_sameSecret(request.uri.path, '/mcp/$_token')) {
       response.statusCode = HttpStatus.forbidden;
       await response.close();
       return;
@@ -571,4 +585,15 @@ class McpServer extends ChangeNotifier {
     gateway.close();
     super.dispose();
   }
+}
+
+/// Compares without stopping at the first difference, so the time taken
+/// does not tell how much of the address was right.
+bool _sameSecret(String a, String b) {
+  if (a.length != b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) {
+    diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+  }
+  return diff == 0;
 }

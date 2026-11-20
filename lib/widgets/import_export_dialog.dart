@@ -25,7 +25,10 @@ Future<void> showExportDialog(BuildContext context) async {
     title: 'Export connections',
     folders: app.folders,
     connections: app.connections,
-    showPasswordToggle: false,
+    // Passwords leave the computer in plain text only when the user asks
+    // for it, connection by connection.
+    showPasswordToggle: true,
+    passwordsIncludedAtFirst: false,
   );
   if (picked == null) return;
 
@@ -60,11 +63,11 @@ Future<void> showExportDialog(BuildContext context) async {
 
   final String content;
   if (format == 'xml') {
-    content = app.exportAllXml(connectionIds: picked.connectionIds);
+    content = app.exportAllXml(connectionIds: picked.connectionIds, passwordIds: picked.passwordIds);
   } else if (format == 'csv') {
-    content = app.exportAllCsv(connectionIds: picked.connectionIds);
+    content = app.exportAllCsv(connectionIds: picked.connectionIds, passwordIds: picked.passwordIds);
   } else {
-    content = app.exportAll(connectionIds: picked.connectionIds);
+    content = app.exportAll(connectionIds: picked.connectionIds, passwordIds: picked.passwordIds);
   }
 
   final path = await FilePicker.platform.saveFile(
@@ -198,6 +201,9 @@ Future<void> _confirmAndImportParsed(
       c.password = '';
       c.rememberPassword = false;
       c.enablePassword = '';
+      // A profile link would bring this computer's saved credentials to
+      // whatever host the file names.
+      c.credentialProfileId = null;
     }
     return c;
   }).toList();

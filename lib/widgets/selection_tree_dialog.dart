@@ -21,6 +21,7 @@ Future<SelectionResult?> showSelectionTreeDialog(
   required List<ConnectionFolder> folders,
   required List<SavedConnection> connections,
   bool showPasswordToggle = false,
+  bool passwordsIncludedAtFirst = true,
 }) {
   return showDialog<SelectionResult>(
     context: context,
@@ -29,6 +30,7 @@ Future<SelectionResult?> showSelectionTreeDialog(
       folders: folders,
       connections: connections,
       showPasswordToggle: showPasswordToggle,
+      passwordsIncludedAtFirst: passwordsIncludedAtFirst,
     ),
   );
 }
@@ -47,11 +49,13 @@ class _SelectionTreeDialog extends StatefulWidget {
     required this.folders,
     required this.connections,
     required this.showPasswordToggle,
+    required this.passwordsIncludedAtFirst,
   });
   final String title;
   final List<ConnectionFolder> folders;
   final List<SavedConnection> connections;
   final bool showPasswordToggle;
+  final bool passwordsIncludedAtFirst;
 
   @override
   State<_SelectionTreeDialog> createState() => _SelectionTreeDialogState();
@@ -65,7 +69,9 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
   void initState() {
     super.initState();
     _checkedConnections = widget.connections.map((c) => c.id).toSet();
-    _checkedPasswords = widget.connections.where((c) => c.password.isNotEmpty).map((c) => c.id).toSet();
+    _checkedPasswords = widget.passwordsIncludedAtFirst
+        ? widget.connections.where(hasCredentials).map((c) => c.id).toSet()
+        : <String>{};
   }
 
   List<_Row> _rows() {
@@ -179,7 +185,7 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
                       }
                       final conn = row.connection!;
                       final checked = _checkedConnections.contains(conn.id);
-                      final hasPassword = conn.password.isNotEmpty;
+                      final hasPassword = hasCredentials(conn);
                       return Padding(
                         padding: EdgeInsets.only(left: row.depth * 16),
                         child: CheckboxListTile(
@@ -235,3 +241,9 @@ class _SelectionTreeDialogState extends State<_SelectionTreeDialog> {
     );
   }
 }
+
+/// Whether a connection carries anything secret that an import or export
+/// could take along: a password, an enable password, or a link to a saved
+/// credential profile.
+bool hasCredentials(SavedConnection c) =>
+    c.password.isNotEmpty || c.enablePassword.isNotEmpty || c.credentialProfileId != null;

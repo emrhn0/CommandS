@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:commands/providers/app_state.dart';
@@ -14,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:xterm/xterm.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -311,6 +313,125 @@ void main() {
     session.dispose();
   });
 
+  test('history is written first only when asked for', () async {
+    PtySessionController running() => PtySessionController(
+          host: '192.0.2.10',
+          port: 22,
+          username: 'user',
+          startImmediately: false,
+        )..status = SessionStatus.running;
+
+    final withHistory = running();
+    withHistory.debugReceiveOutput('earlier line\r\n\r\nDEVICE-01# ');
+    final path = await withHistory.startRecording(root.path, includeHistory: true);
+    withHistory.debugReceiveOutput('show version\r\n');
+    await withHistory.stopRecording();
+    expect(await File(path).readAsString(), 'earlier line\r\n\r\nDEVICE-01# show version\r\n');
+    withHistory.dispose();
+
+    final fromNow = running();
+    fromNow.debugReceiveOutput('earlier line\r\nDEVICE-01# ');
+    final second = await fromNow.startRecording(root.path);
+    fromNow.debugReceiveOutput('show version\r\n');
+    await fromNow.stopRecording();
+    expect(await File(second).readAsString(), 'show version\r\n');
+    fromNow.dispose();
+  });
+
+  test('history keeps a wrapped line whole', () {
+    final terminal = Terminal()..resize(10, 5);
+    terminal.write('0123456789abc\r\nnext');
+    expect(terminalHistoryText(terminal.buffer), '0123456789abc\r\nnext');
+  });
+
+  testWidgets('record asks about history each time, unticked', (tester) async {
+    final app = AppState();
+    await tester.pump();
+    final session = PtySessionController(
+      host: '192.0.2.10',
+      port: 22,
+      tabTitle: 'DEVICE-01',
+      startImmediately: false,
+    )..status = SessionStatus.running;
+    session.debugReceiveOutput('earlier output\r\nDEVICE-01# ');
+    app.tabs.add(OpenTab(id: 'ssh', controller: session));
+    app.setActiveTab(0);
+    await tester.binding.setSurfaceSize(const Size(1200, 550));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: app,
+        child: const MaterialApp(home: Scaffold(body: TerminalTabsArea())),
+      ),
+    );
+    await tester.pump();
+
+    // The file is created with real IO, which finishes only outside fake time.
+    Future<void> waitForRecording(bool on) async {
+      for (var i = 0; i < 100; i++) {
+        if ((session.recordingPath.value != null) == on) return;
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+      }
+    }
+
+    // Futures from the fake zone that wait on real IO: let both run in turn.
+    Future<void> settle(Future<void> work) async {
+      var done = false;
+      unawaited(work.whenComplete(() => done = true));
+      for (var i = 0; i < 200 && !done; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump();
+      }
+      expect(done, isTrue);
+    }
+
+    final button = find.byKey(const ValueKey('session-log-button'));
+    final checkbox = find.descendant(
+      of: find.byKey(const ValueKey('session-log-include-history')),
+      matching: find.byType(Checkbox),
+    );
+
+    // Dismissing the bar starts nothing.
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Include history'), findsOneWidget);
+    await tester.tapAt(const Offset(500, 400));
+    await tester.pumpAndSettle();
+    expect(session.recordingPath.value, isNull);
+
+    // Ticked: the log starts with what is already on screen.
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(checkbox).value, isFalse);
+    await tester.tap(find.byKey(const ValueKey('session-log-include-history')));
+    await tester.pump();
+    expect(tester.widget<Checkbox>(checkbox).value, isTrue);
+    await tester.tap(find.byKey(const ValueKey('session-log-start')));
+    await tester.pumpAndSettle();
+    await waitForRecording(true);
+    final first = session.recordingPath.value!;
+    await settle(session.stopRecording());
+    await tester.pump();
+    expect(await tester.runAsync(() => File(first).readAsString()), startsWith('earlier output\r\n'));
+
+    // The choice is not kept: next time it is unticked again.
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(checkbox).value, isFalse);
+    await tester.tap(find.byKey(const ValueKey('session-log-start')));
+    await tester.pumpAndSettle();
+    await waitForRecording(true);
+    final second = session.recordingPath.value!;
+    session.debugReceiveOutput('new output\r\n');
+    await settle(session.stopRecording());
+    await tester.pump();
+    expect(await tester.runAsync(() => File(second).readAsString()), 'new output\r\n');
+
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
   testWidgets('SSH button shows a recording indicator and stops recording', (
     tester,
   ) async {
@@ -520,6 +641,9 @@ void main() {
     }
 
     await tester.tap(find.byKey(const ValueKey('pane-record-b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('session-log-start')));
+    await tester.pumpAndSettle();
     await until(() => second.recordingPath.value != null);
     await tester.pump();
     expect(second.recordingPath.value, isNotNull);

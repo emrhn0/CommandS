@@ -30,8 +30,21 @@ const _sessionPaging = {
   'set cli pager off', // Palo Alto
 };
 
+/// Control characters (Ctrl+U, backspace, escape) and invisible format
+/// characters (line separators, direction marks, zero-width spaces). A
+/// device's line editor acts on the first kind; the second hides text.
+final _hidden = RegExp(
+    '[\\x00-\\x1F\\x7F-\\x9F\\u00AD\\u061C\\u180E\\u200B-\\u200F\\u2028-\\u202E\\u2060-\\u206F\\uFEFF]');
+
+bool hasHiddenCharacters(String command) => _hidden.hasMatch(command);
+
 bool runsWithoutAsking(String command, DeviceKind? device) {
   if (!_networkDevices.contains(device)) return false;
+  if (hasHiddenCharacters(command)) return false;
+  // The device kind is learnt from what the session prints, so a shell can
+  // pass for a network device. Command substitution only means something
+  // to a shell, so it always asks.
+  if (command.contains(r'$(') || command.contains(r'${')) return false;
   final text = command.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
   if (text.isEmpty) return false;
   if (_sessionPaging.contains(text)) return true;

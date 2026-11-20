@@ -299,6 +299,17 @@ class _SftpBrowserState extends State<SftpBrowser> {
         if (!mounted || _client != client) return;
         if (existing.contains(name) && !await _confirmOverwrite(name)) continue;
         if (!mounted || _client != client) return;
+        // A remote name is the server's choice. On Windows a "\\" or ":" in
+        // it would reach outside the chosen folder, so such files are
+        // skipped rather than written somewhere else.
+        if (!upload && !isSafeLocalName(name)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(tr('Skipped "{name}": the name is not allowed on this computer.', {'name': name})),
+            ));
+          }
+          continue;
+        }
         final localPath = _local.join(localDirectory, name);
         final remotePath = OpenSshSftpClient.joinRemote(remoteDirectory, name);
         final item = SftpTransfer(
@@ -1352,4 +1363,19 @@ class _FileListState extends State<_FileList> {
       ),
     );
   }
+}
+
+/// Whether [name] is a single file name that stays inside the folder it is
+/// joined to: no path separators, no drive or stream colon, not "." or "..",
+/// no control characters, and on Windows not a reserved device name or a
+/// name ending in a dot or space (Windows drops those).
+bool isSafeLocalName(String name, {bool? windows}) {
+  final win = windows ?? Platform.isWindows;
+  if (name.isEmpty || name == '.' || name == '..') return false;
+  if (RegExp(r'[\x00-\x1F\x7F/]').hasMatch(name)) return false;
+  if (!win) return true;
+  if (RegExp(r'[\\:*?"<>|]').hasMatch(name)) return false;
+  if (name.endsWith('.') || name.endsWith(' ')) return false;
+  return !RegExp(r'^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$', caseSensitive: false)
+      .hasMatch(name);
 }

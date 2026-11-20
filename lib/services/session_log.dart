@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:xterm/xterm.dart';
 
 import '../app_version.dart';
 import '../l10n/strings.dart';
@@ -136,7 +137,9 @@ class TerminalTextCleaner {
     if (csi == null) return;
     final params = csi.group(1)!;
     final n = int.tryParse(params.split(';').first) ?? 0;
-    final count = n == 0 ? 1 : n;
+    // The device chooses the number; a huge one must not make the log
+    // build a huge line. No real move goes past the longest line kept.
+    final count = (n == 0 ? 1 : n).clamp(1, _maxLine);
     final rowStart = _rowStart();
     final rowEnd = rowStart + _width;
     void blank(int from, int to) {
@@ -157,9 +160,9 @@ class TerminalTextCleaner {
       case 'A': // up a row, within this line
         _cursor = (_cursor - count * _width).clamp(0, _cursor);
       case 'B': // down a row
-        _cursor += count * _width;
+        _cursor = (_cursor + count * _width).clamp(0, _maxLine);
       case 'G': // to column
-        _cursor = rowStart + count - 1;
+        _cursor = (rowStart + count - 1).clamp(0, _maxLine);
       case 'K': // erase in this row
         if (n == 0) {
           blank(_cursor, rowEnd);
@@ -175,7 +178,7 @@ class TerminalTextCleaner {
           _line.removeRange(_cursor, (_cursor + count).clamp(_cursor, _line.length));
         }
       case '@': // insert blanks
-        if (_cursor < _line.length) _line.insertAll(_cursor, List.filled(count, ' '));
+        if (_cursor < _line.length) _line.insertAll(_cursor, List.filled((_maxLine - _line.length).clamp(0, count), ' '));
       case 'X': // erase characters
         for (var i = _cursor; i < _cursor + count && i < _line.length; i++) {
           _line[i] = ' ';
@@ -196,6 +199,27 @@ class SessionLogFolderMissing implements Exception {
     'The log folder {path} no longer exists. Choose a log folder in Settings > Session logs.',
     {'path': path},
   );
+}
+
+/// What the terminal already shows, scrollback included, as plain text: every
+/// line before the cursor, then the cursor's own line up to the cursor, so the
+/// output that follows carries on from the same place in the log.
+String terminalHistoryText(Buffer buffer) {
+  if (buffer.height == 0) return '';
+  final last = buffer.absoluteCursorY.clamp(0, buffer.height - 1);
+  final out = StringBuffer();
+  for (var y = 0; y <= last; y++) {
+    final line = buffer.lines[y];
+    if (y > 0 && !line.isWrapped) out.write('\r\n');
+    if (y == last) {
+      out.write(line.getText(0, buffer.cursorX));
+      continue;
+    }
+    final text = line.getText();
+    // A line that wraps on keeps its spaces; they are part of the sentence.
+    out.write(buffer.lines[y + 1].isWrapped ? text : text.trimRight());
+  }
+  return out.toString();
 }
 
 /// The selected root is local to this installation, never part of exports.
