@@ -5,7 +5,6 @@ import 'package:window_manager/window_manager.dart';
 
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
-import '../theme/wordmark.dart';
 import '../app_version.dart';
 import '../l10n/strings.dart';
 
@@ -78,15 +77,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
         const SizedBox(width: 7),
         Text(
           custom ?? appBaseName,
-          style: custom != null
-              ? TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: palette.text)
-              : TextStyle(
-                  fontFamily: wordmarkFontFamily,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                  color: palette.text,
-                ),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: palette.text),
         ),
         if (custom == null && buildChannel == ReleaseChannel.beta) ...[
           const SizedBox(width: 6),

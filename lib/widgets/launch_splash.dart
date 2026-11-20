@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../app_version.dart';
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
-import '../theme/wordmark.dart';
 
 /// The mark and the name over the whole window for a moment at launch, then
 /// a fade to [child]. It never takes a click: the app underneath is already
@@ -120,13 +119,7 @@ class SplashView extends StatelessWidget {
                       const TextSpan(text: 'Command'),
                       TextSpan(text: 'S', style: TextStyle(color: accent)),
                     ]),
-                    style: TextStyle(
-                      fontFamily: wordmarkFontFamily,
-                      fontSize: 44,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -2,
-                      color: palette.text,
-                    ),
+                    style: TextStyle(fontSize: 46, fontWeight: FontWeight.w700, letterSpacing: -1, color: palette.text),
                   ),
                   0.04,
                 ),

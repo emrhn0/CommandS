@@ -22,10 +22,10 @@ class QuickSearchResult {
   String get id => connection?.id ?? folder!.id;
 }
 
-/// What quick search lists for [query]: connections whose name, host or user
-/// name has it, then folders whose name has it, each followed by what is
-/// inside it, in the list's own order. Favorites and recent connections come
-/// first. A connection inside a found folder is listed there, not twice.
+/// What quick search lists for [query]: first the folders whose name has it,
+/// each followed by what is inside it in the list's own order, then the
+/// connections whose name, host or user name has it, favorites and recent
+/// ones first. A connection inside a found folder is listed there, not twice.
 /// With no query: the favorites, then the recent.
 List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40, int contentsLimit = 200}) {
   final q = query.trim().toLowerCase();
@@ -75,28 +75,28 @@ List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40,
   final folders = app.folders.where((f) => found.contains(f.id) && !inFound(f.parentId)).toList()
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-  final out = <QuickSearchResult>[
-    for (final c in connections.take(limit)) QuickSearchResult.connection(c),
-  ];
-  final cap = out.length + contentsLimit;
+  // Found folders come first, each with everything inside it; then the
+  // connections found elsewhere.
+  final out = <QuickSearchResult>[];
   void contents(String folderId, int depth, Set<String> seen) {
     if (!seen.add(folderId)) return;
     for (final f in app.sortFolders(app.folders.where((f) => f.parentId == folderId).toList())) {
-      if (out.length >= cap) return;
+      if (out.length >= contentsLimit) return;
       out.add(QuickSearchResult.folder(f, depth: depth));
       contents(f.id, depth + 1, seen);
     }
     for (final c in app.sortConnections(app.connections.where((c) => c.folderId == folderId).toList())) {
-      if (out.length >= cap) return;
+      if (out.length >= contentsLimit) return;
       out.add(QuickSearchResult.connection(c, depth: depth));
     }
   }
 
   for (final f in folders) {
-    if (out.length >= cap) break;
+    if (out.length >= contentsLimit) break;
     out.add(QuickSearchResult.folder(f));
     contents(f.id, 1, <String>{});
   }
+  out.addAll([for (final c in connections.take(limit)) QuickSearchResult.connection(c)]);
   return out;
 }
 

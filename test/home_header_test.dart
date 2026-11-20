@@ -43,8 +43,7 @@ void main() {
     expect(footer.contains(settings.center), isTrue);
     expect(toggle.left, lessThan(24));
     expect(settings.right, greaterThan(footer.right - 24));
-    expect(find.byKey(const Key('quick-search-button')), findsNothing,
-        reason: 'the welcome panel has its own search box');
+    expect(find.byKey(const Key('quick-search-button')), findsOneWidget, reason: 'the title bar search box');
 
     UpdateService.available.value = const UpdateInfo(
       version: 'v9.9.9',
@@ -90,6 +89,7 @@ void main() {
     final toggle = find.byKey(const Key('sidebar-toggle'));
     final terminal = find.byType(TerminalTabsArea);
     final initialWidth = tester.getSize(terminal).width;
+    final hideAt = tester.getCenter(toggle);
     expect(find.byKey(const Key('sidebar-new-connection')), findsOneWidget);
 
     await tester.tap(toggle);
@@ -98,6 +98,11 @@ void main() {
     expect(find.text('Show the sidebar to pick a saved connection,\nor start a new one.'), findsOneWidget);
     expect(tester.getSize(terminal).width, greaterThan(initialWidth + 250));
     expect(app.sidebarWidth, 300);
+    // The button that brings it back is where the hide button was, at the
+    // bottom left, not up in the title bar.
+    expect(find.byKey(const Key('sidebar-rail')), findsOneWidget);
+    expect(tester.getCenter(toggle), hideAt);
+    expect(hideAt.dy, greaterThan(560));
 
     await tester.tap(toggle);
     await tester.pump();

@@ -281,13 +281,8 @@ class _WelcomePanelState extends State<WelcomePanel> {
     return lines[_line % lines.length];
   }
 
-  static TextStyle _wordmarkStyle(Color color) => TextStyle(
-        fontFamily: wordmarkFontFamily,
-        fontSize: 38,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -2,
-        color: color,
-      );
+  static TextStyle _wordmarkStyle(Color color) =>
+      TextStyle(fontSize: 40, fontWeight: FontWeight.w700, letterSpacing: -1, color: color);
 
   @override
   Widget build(BuildContext context) {

@@ -1,4 +1,3 @@
-import 'package:commands/theme/wordmark.dart';
 import 'package:commands/widgets/custom_title_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,7 +37,6 @@ void main() {
     expect((middle.dx - 640).abs(), lessThan(1));
     final word = tester.widget<Text>(find.descendant(of: find.byKey(const ValueKey('title-bar-name')), matching: find.byType(Text)).first);
     expect(word.data, 'CommandS');
-    expect(word.style!.fontFamily, wordmarkFontFamily);
     // Tests build the normal app: no Beta tag.
     expect(find.byKey(const ValueKey('title-bar-beta')), findsNothing);
   });

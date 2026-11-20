@@ -61,7 +61,9 @@ void main() {
         reason: 'a found folder comes with what is inside it');
     final all = quickSearch(app, '-0');
     expect(all.map((r) => r.connection?.name), ['FW-01', 'SWITCH-01']);
-    expect(quickSearch(app, 'a').first.connection, srv, reason: 'the favorite comes first');
+    expect(quickSearch(app, 'a').first.folder, site, reason: 'a found folder comes first');
+    expect(quickSearch(app, 'a').firstWhere((r) => r.depth == 0 && r.connection != null).connection, srv,
+        reason: 'then the connections, the favorite first');
     expect(quickSearch(app, '').map((r) => r.id), [srv.id], reason: 'no query: favorites, then recent');
     app.dispose();
   });
@@ -76,7 +78,7 @@ void main() {
     // FW-01 matches "0" itself, but it is listed inside its found folder only.
     final both = quickSearch(app, 'a').map((r) => r.id).toList();
     expect(both.toSet().length, both.length, reason: 'nothing twice');
-    expect(both, containsAllInOrder([site.id, inner.id, sw.id, fw.id]));
+    expect(both, [site.id, inner.id, sw.id, fw.id, srv.id], reason: 'the folder and its contents, then the rest');
     app.dispose();
   });
 
@@ -254,8 +256,12 @@ void main() {
       child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
     ));
     await tester.pumpAndSettle();
-    // No search box in the title bar while the welcome panel shows one.
-    expect(find.byKey(const Key('quick-search-button')), findsNothing);
+    // The title bar has its search box in the middle, the welcome panel too.
+    final box = tester.getCenter(find.byKey(const Key('quick-search-button')));
+    expect((box.dx - 500).abs(), lessThan(1));
+    expect(box.dy, lessThan(32));
+    expect(tester.getTopLeft(find.byKey(const ValueKey('title-bar-name'))).dx, lessThan(24),
+        reason: 'the name starts the bar');
     expect(find.byKey(const Key('welcome-search')), findsOneWidget);
     // Ctrl+K outside a terminal (inside one it belongs to the session).
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -269,10 +275,8 @@ void main() {
     app.connections.add(SavedConnection(name: 'DEVICE-01', host: '192.0.2.10'));
     app.openConnection(app.connections.single);
     await tester.pumpAndSettle();
-    // With a session open, it is in the middle of the title bar.
-    final box = tester.getCenter(find.byKey(const Key('quick-search-button')));
-    expect((box.dx - 500).abs(), lessThan(1));
-    expect(box.dy, lessThan(32));
+    // With a session open it stays where it is.
+    expect(tester.getCenter(find.byKey(const Key('quick-search-button'))), box);
 
     await tester.tap(find.byKey(const Key('quick-search-button')));
     await tester.pumpAndSettle();

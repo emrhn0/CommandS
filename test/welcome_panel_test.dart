@@ -2,7 +2,6 @@ import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/services/pty_session.dart';
 import 'package:commands/theme/app_mark.dart';
-import 'package:commands/theme/wordmark.dart';
 import 'package:commands/widgets/launch_splash.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:commands/widgets/welcome_panel.dart';
@@ -130,7 +129,6 @@ void main() {
       final s = word.children!.last as TextSpan;
       expect(s.text, 'S');
       expect(s.style!.color, Theme.of(tester.element(find.byType(AppMark))).colorScheme.primary);
-      expect(tester.widget<Text>(find.byKey(const Key('welcome-wordmark'))).style!.fontFamily, wordmarkFontFamily);
       expect(find.byKey(const Key('wordmark-cursor')), findsOneWidget, reason: 'a terminal cursor after the name');
       expect(find.byKey(const Key('welcome-pulse')), findsOneWidget);
       await closeAll(tester, app);

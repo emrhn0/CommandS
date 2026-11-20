@@ -88,32 +88,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final width = context.select<AppState, double>((a) => a.sidebarWidth);
     final sidebarVisible = context.select<AppState, bool>((a) => a.sidebarVisible);
-    final hasTabs = context.select<AppState, bool>((a) => a.tabs.isNotEmpty);
     return Scaffold(
       body: Column(
         children: [
-          CustomTitleBar(
-            // The panel's own button hides it; while it is hidden, this one
-            // brings it back.
-            leading: sidebarVisible
-                ? null
-                : Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: Tooltip(
-                      message: tr('Show Sidebar'),
-                      child: IconButton(
-                        key: const Key('sidebar-toggle'),
-                        onPressed: () => context.read<AppState>().setSidebarVisible(true),
-                        icon: const Icon(Icons.view_sidebar_outlined, size: 17),
-                        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                        padding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ),
-            // The welcome panel has its own search box; with sessions open
-            // the search lives here.
-            center: hasTabs ? const _TitleSearchBox() : null,
-          ),
+          // The name on the left, the search box in the middle, always.
+          const CustomTitleBar(center: _TitleSearchBox()),
           Expanded(
             child: Row(
               children: [
@@ -129,12 +108,25 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         child: Row(
                           children: [
-                            SizedBox(
-                              height: 26,
-                              child: width < 230
-                                  ? Tooltip(
-                                      message: tr('New Connection'),
-                                      child: ElevatedButton(
+                            // The panel's main action fills its first row.
+                            Expanded(
+                              child: SizedBox(
+                                height: 26,
+                                child: width < 230
+                                    ? Tooltip(
+                                        message: tr('New Connection'),
+                                        child: ElevatedButton(
+                                          key: const Key('sidebar-new-connection'),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                                            minimumSize: const Size(0, 26),
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          onPressed: () => showNewConnectionDialog(context),
+                                          child: const Icon(Icons.add, size: 15),
+                                        ),
+                                      )
+                                    : ElevatedButton.icon(
                                         key: const Key('sidebar-new-connection'),
                                         style: ElevatedButton.styleFrom(
                                           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -142,22 +134,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                         ),
                                         onPressed: () => showNewConnectionDialog(context),
-                                        child: const Icon(Icons.add, size: 15),
+                                        icon: const Icon(Icons.add, size: 15),
+                                        label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),
                                       ),
-                                    )
-                                  : ElevatedButton.icon(
-                                      key: const Key('sidebar-new-connection'),
-                                      style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                                        minimumSize: const Size(0, 26),
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                      onPressed: () => showNewConnectionDialog(context),
-                                      icon: const Icon(Icons.add, size: 15),
-                                      label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),
-                                    ),
+                              ),
                             ),
-                            const Spacer(),
                             // Only appears once a newer release has been found.
                             const UpdateButton(compact: true),
                           ],
@@ -198,6 +179,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 if (sidebarVisible) const _SidebarResizer(),
+                // A hidden panel leaves a thin strip with the button that
+                // brings it back, where the hide button was: at the foot.
+                if (!sidebarVisible) const _CollapsedSidebarRail(),
                 // Sessions take whatever the panel leaves: terminals re-wrap
                 // and RDP sessions resize to the new pane.
                 Expanded(child: TerminalTabsArea(sidebarVisible: sidebarVisible)),
@@ -325,6 +309,39 @@ class _TitleSearchBoxState extends State<_TitleSearchBox> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// What a hidden connections panel leaves: a thin strip on the left with the
+/// show button at its foot, in the same spot as the hide button.
+class _CollapsedSidebarRail extends StatelessWidget {
+  const _CollapsedSidebarRail();
+
+  @override
+  Widget build(BuildContext context) {
+    final divider = Theme.of(context).dividerColor;
+    return Container(
+      key: const Key('sidebar-rail'),
+      width: 30,
+      decoration: BoxDecoration(border: Border(right: BorderSide(color: divider))),
+      child: Column(
+        children: [
+          const Spacer(),
+          Container(
+            height: 30,
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.only(left: 4),
+            decoration: BoxDecoration(border: Border(top: BorderSide(color: divider))),
+            child: _HeaderIcon(
+              key: const Key('sidebar-toggle'),
+              icon: Icons.keyboard_double_arrow_right_rounded,
+              tooltip: tr('Show Sidebar'),
+              onTap: () => context.read<AppState>().setSidebarVisible(true),
+            ),
+          ),
+        ],
       ),
     );
   }
