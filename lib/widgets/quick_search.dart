@@ -8,21 +8,26 @@ import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import 'device_icon.dart';
 
-/// One thing quick search can go to.
+/// One thing quick search can go to. [depth] is how far inside a found
+/// folder it sits: 0 for a match of its own, 1 for what is directly in a
+/// found folder, and so on.
 class QuickSearchResult {
-  const QuickSearchResult.connection(SavedConnection this.connection) : folder = null;
-  const QuickSearchResult.folder(ConnectionFolder this.folder) : connection = null;
+  const QuickSearchResult.connection(SavedConnection this.connection, {this.depth = 0}) : folder = null;
+  const QuickSearchResult.folder(ConnectionFolder this.folder, {this.depth = 0}) : connection = null;
 
   final SavedConnection? connection;
   final ConnectionFolder? folder;
+  final int depth;
 
   String get id => connection?.id ?? folder!.id;
 }
 
 /// What quick search lists for [query]: connections whose name, host or user
-/// name has it, then folders whose name has it. Favorites and recent
-/// connections come first. With no query: the favorites, then the recent.
-List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40}) {
+/// name has it, then folders whose name has it, each followed by what is
+/// inside it, in the list's own order. Favorites and recent connections come
+/// first. A connection inside a found folder is listed there, not twice.
+/// With no query: the favorites, then the recent.
+List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40, int contentsLimit = 200}) {
   final q = query.trim().toLowerCase();
   final favorites = app.favoriteConnectionIds;
   final recent = app.recentConnectionIds;
@@ -42,8 +47,20 @@ List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40}
     ].take(limit).toList();
   }
   bool has(String? s) => s != null && s.toLowerCase().contains(q);
+
+  final parentOf = {for (final f in app.folders) f.id: f.parentId};
+  final found = {for (final f in app.folders) if (has(f.name)) f.id};
+  /// Whether [folderId] or a folder above it was found.
+  bool inFound(String? folderId) {
+    final seen = <String>{};
+    for (var id = folderId; id != null && seen.add(id); id = parentOf[id]) {
+      if (found.contains(id)) return true;
+    }
+    return false;
+  }
+
   final connections = app.connections
-      .where((c) => has(c.name) || has(c.host) || has(app.resolved(c).username))
+      .where((c) => !inFound(c.folderId) && (has(c.name) || has(c.host) || has(app.resolved(c).username)))
       .toList()
     ..sort((a, b) {
       final byRank = rank(a).compareTo(rank(b));
@@ -54,12 +71,33 @@ List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40}
       if (aStarts != bStarts) return aStarts.compareTo(bStarts);
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
-  final folders = app.folders.where((f) => has(f.name)).toList()
+  // A found folder inside another found folder is shown in that one's block.
+  final folders = app.folders.where((f) => found.contains(f.id) && !inFound(f.parentId)).toList()
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-  return [
-    for (final c in connections) QuickSearchResult.connection(c),
-    for (final f in folders) QuickSearchResult.folder(f),
-  ].take(limit).toList();
+
+  final out = <QuickSearchResult>[
+    for (final c in connections.take(limit)) QuickSearchResult.connection(c),
+  ];
+  final cap = out.length + contentsLimit;
+  void contents(String folderId, int depth, Set<String> seen) {
+    if (!seen.add(folderId)) return;
+    for (final f in app.sortFolders(app.folders.where((f) => f.parentId == folderId).toList())) {
+      if (out.length >= cap) return;
+      out.add(QuickSearchResult.folder(f, depth: depth));
+      contents(f.id, depth + 1, seen);
+    }
+    for (final c in app.sortConnections(app.connections.where((c) => c.folderId == folderId).toList())) {
+      if (out.length >= cap) return;
+      out.add(QuickSearchResult.connection(c, depth: depth));
+    }
+  }
+
+  for (final f in folders) {
+    if (out.length >= cap) break;
+    out.add(QuickSearchResult.folder(f));
+    contents(f.id, 1, <String>{});
+  }
+  return out;
 }
 
 /// Quick search over every connection and folder (Ctrl+K, or the magnifier
@@ -204,7 +242,7 @@ class _QuickSearchDialogState extends State<_QuickSearchDialog> {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     itemCount: results.length,
                     itemExtent: _rowHeight,
-                    itemBuilder: (context, i) => _ResultRow(
+                    itemBuilder: (context, i) => QuickSearchRow(
                       result: results[i],
                       selected: i == _selected,
                       accent: accent,
@@ -230,15 +268,22 @@ class _QuickSearchDialogState extends State<_QuickSearchDialog> {
   }
 }
 
-class _ResultRow extends StatelessWidget {
-  const _ResultRow({
+/// One result: its icon, name, address and where it is. Rows inside a found
+/// folder are indented under it and leave the folder path out.
+class QuickSearchRow extends StatelessWidget {
+  const QuickSearchRow({
+    super.key,
     required this.result,
     required this.selected,
     required this.accent,
     required this.palette,
     required this.onTap,
     required this.onHover,
+    this.keyPrefix = 'quick-search-',
   });
+
+  /// What the row's key starts with, before the id.
+  final String keyPrefix;
 
   final QuickSearchResult result;
   final bool selected;
@@ -252,18 +297,18 @@ class _ResultRow extends StatelessWidget {
     final app = context.read<AppState>();
     final conn = result.connection;
     final folder = result.folder;
-    final path = app.folderNamesOf(conn?.folderId ?? folder?.parentId).join(' › ');
+    final path = result.depth > 0 ? '' : app.folderNamesOf(conn?.folderId ?? folder?.parentId).join(' › ');
     final kind = conn == null ? null : DeviceIcon.of(conn);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => onHover(),
       child: GestureDetector(
-        key: Key('quick-search-${result.id}'),
+        key: Key('$keyPrefix${result.id}'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: EdgeInsets.only(left: 10.0 + 18.0 * result.depth, right: 10),
           decoration: BoxDecoration(
             color: selected ? accent.withValues(alpha: 0.13) : Colors.transparent,
             borderRadius: BorderRadius.circular(7),

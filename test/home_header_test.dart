@@ -10,7 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('New Connection shares header with Settings and opens its dialog', (tester) async {
+  testWidgets('New Connection leads the panel; hiding it and Settings sit at its foot', (tester) async {
     SharedPreferences.setMockInitialValues({});
     UpdateService.available.value = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -32,8 +32,19 @@ void main() {
     final button = find.byKey(const Key('sidebar-new-connection'));
     expect(button, findsOneWidget);
     expect(tester.getTopLeft(button).dx, lessThan(24));
-    expect((tester.getCenter(button).dy - tester.getCenter(find.byIcon(Icons.settings_outlined)).dy).abs(),
-        lessThan(4));
+    // The panel's foot: the hide button on the left, Settings on the right,
+    // under everything else in the panel.
+    final footer = tester.getRect(find.byKey(const Key('sidebar-footer')));
+    final toggle = tester.getRect(find.byKey(const Key('sidebar-toggle')));
+    final settings = tester.getRect(find.byKey(const Key('sidebar-settings')));
+    expect(footer.bottom, 600);
+    expect(footer.top, greaterThan(tester.getRect(button).bottom + 200));
+    expect(footer.contains(toggle.center), isTrue);
+    expect(footer.contains(settings.center), isTrue);
+    expect(toggle.left, lessThan(24));
+    expect(settings.right, greaterThan(footer.right - 24));
+    expect(find.byKey(const Key('quick-search-button')), findsNothing,
+        reason: 'the welcome panel has its own search box');
 
     UpdateService.available.value = const UpdateInfo(
       version: 'v9.9.9',

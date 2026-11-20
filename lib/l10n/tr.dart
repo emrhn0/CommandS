@@ -544,4 +544,16 @@ const turkish = <String, String>{
   'Remember': 'Hatırla',
   'Answer yes to the login question (yes/no) by itself': 'Girişteki (yes/no) sorusuna kendiliğinden evet de',
   'Restore backup': 'Geri yükle',
+  // ---- Welcome search, title bar, list view menu and filters ----
+  'Search connections, folders or addresses': 'Bağlantı, klasör veya adres ara',
+  'Clear': 'Temizle',
+  'Results · {n}': 'Sonuçlar · {n}',
+  'View': 'Görünüm',
+  'Sort the whole list': 'Tüm listeyi sırala',
+  'Sort the whole list?': 'Tüm liste sıralansın mı?',
+  'Every folder and connection is put in this order, at every level. The order you arranged by dragging is replaced.':
+      'Her seviyedeki klasör ve bağlantılar bu sıraya konur. Sürükleyerek verdiğin sıranın yerini alır.',
+  'Collapse all folders': 'Tüm klasörleri daralt',
+  'Expand all folders': 'Tüm klasörleri genişlet',
+  'All': 'Tümü',
 };

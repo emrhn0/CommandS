@@ -548,4 +548,16 @@ const german = <String, String>{
   'Remember': 'Merken',
   'Answer yes to the login question (yes/no) by itself': 'Die Anmeldefrage (yes/no) von selbst mit Ja beantworten',
   'Restore backup': 'Wiederherstellen',
+  // ---- Welcome search, title bar, list view menu and filters ----
+  'Search connections, folders or addresses': 'Verbindungen, Ordner oder Adressen suchen',
+  'Clear': 'Leeren',
+  'Results · {n}': 'Ergebnisse · {n}',
+  'View': 'Ansicht',
+  'Sort the whole list': 'Ganze Liste sortieren',
+  'Sort the whole list?': 'Ganze Liste sortieren?',
+  'Every folder and connection is put in this order, at every level. The order you arranged by dragging is replaced.':
+      'Alle Ordner und Verbindungen werden auf jeder Ebene so sortiert. Die per Ziehen festgelegte Reihenfolge wird ersetzt.',
+  'Collapse all folders': 'Alle Ordner einklappen',
+  'Expand all folders': 'Alle Ordner ausklappen',
+  'All': 'Alle',
 };

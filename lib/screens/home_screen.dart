@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart' show TerminalView;
 
 import '../providers/app_state.dart';
+import '../theme/app_theme.dart';
 
 import '../widgets/connection_tree.dart';
 import '../widgets/custom_title_bar.dart';
@@ -85,38 +88,31 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final width = context.select<AppState, double>((a) => a.sidebarWidth);
     final sidebarVisible = context.select<AppState, bool>((a) => a.sidebarVisible);
+    final hasTabs = context.select<AppState, bool>((a) => a.tabs.isNotEmpty);
     return Scaffold(
       body: Column(
         children: [
           CustomTitleBar(
-            leading: Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Tooltip(
-                    message: tr(sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'),
-                    child: IconButton(
-                      key: const Key('sidebar-toggle'),
-                      onPressed: () => context.read<AppState>().setSidebarVisible(!sidebarVisible),
-                      icon: Icon(sidebarVisible ? Icons.menu_open : Icons.menu, size: 18),
-                      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                      padding: EdgeInsets.zero,
+            // The panel's own button hides it; while it is hidden, this one
+            // brings it back.
+            leading: sidebarVisible
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Tooltip(
+                      message: tr('Show Sidebar'),
+                      child: IconButton(
+                        key: const Key('sidebar-toggle'),
+                        onPressed: () => context.read<AppState>().setSidebarVisible(true),
+                        icon: const Icon(Icons.view_sidebar_outlined, size: 17),
+                        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                        padding: EdgeInsets.zero,
+                      ),
                     ),
                   ),
-                  Tooltip(
-                    message: tr('Quick search (Ctrl+K)'),
-                    child: IconButton(
-                      key: const Key('quick-search-button'),
-                      onPressed: () => showQuickSearch(context),
-                      icon: const Icon(Icons.search, size: 18),
-                      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // The welcome panel has its own search box; with sessions open
+            // the search lives here.
+            center: hasTabs ? const _TitleSearchBox() : null,
           ),
           Expanded(
             child: Row(
@@ -164,11 +160,33 @@ class _HomeScreenState extends State<HomeScreen> {
                             const Spacer(),
                             // Only appears once a newer release has been found.
                             const UpdateButton(compact: true),
-                            const SizedBox(width: 8),
-                            // Theme, terminal colours, import/export and
-                            // updates all live on the Settings page now,
-                            // instead of four unlabelled icons here.
+                          ],
+                        ),
+                      ),
+                      const Expanded(child: ConnectionTree()),
+                      const QuickConnectBar(),
+                      // Hiding the panel and Settings sit at its foot, out
+                      // of the title bar.
+                      Container(
+                        key: const Key('sidebar-footer'),
+                        height: 30,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+                        ),
+                        child: Row(
+                          children: [
                             _HeaderIcon(
+                              key: const Key('sidebar-toggle'),
+                              icon: Icons.keyboard_double_arrow_left_rounded,
+                              tooltip: tr('Hide Sidebar'),
+                              onTap: () => context.read<AppState>().setSidebarVisible(false),
+                            ),
+                            const Spacer(),
+                            // Theme, terminal colours, import/export and
+                            // updates all live on the Settings page.
+                            _HeaderIcon(
+                              key: const Key('sidebar-settings'),
                               icon: Icons.settings_outlined,
                               tooltip: tr('Settings'),
                               onTap: () => showSettings(context),
@@ -176,8 +194,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      const Expanded(child: ConnectionTree()),
-                      const QuickConnectBar(),
                     ],
                   ),
                 ),
@@ -244,7 +260,7 @@ class _SidebarResizerState extends State<_SidebarResizer> {
 /// Small fixed-size icon button that never claims Material's 48px tap
 /// target — keeps the 32px header row from overflowing.
 class _HeaderIcon extends StatelessWidget {
-  const _HeaderIcon({required this.icon, required this.tooltip, required this.onTap});
+  const _HeaderIcon({super.key, required this.icon, required this.tooltip, required this.onTap});
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
@@ -256,6 +272,59 @@ class _HeaderIcon extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(padding: const EdgeInsets.all(5), child: Icon(icon, size: 15)),
+      ),
+    );
+  }
+}
+
+/// The search box in the middle of the title bar: a click (or Ctrl+K) opens
+/// quick search.
+class _TitleSearchBox extends StatefulWidget {
+  const _TitleSearchBox();
+
+  @override
+  State<_TitleSearchBox> createState() => _TitleSearchBoxState();
+}
+
+class _TitleSearchBoxState extends State<_TitleSearchBox> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    final accent = Theme.of(context).colorScheme.primary;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        key: const Key('quick-search-button'),
+        onTap: () => showQuickSearch(context),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: 300,
+          height: 23,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: _hover ? palette.panelAlt : palette.panel,
+            border: Border.all(color: _hover ? accent.withValues(alpha: 0.45) : palette.border),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 14, color: palette.textDim),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  tr('Search connections and folders'),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: palette.textDim),
+                ),
+              ),
+              Text(Platform.isMacOS ? '⌘K' : 'Ctrl K', style: TextStyle(fontSize: 10.5, color: palette.textDim.withValues(alpha: 0.8))),
+            ],
+          ),
+        ),
       ),
     );
   }

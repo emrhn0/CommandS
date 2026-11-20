@@ -404,6 +404,16 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(tester.widget<Checkbox>(checkbox).value, isFalse);
+    // The box hangs from the button: it starts at the button's left edge,
+    // and the start button sits under the tick, not off to its right.
+    final buttonRect = tester.getRect(button);
+    final optionsRect = tester.getRect(find.byKey(const ValueKey('session-log-options')));
+    final tickRect = tester.getRect(find.byKey(const ValueKey('session-log-include-history')));
+    final startRect = tester.getRect(find.byKey(const ValueKey('session-log-start')));
+    expect(optionsRect.top, greaterThanOrEqualTo(buttonRect.bottom));
+    expect((optionsRect.left - buttonRect.left).abs(), lessThan(12));
+    expect(startRect.top, greaterThanOrEqualTo(tickRect.bottom));
+    expect(startRect.left, lessThan(tickRect.left + 12));
     await tester.tap(find.byKey(const ValueKey('session-log-include-history')));
     await tester.pump();
     expect(tester.widget<Checkbox>(checkbox).value, isTrue);

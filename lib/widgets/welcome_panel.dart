@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
@@ -10,8 +11,10 @@ import '../models/models.dart';
 import '../providers/app_state.dart';
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
+import '../theme/wordmark.dart';
 import 'import_export_dialog.dart';
 import 'new_connection_dialog.dart';
+import 'quick_search.dart';
 
 /// What the session area shows while no tab is open: the mark and a
 /// greeting, the two ways to add a connection, and the saved connections
@@ -125,6 +128,12 @@ class _WelcomePanelState extends State<WelcomePanel> {
   Timer? _rotate;
   late int _line;
 
+  /// The search box: while it has text, the recent list turns into what
+  /// quick search finds, folders with what is inside them.
+  final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  int _selected = 0;
+
   DateTime get _now => widget.now ?? DateTime.now();
 
   bool get sidebarVisible => widget.sidebarVisible;
@@ -141,7 +150,129 @@ class _WelcomePanelState extends State<WelcomePanel> {
   @override
   void dispose() {
     _rotate?.cancel();
+    _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
+  }
+
+  void _go(QuickSearchResult r) {
+    final app = context.read<AppState>();
+    final conn = r.connection;
+    if (conn != null) {
+      app.openConnection(conn);
+    } else {
+      app.reveal(r.folder!.id);
+    }
+  }
+
+  /// Arrows move through the results, Esc empties the box.
+  KeyEventResult _onSearchKey(KeyEvent event, int count) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown && count > 0) {
+      setState(() => _selected = (_selected + 1).clamp(0, count - 1));
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp && count > 0) {
+      setState(() => _selected = (_selected - 1).clamp(0, count - 1));
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape && _search.text.isNotEmpty) {
+      setState(() {
+        _search.clear();
+        _selected = 0;
+      });
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _searchBox(AppPalette palette, int count, List<QuickSearchResult> results) {
+    final searching = _search.text.trim().isNotEmpty;
+    return Focus(
+      onKeyEvent: (_, event) => _onSearchKey(event, count),
+      child: SizedBox(
+        height: 38,
+        child: TextField(
+          key: const Key('welcome-search'),
+          controller: _search,
+          focusNode: _searchFocus,
+          style: TextStyle(fontSize: 13.5, color: palette.text),
+          decoration: InputDecoration(
+            hintText: tr('Search connections, folders or addresses'),
+            hintStyle: TextStyle(fontSize: 13.5, color: palette.textDim),
+            prefixIcon: Icon(Icons.search, size: 17, color: palette.textDim),
+            suffixIcon: searching
+                ? IconButton(
+                    key: const Key('welcome-search-clear'),
+                    tooltip: tr('Clear'),
+                    icon: const Icon(Icons.close, size: 15),
+                    onPressed: () => setState(() {
+                      _search.clear();
+                      _selected = 0;
+                    }),
+                  )
+                : null,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+          onChanged: (_) => setState(() => _selected = 0),
+          onSubmitted: (_) {
+            if (results.isNotEmpty) _go(results[_selected.clamp(0, results.length - 1)]);
+            _searchFocus.requestFocus();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _results(AppPalette palette, Color accent, List<QuickSearchResult> results) {
+    return Container(
+      key: const Key('welcome-search-results'),
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+      decoration: BoxDecoration(
+        color: palette.panel,
+        border: Border.all(color: palette.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 6),
+            child: Text(
+              tr('Results · {n}', {'n': results.length}).toUpperCase(),
+              style: TextStyle(fontSize: 11, letterSpacing: 0.8, color: palette.textDim, fontWeight: FontWeight.w500),
+            ),
+          ),
+          if (results.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                tr('Nothing found for "{query}".', {'query': _search.text.trim()}),
+                style: TextStyle(fontSize: 12.5, color: palette.textDim),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 40.0 * 10),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: results.length,
+                itemExtent: 40,
+                itemBuilder: (context, i) => QuickSearchRow(
+                  result: results[i],
+                  selected: i == _selected,
+                  accent: accent,
+                  palette: palette,
+                  keyPrefix: 'welcome-search-',
+                  onTap: () => _go(results[i]),
+                  onHover: () => setState(() => _selected = i),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   /// Read at build time, so a change of language shows at once.
@@ -150,6 +281,14 @@ class _WelcomePanelState extends State<WelcomePanel> {
     return lines[_line % lines.length];
   }
 
+  static TextStyle _wordmarkStyle(Color color) => TextStyle(
+        fontFamily: wordmarkFontFamily,
+        fontSize: 38,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -2,
+        color: color,
+      );
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -157,6 +296,9 @@ class _WelcomePanelState extends State<WelcomePanel> {
     final accent = Theme.of(context).colorScheme.primary;
     final favorites = app.favoriteConnections.take(8).toList();
     final recent = app.recentConnections.take(5).toList();
+    final searching = _search.text.trim().isNotEmpty;
+    final results = searching ? quickSearch(app, _search.text) : const <QuickSearchResult>[];
+    if (_selected >= results.length) _selected = results.isEmpty ? 0 : results.length - 1;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -178,8 +320,10 @@ class _WelcomePanelState extends State<WelcomePanel> {
                       const TextSpan(text: 'Command'),
                       TextSpan(text: 'S', style: TextStyle(color: accent)),
                     ]),
-                    style: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, letterSpacing: -1, color: palette.text),
+                    style: _wordmarkStyle(palette.text),
                   ),
+                  // A terminal's cursor after the name, blinking.
+                  WordmarkCursor(style: _wordmarkStyle(accent), animate: WelcomePanel.animate),
                 ],
               ),
               const SizedBox(height: 14),
@@ -231,8 +375,11 @@ class _WelcomePanelState extends State<WelcomePanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: 22),
-              if (favorites.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              _searchBox(palette, results.length, results),
+              const SizedBox(height: 14),
+              if (searching) _results(palette, accent, results),
+              if (!searching && favorites.isNotEmpty) ...[
                 Container(
                   key: const Key('welcome-favorites'),
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
@@ -265,7 +412,7 @@ class _WelcomePanelState extends State<WelcomePanel> {
                 ),
                 const SizedBox(height: 14),
               ],
-              Container(
+              if (!searching) Container(
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
                 decoration: BoxDecoration(
                   color: palette.panel,

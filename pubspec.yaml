@@ -89,6 +89,7 @@ flutter:
     - assets/fonts/RobotoMono/OFL.txt
     - assets/fonts/UbuntuMono/UFL.txt
     - assets/fonts/Hack/LICENSE.md
+    - assets/fonts/GeistMono/OFL.txt
 
   # Terminal fonts popular for SSH, all with full Turkish letters, so they can
   # be picked on any machine without installing them. Open licences (OFL,
@@ -121,6 +122,10 @@ flutter:
         - asset: assets/fonts/Hack/Hack-Regular.ttf
         - asset: assets/fonts/Hack/Hack-Bold.ttf
           weight: 700
+    # The "CommandS" wordmark (title bar and welcome panel), not a terminal font.
+    - family: Geist Mono
+      fonts:
+        - asset: assets/fonts/GeistMono/GeistMono.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

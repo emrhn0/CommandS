@@ -793,6 +793,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Sorts the whole list by [by]: the connections of every folder, and for
+  /// the name orders the folders of every level too.
+  Future<void> sortWholeList(TreeSort by) async {
+    await sortConnectionsBy(connections.map((c) => c.id), by);
+    if (by == TreeSort.nameAscending || by == TreeSort.nameDescending) {
+      await sortFoldersByName(folders.map((f) => f.id), descending: by == TreeSort.nameDescending);
+    }
+  }
+
   // ---- Folder order and sidebar width ----
 
   /// Folder ids in the order the user arranged them by dragging. Folders not

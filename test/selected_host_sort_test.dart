@@ -120,7 +120,7 @@ void main() {
     await showTree(tester, app);
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('select-mode')));
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('DEVICE-10'));
     await tester.pump();
@@ -167,7 +167,7 @@ void main() {
     await showTree(tester, app);
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('select-mode')));
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('R HOST'));
     await tester.pump();
@@ -213,7 +213,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.chevron_right).last);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('select-mode')));
+      await toggleSelectMode(tester);
       await tester.pumpAndSettle();
       await tester.tap(find.text('HOST-A'));
       await tester.pump();
@@ -249,7 +249,7 @@ void main() {
     await showTree(tester, app);
     await tester.tap(find.byIcon(Icons.chevron_right).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('select-mode')));
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('R FOLDER'));
     await tester.pump();
@@ -345,7 +345,7 @@ void main() {
     final b = ConnectionFolder(name: 'CUSTOMER-B');
     app.folders.addAll([a, b]);
     await showTree(tester, app);
-    await tester.tap(find.byKey(const ValueKey('select-mode')));
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('CUSTOMER-A'));
     await tester.pump();
@@ -363,4 +363,11 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     app.dispose();
   });
+}
+
+/// Select mode is in the list's view menu (next to the search box).
+Future<void> toggleSelectMode(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('tree-view-menu')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Select').last);
 }

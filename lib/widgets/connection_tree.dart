@@ -564,6 +564,50 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     }
   }
 
+  /// Which connections the list shows (the chips under the search box).
+  TreeFilter _filter = TreeFilter.all;
+
+  /// The view menu next to the search box: sort the whole list, open or
+  /// close every folder, and the select mode.
+  Future<void> _showViewMenu(BuildContext anchor, AppState app) async {
+    final box = anchor.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+    final empty = app.connections.isEmpty && app.folders.isEmpty;
+    final actions = <MenuAction>[
+      if (!empty) ...treeSortActions(names: true, connections: app.connections.length > 1),
+      MenuAction('collapseAll', 'Collapse all folders', Icons.unfold_less_rounded, separatorBefore: !empty),
+      const MenuAction('expandAll', 'Expand all folders', Icons.unfold_more_rounded),
+      MenuAction('select', 'Select', Icons.checklist_rounded, separatorBefore: true, checked: _selectMode),
+    ];
+    final key = await showContextMenu(
+      anchor,
+      actions: actions,
+      anchor: box.localToGlobal(Offset.zero) & box.size,
+      header: tr('Sort the whole list'),
+      minWidth: 210,
+    );
+    if (key == null || !mounted) return;
+    switch (key) {
+      case 'collapseAll':
+        setState(_expanded.clear);
+      case 'expandAll':
+        setState(() => _expanded.addAll(app.folders.map((f) => f.id)));
+      case 'select':
+        _toggleSelectMode();
+      default:
+        final order = TreeSort.values.byName(key);
+        final confirmed = await showConfirmDialog(
+          context,
+          title: tr('Sort the whole list?'),
+          message: tr('Every folder and connection is put in this order, at every level. '
+              'The order you arranged by dragging is replaced.'),
+          confirmLabel: 'Sort',
+          icon: Icons.sort_rounded,
+        );
+        if (confirmed) await app.sortWholeList(order);
+    }
+  }
+
   /// The Select button: on with every box empty, off again with nothing
   /// selected.
   void _toggleSelectMode() => setState(() {
@@ -765,14 +809,14 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
                 ),
               ),
               const SizedBox(width: 6),
-              ToolButton(
-                key: const ValueKey('select-mode'),
-                icon: Icons.checklist_rounded,
-                tooltip: tr('Select'),
-                active: _selectMode,
-                onPressed: app.connections.isEmpty && app.folders.isEmpty && !_selectMode
-                    ? null
-                    : _toggleSelectMode,
+              Builder(
+                builder: (anchor) => ToolButton(
+                  key: const ValueKey('tree-view-menu'),
+                  icon: Icons.tune_rounded,
+                  tooltip: tr('View'),
+                  active: _selectMode,
+                  onPressed: () => _showViewMenu(anchor, app),
+                ),
               ),
               const SizedBox(width: 4),
               ToolButton(
@@ -782,6 +826,13 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
               ),
             ],
           ),
+        ),
+        _FilterChips(
+          value: _filter,
+          counts: {
+            for (final f in TreeFilter.values) f: app.connections.where((c) => f.matches(c, app)).length,
+          },
+          onChanged: (f) => setState(() => _filter = f),
         ),
         Expanded(
           child: TapRegion(
@@ -814,7 +865,9 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
                         )
                       : const SizedBox(width: double.infinity),
                 ),
-                Expanded(child: _query.isEmpty ? _buildTree(app) : _buildFiltered(app)),
+                Expanded(
+                  child: _query.isEmpty && _filter == TreeFilter.all ? _buildTree(app) : _buildFiltered(app),
+                ),
               ],
             ),
           ),
@@ -954,10 +1007,14 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
 
   Widget _buildFiltered(AppState app) {
     final matches = app.connections.where((c) {
+      if (!_filter.matches(c, app)) return false;
       return c.name.toLowerCase().contains(_query) || c.host.toLowerCase().contains(_query);
     }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-    final layoutMatches = app.layouts.where((l) => l.name.toLowerCase().contains(_query)).toList()
+    // Layouts are not of one kind: they show only without a filter.
+    final layoutMatches = app.layouts
+        .where((l) => _filter == TreeFilter.all && l.name.toLowerCase().contains(_query))
+        .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     if (matches.isEmpty && layoutMatches.isEmpty) {
       return Center(
@@ -2191,4 +2248,95 @@ AppMcpGateway? _mcpGateway(BuildContext context) {
   final server = Provider.of<McpServer?>(context, listen: false);
   final gateway = server?.gateway;
   return server != null && server.enabled && gateway is AppMcpGateway ? gateway : null;
+}
+
+/// Which connections the list shows.
+enum TreeFilter {
+  all('All', null),
+  ssh('SSH', Icons.terminal_rounded),
+  rdp('RDP', Icons.desktop_windows_outlined),
+  favorites('Favorites', Icons.star_rounded);
+
+  const TreeFilter(this.label, this.icon);
+  final String label;
+  final IconData? icon;
+
+  bool matches(SavedConnection c, AppState app) => switch (this) {
+        TreeFilter.all => true,
+        TreeFilter.ssh => c.protocol == ConnectionProtocol.ssh,
+        TreeFilter.rdp => c.protocol == ConnectionProtocol.rdp,
+        TreeFilter.favorites => app.isFavorite(c.id),
+      };
+}
+
+/// The chips under the search box: all connections, only SSH, only RDP, or
+/// only the favorites. A chip with nothing behind it is left out, "All" aside.
+class _FilterChips extends StatelessWidget {
+  const _FilterChips({required this.value, required this.counts, required this.onChanged});
+
+  final TreeFilter value;
+  final Map<TreeFilter, int> counts;
+  final ValueChanged<TreeFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    final accent = Theme.of(context).colorScheme.primary;
+    final shown = [
+      for (final f in TreeFilter.values)
+        if (f == TreeFilter.all || f == value || (counts[f] ?? 0) > 0) f,
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+      child: SizedBox(
+        height: 24,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final f in shown)
+              Padding(
+                padding: const EdgeInsets.only(right: 5),
+                child: _chip(f, palette, accent),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(TreeFilter f, AppPalette palette, Color accent) {
+    final on = f == value;
+    final color = on ? accent : palette.textDim;
+    // Favorites is a star alone; the others say what they are.
+    final label = f == TreeFilter.favorites ? null : (f == TreeFilter.all ? tr(f.label) : f.label);
+    return Tooltip(
+      message: f == TreeFilter.favorites ? tr('Favorites') : '',
+      child: InkWell(
+        key: ValueKey('tree-filter-${f.name}'),
+        borderRadius: BorderRadius.circular(12),
+        // A second click on the chip that is on goes back to everything.
+        onTap: () => onChanged(on ? TreeFilter.all : f),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? accent.withValues(alpha: 0.14) : Colors.transparent,
+            border: Border.all(color: on ? accent.withValues(alpha: 0.7) : palette.border),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (f.icon != null && label == null) Icon(f.icon, size: 13, color: color),
+              if (label != null) Text(label, style: TextStyle(fontSize: 11.5, color: color)),
+              if (f != TreeFilter.all || on) ...[
+                const SizedBox(width: 4),
+                Text('${counts[f] ?? 0}', style: TextStyle(fontSize: 10.5, color: color.withValues(alpha: 0.75))),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

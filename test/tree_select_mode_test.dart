@@ -36,7 +36,6 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  final selectButton = find.byKey(const ValueKey('select-mode'));
   final bar = find.byKey(const ValueKey('selection-bar'));
   Finder tick(String id) => find.byKey(ValueKey('tick-$id'));
   bool ticked(WidgetTester tester, String id) => tester.widget<Checkbox>(tick(id)).value!;
@@ -44,7 +43,7 @@ void main() {
   testWidgets('Select shows empty boxes and the bar; pressing it again turns it off', (tester) async {
     await pumpTree(tester);
     expect(tick(outer.id), findsNothing);
-    await tester.tap(selectButton);
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     expect(bar, findsOneWidget);
     expect(ticked(tester, outer.id), isFalse, reason: 'nothing is ticked to begin with');
@@ -55,7 +54,7 @@ void main() {
     expect(ticked(tester, other.id), isTrue);
     expect(ticked(tester, outer.id), isFalse);
 
-    await tester.tap(selectButton);
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     expect(tick(outer.id), findsNothing);
     expect(bar, findsNothing);
@@ -63,7 +62,7 @@ void main() {
 
   testWidgets('the bar selects everything, and a second press lets it all go', (tester) async {
     await pumpTree(tester);
-    await tester.tap(selectButton);
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('select-all')));
     await tester.pumpAndSettle();
@@ -78,7 +77,7 @@ void main() {
 
   testWidgets('deleting a ticked folder deletes what is inside it, subfolders included', (tester) async {
     await pumpTree(tester);
-    await tester.tap(selectButton);
+    await toggleSelectMode(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('CUSTOMER-A'));
     await tester.pumpAndSettle();
@@ -145,4 +144,11 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getStringList('commands.folderOrder'), state.folderOrder);
   });
+}
+
+/// Select mode is in the list's view menu (next to the search box).
+Future<void> toggleSelectMode(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('tree-view-menu')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Select').last);
 }

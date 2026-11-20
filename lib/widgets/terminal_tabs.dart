@@ -251,27 +251,34 @@ class _ScrollingStripState extends State<_ScrollingStrip> {
   }
 }
 
-/// Starts recording [session], or stops it and says where the log is.
-/// A small bar under the button that was pressed: "Include history" and a
-/// start button. Null when it is dismissed without starting.
+/// A small box hanging from the button that was pressed, as wide as it:
+/// "Include history" on top and the start button under it, so both read as
+/// the button's own and not as part of the next one. Null when it is
+/// dismissed without starting.
 Future<bool?> _askIncludeHistory(BuildContext context) {
   final box = context.findRenderObject()! as RenderBox;
   final anchor = box.localToGlobal(Offset.zero);
+  final width = box.size.width < _RecordOptionsEntry.minWidth ? _RecordOptionsEntry.minWidth : box.size.width;
   return showMenu<bool>(
     context: context,
-    position: RelativeRect.fromLTRB(anchor.dx, anchor.dy + box.size.height, 0, 0),
-    // Wider than a menu's usual limit: the checkbox and the button share one row.
-    constraints: const BoxConstraints(maxWidth: 560),
-    items: [const _RecordOptionsEntry()],
+    position: RelativeRect.fromLTRB(anchor.dx, anchor.dy + box.size.height + 4, anchor.dx + width, 0),
+    constraints: BoxConstraints.tightFor(width: width + 16),
+    items: [_RecordOptionsEntry(width: width)],
   );
 }
 
-/// "Include history" (always unticked when it opens) and a start button.
+/// "Include history" (always unticked when it opens) above a start button
+/// that fills the box.
 class _RecordOptionsEntry extends PopupMenuEntry<bool> {
-  const _RecordOptionsEntry();
+  const _RecordOptionsEntry({required this.width});
+
+  /// The box is never narrower than this, even under a small button.
+  static const minWidth = 170.0;
+
+  final double width;
 
   @override
-  double get height => 44;
+  double get height => 76;
 
   @override
   bool represents(bool? value) => false;
@@ -286,37 +293,43 @@ class _RecordOptionsEntryState extends State<_RecordOptionsEntry> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        InkWell(
-          key: const ValueKey('session-log-include-history'),
-          borderRadius: BorderRadius.circular(4),
-          onTap: () => setState(() => _includeHistory = !_includeHistory),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Checkbox(
-              value: _includeHistory,
-              visualDensity: VisualDensity.compact,
-              onChanged: (v) => setState(() => _includeHistory = v ?? false),
-            ),
-            Text(tr('Include history'), style: const TextStyle(fontSize: 12)),
-            const SizedBox(width: 8),
-          ]),
-        ),
-        const SizedBox(width: 8),
-        FilledButton(
-          key: const ValueKey('session-log-start'),
-          style: FilledButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: SizedBox(
+        key: const ValueKey('session-log-options'),
+        width: widget.width,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          InkWell(
+            key: const ValueKey('session-log-include-history'),
+            borderRadius: BorderRadius.circular(4),
+            onTap: () => setState(() => _includeHistory = !_includeHistory),
+            child: Row(children: [
+              Checkbox(
+                value: _includeHistory,
+                visualDensity: VisualDensity.compact,
+                onChanged: (v) => setState(() => _includeHistory = v ?? false),
+              ),
+              Flexible(
+                child: Text(tr('Include history'), overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+              ),
+            ]),
           ),
-          onPressed: () => Navigator.of(context).pop(_includeHistory),
-          child: Text(tr('Start recording'), style: const TextStyle(fontSize: 12)),
-        ),
-      ]),
+          const SizedBox(height: 4),
+          FilledButton(
+            key: const ValueKey('session-log-start'),
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+            onPressed: () => Navigator.of(context).pop(_includeHistory),
+            child: Text(tr('Start recording'), style: const TextStyle(fontSize: 12)),
+          ),
+        ]),
+      ),
     );
   }
 }
 
+/// Starts recording [session], or stops it and says where the log is.
 Future<void> _toggleRecording(BuildContext context, PtySessionController session) async {
   final messenger = ScaffoldMessenger.of(context);
   try {
