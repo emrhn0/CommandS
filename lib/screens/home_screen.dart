@@ -336,7 +336,9 @@ class _CollapsedSidebarRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final divider = Theme.of(context).dividerColor;
+    final theme = Theme.of(context);
+    final divider = theme.dividerColor;
+    final accent = theme.colorScheme.primary;
     return Container(
       key: const Key('sidebar-rail'),
       width: _collapsedSidebarWidth,
@@ -354,14 +356,22 @@ class _CollapsedSidebarRail extends StatelessWidget {
                 children: [
                   const AppMark(size: 16),
                   if (buildChannel == ReleaseChannel.beta) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'ß',
-                      style: TextStyle(
-                        fontSize: 11,
-                        height: 1,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
+                    const SizedBox(height: 5),
+                    Container(
+                      key: const Key('sidebar-beta-tile'),
+                      width: 14,
+                      height: 14,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'ß',
+                          style: TextStyle(fontSize: 11, height: 1, fontWeight: FontWeight.w600, color: accent),
+                        ),
                       ),
                     ),
                   ],

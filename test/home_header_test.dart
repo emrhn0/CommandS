@@ -123,19 +123,26 @@ void main() {
     expect(tester.getRect(settings).bottom, lessThan(tester.getRect(toggle).top));
     expect(wordmark, findsNothing);
     final mark = find.descendant(of: compactBranding, matching: find.byType(AppMark));
-    final beta = find.descendant(of: compactBranding, matching: find.text('ß'));
+    final betaTile = find.byKey(const Key('sidebar-beta-tile'));
+    final beta = find.descendant(of: betaTile, matching: find.text('ß'));
     expect(mark, findsOneWidget);
     expect(tester.getTopLeft(mark).dy, greaterThanOrEqualTo(10));
     if (buildChannel == ReleaseChannel.beta) {
-      expect(tester.getRect(beta).top, greaterThan(tester.getRect(mark).bottom));
+      expect(tester.getRect(betaTile).top - tester.getRect(mark).bottom, 5);
+      expect(tester.getCenter(betaTile).dx, tester.getCenter(mark).dx);
+      Color? tileColor() => (tester.widget<Container>(betaTile).decoration as BoxDecoration).color;
       final firstAccent = theme.value.colorScheme.primary;
       expect(tester.widget<Text>(beta).style?.color, firstAccent);
+      expect(tileColor(), firstAccent.withValues(alpha: 0.18));
       theme.value = AppTheme.dark();
       await tester.pumpAndSettle();
-      expect(theme.value.colorScheme.primary, isNot(firstAccent));
-      expect(tester.widget<Text>(beta).style?.color, theme.value.colorScheme.primary);
+      final nextAccent = theme.value.colorScheme.primary;
+      expect(nextAccent, isNot(firstAccent));
+      expect(tester.widget<Text>(beta).style?.color, nextAccent);
+      expect(tileColor(), nextAccent.withValues(alpha: 0.18));
     } else {
-      expect(beta, findsNothing);
+      expect(betaTile, findsNothing);
+      expect(find.descendant(of: compactBranding, matching: find.text('ß')), findsNothing);
     }
 
     await tester.tap(settings);
