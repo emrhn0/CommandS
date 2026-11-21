@@ -18,6 +18,7 @@ import '../widgets/app_select.dart';
 import '../widgets/backups_panel.dart';
 import '../widgets/color_picker_dialog.dart';
 import '../widgets/credential_profiles.dart';
+import '../widgets/hotkeys_panel.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/import_export_dialog.dart';
 import '../widgets/update_dialog.dart';
@@ -36,6 +37,7 @@ enum SettingsPage {
   // The app's theme and the SSH terminal's look on one page, so colours are
   // set in one place.
   theme('Theme & colors', Icons.palette_outlined),
+  hotkeys('Hotkeys', Icons.keyboard_outlined),
   connections('Connections', Icons.swap_vert),
   sessionLogs('Session logs', Icons.description_outlined),
   privacy('Privacy', Icons.shield_outlined),
@@ -79,6 +81,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SizedBox(height: 18),
           _Section(title: 'SSH terminal', children: [_TerminalAppearance()]),
         ];
+      case SettingsPage.hotkeys:
+        return const [_Section(children: [HotkeysPanel()])];
       case SettingsPage.connections:
         return const [
           _Section(children: [_ImportExport()]),
