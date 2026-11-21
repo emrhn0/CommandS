@@ -56,6 +56,7 @@ void main() {
         final expected = {
           SettingsPage.general: 'Applies to CommandS itself; sessions are not affected.',
           SettingsPage.theme: 'Font',
+          SettingsPage.hotkeys: 'Open command palette',
           SettingsPage.connections: 'Export connections',
           SettingsPage.sessionLogs: 'Choose log folder',
           SettingsPage.privacy: 'Passwords',

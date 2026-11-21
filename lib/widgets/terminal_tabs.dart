@@ -1795,6 +1795,13 @@ class _TerminalPaneState extends State<_TerminalPane> {
   void initState() {
     super.initState();
     _clipboard = TerminalClipboard(terminal: widget.controller.terminal, controller: _terminalController);
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus || !mounted) return;
+      final app = context.read<AppState>();
+      for (final tab in app.tabs) {
+        if (identical(tab.controller, widget.controller)) app.focusCommandTab(tab.id);
+      }
+    });
     if (widget.active) _focusAfterFrame();
   }
 
