@@ -21,7 +21,14 @@ const double kTitleBarHeight = 32;
 /// the OS there, and a Windows-shaped close button on the wrong side of a
 /// Mac window is worse than no button.
 class CustomTitleBar extends StatefulWidget {
-  const CustomTitleBar({super.key, this.title, this.leading, this.center, this.actions = const []});
+  const CustomTitleBar({
+    super.key,
+    this.title,
+    this.leading,
+    this.center,
+    this.actions = const [],
+    this.showLeadingBranding = true,
+  });
 
   /// What the bar says in its middle; the app's name by default.
   final String? title;
@@ -35,6 +42,9 @@ class CustomTitleBar extends StatefulWidget {
 
   /// Buttons of the window's own, before the minimise button.
   final List<Widget> actions;
+
+  /// Whether to show the leading wordmark when a widget occupies the center.
+  final bool showLeadingBranding;
 
   @override
   State<CustomTitleBar> createState() => _CustomTitleBarState();
@@ -127,7 +137,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
           if (isMac && (widget.leading != null || widget.center != null)) const SizedBox(width: 78),
           if (widget.leading != null) widget.leading!,
           // With something else in the middle, the name starts the bar.
-          if (widget.center != null)
+          if (widget.center != null && widget.showLeadingBranding)
             IgnorePointer(
               child: Padding(
                 padding: EdgeInsets.only(left: widget.leading != null ? 4 : 10),

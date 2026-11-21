@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart' show TerminalView;
 
+import '../app_version.dart';
 import '../providers/app_state.dart';
+import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
 
 import '../widgets/connection_tree.dart';
@@ -18,6 +20,8 @@ import 'settings_screen.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/quick_search.dart';
 import '../l10n/strings.dart';
+
+const double _collapsedSidebarWidth = 30;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -89,10 +93,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final width = context.select<AppState, double>((a) => a.sidebarWidth);
     final sidebarVisible = context.select<AppState, bool>((a) => a.sidebarVisible);
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          // The name on the left, the search box in the middle, always.
-          const CustomTitleBar(center: _TitleSearchBox()),
+          _buildLayout(context, width, sidebarVisible),
+          if (!sidebarVisible)
+            const Positioned(top: 0, bottom: 0, left: 0, child: _CollapsedSidebarRail()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLayout(BuildContext context, double width, bool sidebarVisible) {
+    return SizedBox.expand(
+      child: Column(
+        children: [
+          CustomTitleBar(
+            showLeadingBranding: sidebarVisible,
+            center: const _TitleSearchBox(),
+          ),
           Expanded(
             child: Row(
               children: [
@@ -179,9 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 if (sidebarVisible) const _SidebarResizer(),
-                // A hidden panel leaves a thin strip with the button that
-                // brings it back, where the hide button was: at the foot.
-                if (!sidebarVisible) const _CollapsedSidebarRail(),
+                if (!sidebarVisible) const SizedBox(width: _collapsedSidebarWidth),
                 // Sessions take whatever the panel leaves: terminals re-wrap
                 // and RDP sessions resize to the new pane.
                 Expanded(child: TerminalTabsArea(sidebarVisible: sidebarVisible)),
@@ -314,8 +330,7 @@ class _TitleSearchBoxState extends State<_TitleSearchBox> {
   }
 }
 
-/// What a hidden connections panel leaves: a thin strip on the left with the
-/// show button at its foot, in the same spot as the hide button.
+/// Keeps Settings and the show button available when the panel is hidden.
 class _CollapsedSidebarRail extends StatelessWidget {
   const _CollapsedSidebarRail();
 
@@ -324,11 +339,49 @@ class _CollapsedSidebarRail extends StatelessWidget {
     final divider = Theme.of(context).dividerColor;
     return Container(
       key: const Key('sidebar-rail'),
-      width: 30,
+      width: _collapsedSidebarWidth,
       decoration: BoxDecoration(border: Border(right: BorderSide(color: divider))),
       child: Column(
         children: [
+          Padding(
+            // On macOS, leave room for the native window controls.
+            padding: EdgeInsets.only(left: 4, top: Platform.isMacOS ? kTitleBarHeight + 10 : 10),
+            child: Semantics(
+              label: appName,
+              excludeSemantics: true,
+              child: Column(
+                key: const Key('sidebar-compact-branding'),
+                children: [
+                  const AppMark(size: 16),
+                  if (buildChannel == ReleaseChannel.beta) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'ß',
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
           const Spacer(),
+          SizedBox(
+            height: 30,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _HeaderIcon(
+                key: const Key('sidebar-settings'),
+                icon: Icons.settings_outlined,
+                tooltip: tr('Settings'),
+                onTap: () => showSettings(context),
+              ),
+            ),
+          ),
           Container(
             height: 30,
             alignment: Alignment.centerLeft,
