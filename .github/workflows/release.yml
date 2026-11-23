@@ -171,6 +171,24 @@ jobs:
         with:
           channel: stable
 
+      # The embedded RDP engine (FreeRDP + OpenSSL, static, both
+      # architectures). Cached by the build script's hash: it pins the
+      # versions, so a new script means a new build.
+      - name: Cache the RDP engine
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/freerdp-work/prefix-arm64
+            build/freerdp-work/prefix-x86_64
+            packages/commands_rdp_mac/macos/commands_rdp_mac/FreeRDP.xcframework
+          key: freerdp-${{ runner.os }}-${{ hashFiles('packages/commands_rdp_mac/tool/build_freerdp.sh') }}
+
+      - name: Build the RDP engine
+        run: |
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          packages/commands_rdp_mac/tool/build_freerdp.sh
+
       - name: Build Flutter macOS release
         run: |
           flutter pub get

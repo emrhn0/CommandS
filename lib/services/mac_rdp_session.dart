@@ -1,14 +1,21 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show ChangeNotifier, visibleForTesting;
 import 'package:flutter/services.dart';
 
 import '../models/models.dart';
+import 'mac_rdp_channel.dart';
+import 'rdp_keymap.dart';
 import 'session_controller.dart';
 
 /// Which program is actually going to show the remote desktop.
 enum MacRdpBackend {
+  /// Drawn inside the tab by the FreeRDP engine linked into the app
+  /// (`packages/commands_rdp_mac`), like the ActiveX control on Windows. The
+  /// normal case; the two below are only the fallback for a build without it.
+  embedded,
+
   /// FreeRDP's SDL client, if the user has it (`brew install freerdp`). Takes
   /// the whole connection — password included — on the command line, so the
   /// session opens straight onto the remote desktop with nothing to type, and
@@ -23,24 +30,22 @@ enum MacRdpBackend {
 
 /// RDP on macOS.
 ///
-/// The Windows path ([RdpSessionController]) hosts Microsoft's RDP ActiveX
-/// control inside the tab. macOS has no equivalent: there is no system RDP
-/// component to embed, and AppKit will not let one process adopt another
-/// process's window, so any client started from here is a window of its own.
-/// Drawing the session inside the tab means speaking RDP in-process — which is
-/// what Remote Desktop Manager does on this platform, by linking FreeRDP — and
-/// that is tracked separately. Until it lands, the job here is to get the user
-/// onto the remote desktop with as little friction as the platform allows,
-/// which mostly means preferring FreeRDP when it is installed, because it is
-/// the only option that can be handed a password.
+/// The session is drawn inside its tab, as on Windows: the app links FreeRDP
+/// (`packages/commands_rdp_mac`), which speaks RDP in-process and paints the
+/// remote desktop into a Flutter texture. That is what Remote Desktop Manager
+/// does on this platform; macOS has no system RDP component to embed, and
+/// AppKit does not let one process adopt another's window.
 ///
-/// What this replaced: opening an RDP connection on macOS used to construct the
-/// Windows controller, whose first call is into win32, and take the app down
-/// with it.
-class MacRdpSessionController implements SessionController {
+/// A build without the engine (it is made by `tool/build_freerdp.sh`) falls
+/// back to what this used to do: start FreeRDP's own client if it is
+/// installed, else Microsoft's "Windows App", each in a window of its own.
+///
+/// Opening an RDP connection on macOS once constructed the Windows
+/// controller, whose first call is into win32, and took the app down with it.
+class MacRdpSessionController with ChangeNotifier implements SessionController {
   MacRdpSessionController(this.conn) : host = conn.host {
     tabTitle = conn.name;
-    unawaited(_start());
+    unawaited(_chooseBackend());
   }
 
   /// A controller that launches nothing, so a test never opens a real client.
@@ -68,6 +73,9 @@ class MacRdpSessionController implements SessionController {
   MacRdpBackend? backend;
   String? backendName;
 
+  /// True while the session is drawn in the tab (the normal case).
+  bool get embedded => backend == MacRdpBackend.embedded;
+
   /// True when the session needed no password typed anywhere.
   bool get credentialsHandedOver =>
       backend == MacRdpBackend.freerdp && _password.isNotEmpty;
@@ -92,6 +100,224 @@ class MacRdpSessionController implements SessionController {
     if (_disposed) return;
     status = s;
     if (!_statusController.isClosed) _statusController.add(s);
+    notifyListeners();
+  }
+
+  // ---- embedded session ----
+
+  /// Picks the engine when this build has it, otherwise an external client.
+  Future<void> _chooseBackend() async {
+    final available = await MacRdpChannel.instance.available();
+    if (_disposed) return;
+    if (!available) {
+      await _start();
+      return;
+    }
+    backend = MacRdpBackend.embedded;
+    backendName = 'FreeRDP';
+    _sessionPassword = _password;
+    _user = conn.username;
+    // The pane reports its size on its first layout, so the desktop is
+    // negotiated at the size it is shown at; this covers a pane that never
+    // lays out (a tab opened behind others).
+    _fallbackStart = Timer(const Duration(milliseconds: 1200), () {
+      if (!_autoStarted) _connectEmbedded(1280, 800);
+    });
+    notifyListeners();
+    if (_pendingSize != null && !_autoStarted) _connectEmbedded(_pendingSize!.$1, _pendingSize!.$2);
+  }
+
+  MacRdpHandle? _handle;
+  bool _connecting = false;
+
+  /// The one automatic connect (first layout, or the fallback timer) has
+  /// happened. Every later attempt comes from the user.
+  bool _autoStarted = false;
+  Timer? _fallbackStart;
+  Timer? _resizeDebounce;
+  (int, int)? _pendingSize;
+
+  /// The login used for this tab: the saved one, or what the user typed into
+  /// the pane. What is typed is kept for this tab only, never saved.
+  String _user = '';
+  String _sessionPassword = '';
+
+  /// The Flutter texture the remote desktop is drawn into, once connected.
+  int? get textureId => _handle?.textureId;
+
+  /// The remote desktop's size in pixels.
+  int remoteWidth = 0;
+  int remoteHeight = 0;
+
+  /// The server wants a user name and password this tab does not have (none
+  /// saved, or the saved one was refused); the pane asks for them.
+  bool needsCredentials = false;
+  String get user => _user;
+
+  final keys = RdpKeyTranslator();
+
+  /// The pane's size in device pixels, on every layout. Starts the session
+  /// on the first one, and renegotiates the resolution once the size settles.
+  void reportSize(int width, int height) {
+    if (_disposed || width < 200 || height < 200) return;
+    // Even sizes: some servers reject odd widths for dynamic resolution.
+    width &= ~1;
+    height &= ~1;
+    _pendingSize = (width, height);
+    if (!embedded) return;
+    final handle = _handle;
+    if (handle == null) {
+      // Only the first layout connects on its own. After a session failed or
+      // ended, a new attempt is the user's call (Reconnect, or the login
+      // form): retrying on every rebuild would send the same login again and
+      // again and lock the account.
+      if (!_autoStarted && !_connecting && !needsCredentials) _connectEmbedded(width, height);
+      return;
+    }
+    if (width == remoteWidth && height == remoteHeight) {
+      _resizeDebounce?.cancel();
+      return;
+    }
+    _resizeDebounce?.cancel();
+    _resizeDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (_handle == handle && !_disposed) unawaited(MacRdpChannel.instance.resize(handle.id, width, height));
+    });
+  }
+
+  Future<void> _connectEmbedded(int width, int height) async {
+    if (_disposed || _connecting || _handle != null) return;
+    _autoStarted = true;
+    _fallbackStart?.cancel();
+    if (_sessionPassword.isEmpty) {
+      // NLA needs the password before anything is drawn; ask in the pane.
+      needsCredentials = true;
+      notifyListeners();
+      return;
+    }
+    _connecting = true;
+    needsCredentials = false;
+    lastError = null;
+    _setStatus(SessionStatus.starting);
+    try {
+      final handle = await MacRdpChannel.instance.connect(
+        host: host,
+        port: _port,
+        username: _user,
+        domain: conn.domain ?? '',
+        password: _sessionPassword,
+        width: width,
+        height: height,
+        clipboard: conn.rdpClipboard,
+        wallpaper: conn.rdpWallpaper,
+        onEvent: _onEvent,
+      );
+      if (_disposed) {
+        await MacRdpChannel.instance.close(handle.id);
+        return;
+      }
+      _handle = handle;
+      keys.isoKeyboard = handle.isoKeyboard;
+      remoteWidth = width;
+      remoteHeight = height;
+      notifyListeners();
+    } on PlatformException catch (e) {
+      lastError = e.message ?? e.code;
+      _setStatus(SessionStatus.error);
+    } catch (e) {
+      lastError = e.toString();
+      _setStatus(SessionStatus.error);
+    } finally {
+      _connecting = false;
+    }
+  }
+
+  void _onEvent(MacRdpEvent event) {
+    if (_disposed) return;
+    switch (event.type) {
+      case 'connected':
+        lastError = null;
+        _setStatus(SessionStatus.running);
+      case 'size':
+        remoteWidth = event.width;
+        remoteHeight = event.height;
+        notifyListeners();
+      case 'closed':
+        _dropHandle();
+        lastError = null;
+        _setStatus(SessionStatus.closed);
+      case 'error':
+        _dropHandle();
+        lastError = event.message.isEmpty ? null : event.message;
+        if (event.authFailed) {
+          needsCredentials = true;
+          _setStatus(SessionStatus.starting);
+        } else {
+          _setStatus(SessionStatus.error);
+        }
+    }
+  }
+
+  void _dropHandle() {
+    final handle = _handle;
+    _handle = null;
+    if (handle != null) unawaited(MacRdpChannel.instance.close(handle.id));
+  }
+
+  /// The login typed into the pane, for this tab only.
+  void signIn(String user, String password) {
+    if (_disposed || password.isEmpty) return;
+    _user = user.trim();
+    _sessionPassword = password;
+    needsCredentials = false;
+    final size = _pendingSize ?? (1280, 800);
+    unawaited(_connectEmbedded(size.$1, size.$2));
+  }
+
+  /// A key went down or up while the pane has the keyboard.
+  void sendKey(int usbHidUsage, {required bool down, bool repeat = false}) {
+    final handle = _handle;
+    if (handle == null || status != SessionStatus.running) return;
+    for (final stroke in keys.translate(usbHidUsage, down: down, repeat: repeat)) {
+      unawaited(MacRdpChannel.instance.key(handle.id, stroke.scancode, down: stroke.down, repeat: repeat && stroke.down));
+    }
+  }
+
+  /// The pane lost the keyboard: let go of anything still held.
+  void releaseKeys() {
+    final handle = _handle;
+    final strokes = keys.releaseAll();
+    if (handle == null) return;
+    for (final stroke in strokes) {
+      unawaited(MacRdpChannel.instance.key(handle.id, stroke.scancode, down: false));
+    }
+  }
+
+  /// The pane got the keyboard.
+  void focused() {
+    final handle = _handle;
+    if (handle != null && conn.rdpClipboard) unawaited(MacRdpChannel.instance.focus(handle.id));
+  }
+
+  /// A pointer event at ([x], [y]) in remote desktop pixels.
+  void sendPointer(int flags, int x, int y) {
+    final handle = _handle;
+    if (handle == null || status != SessionStatus.running) return;
+    unawaited(MacRdpChannel.instance.mouse(
+      handle.id,
+      flags,
+      x.clamp(0, remoteWidth > 0 ? remoteWidth - 1 : 0),
+      y.clamp(0, remoteHeight > 0 ? remoteHeight - 1 : 0),
+    ));
+  }
+
+  /// The real keys never reach the session (macOS keeps Ctrl+Option+Delete
+  /// to itself only on some keyboards, and there is no Delete on most Macs),
+  /// so it is sent from the tab's menu, as on Windows.
+  bool get canSendCtrlAltDel => _handle != null && status == SessionStatus.running;
+
+  void sendCtrlAltDelete() {
+    final handle = _handle;
+    if (handle != null) unawaited(MacRdpChannel.instance.ctrlAltDel(handle.id));
   }
 
   // ---- launching ----
@@ -307,6 +533,15 @@ class MacRdpSessionController implements SessionController {
   /// not own the window the client puts on screen.
   Future<void> relaunch() async {
     if (_disposed) return;
+    if (embedded) {
+      _dropHandle();
+      keys.releaseAll();
+      lastError = null;
+      final size = _pendingSize ?? (1280, 800);
+      _setStatus(SessionStatus.starting);
+      await _connectEmbedded(size.$1, size.$2);
+      return;
+    }
     _cleanUpScratch();
     _process = null;
     backend = null;
@@ -335,6 +570,9 @@ class MacRdpSessionController implements SessionController {
   @override
   void dispose() {
     _disposed = true;
+    _fallbackStart?.cancel();
+    _resizeDebounce?.cancel();
+    _dropHandle();
     // Closing the tab closes the session it opened -- leaving an orphaned
     // FreeRDP window behind with no tab to manage it would be worse than
     // ending it.
@@ -344,5 +582,6 @@ class MacRdpSessionController implements SessionController {
     _process = null;
     _cleanUpScratch();
     _statusController.close();
+    super.dispose();
   }
 }

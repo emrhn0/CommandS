@@ -609,4 +609,6 @@ const german = <String, String>{
   'Unassigned': 'Nicht zugewiesen',
   'Remove shortcut': 'Tastenkürzel entfernen',
   'Reset to default': 'Standard wiederherstellen',
+  'Connecting to {host}…': 'Verbindung zu {host} wird hergestellt…',
+  'Sign in to {host}': 'Bei {host} anmelden',
 };

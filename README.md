@@ -26,8 +26,8 @@ click; on macOS it opens the download page.
 - **SSH** in tabs, through the OpenSSH client your system already has.
   Works with old network gear too. The keyboard, copy and paste behave as in
   PuTTY.
-- **RDP** on Windows runs inside a tab. On macOS it opens in FreeRDP or
-  Microsoft's Windows App.
+- **RDP** runs inside a tab, on Windows and on macOS. The window size is the
+  desktop size, and clipboard text goes both ways.
 - **Serial consoles**: type the COM port number in quick connect (`3` for
   COM3, `3:115200` for another speed).
 - **Split view**: several sessions side by side, each with its own small tab

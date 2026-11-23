@@ -605,4 +605,6 @@ const turkish = <String, String>{
   'Unassigned': 'Atanmamış',
   'Remove shortcut': 'Kısayolu kaldır',
   'Reset to default': 'Varsayılana sıfırla',
+  'Connecting to {host}…': '{host} adresine bağlanılıyor…',
+  'Sign in to {host}': '{host} için oturum aç',
 };

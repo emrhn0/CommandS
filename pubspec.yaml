@@ -53,6 +53,10 @@ dependencies:
   pointycastle: ^4.0.0
   flutter_svg: ^2.3.2
   desktop_multi_window: ^0.3.1
+  # Embedded RDP on macOS (FreeRDP into a texture). macOS only: the Windows
+  # build does not see it.
+  commands_rdp_mac:
+    path: packages/commands_rdp_mac
 
 dev_dependencies:
   flutter_test:

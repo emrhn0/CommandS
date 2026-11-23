@@ -27,6 +27,8 @@ flutter test                       # unit + widget tests, all must pass
 flutter run -d windows             # debug run
 flutter build windows --release
 flutter test integration_test/<file> -d windows   # real-window tests, Windows only
+packages/commands_rdp_mac/tool/build_freerdp.sh   # once, before a macOS build (needs cmake, ninja, Xcode)
+flutter run -d macos
 ```
 
 ## Map
@@ -44,7 +46,9 @@ flutter test integration_test/<file> -d windows   # real-window tests, Windows o
 | `lib/services/device_detect.dart` | Works out the device kind (Linux, VMware, Palo Alto, Fortinet, Cisco, Aruba, Huawei, Windows) from the SSH identification line and the first output. |
 | `lib/services/serial_session.dart` | Serial console via the Win32 comm API in an isolate (9600 8N1 default). macOS uses `screen`. |
 | `lib/services/rdp_session.dart`, `windows/runner/rdp_*.cpp` | Embedded RDP (ActiveX host). |
-| `lib/services/mac_rdp_session.dart` | macOS RDP: launches FreeRDP or Microsoft's client. |
+| `lib/services/mac_rdp_session.dart`, `mac_rdp_channel.dart`, `lib/widgets/mac_rdp_view.dart` | macOS RDP, drawn in the tab. Falls back to launching FreeRDP or Microsoft's client in a build without the engine. |
+| `packages/commands_rdp_mac` | The macOS RDP engine: FreeRDP linked statically (`tool/build_freerdp.sh` makes `FreeRDP.xcframework`, not in git), a C layer (`rdp_mac.c`) and a Swift plugin painting into a Flutter texture. macOS only; the Windows build does not see it. |
+| `lib/services/rdp_keymap.dart` | Mac keys to PC scancodes, Cmd as Ctrl, RDP mouse flags. |
 | `lib/services/storage_service.dart`, `rdm_import.dart` | Persistence, import/export (JSON, XML, CSV). |
 | `lib/services/password_vault.dart` | AES-GCM for remembered passwords; the key lives in DPAPI (Windows) or the Keychain (macOS). |
 | `lib/services/feedback_service.dart` | Anonymous feedback to a Google Form. |
@@ -98,6 +102,20 @@ Do not "simplify" these without reading why.
   - The clipboard is handed across on `WM_ACTIVATE` through
     `IMsRdpClientNonScriptable7::Clipboard` (`SyncClipboard`): in this window
     the control did not follow it on its own.
+- **macOS RDP links FreeRDP into the app** instead of opening another
+  program. AppKit does not let one app place another app's window in a tab,
+  and macOS has no RDP component to embed, so the session has to be spoken
+  in-process (Remote Desktop Manager does the same).
+  - Built static, with OpenSSL, for both architectures, so the app loads
+    nothing from Homebrew. No ffmpeg, audio, X11 or device redirection.
+  - Frames are copied out of FreeRDP's GDI buffer into a fresh
+    `CVPixelBuffer` per paint, so Flutter never reads a half-written frame.
+  - Keys are sent as scancodes; the server's layout picks the character.
+    Command with another key is Ctrl (Cmd+C copies), tapped alone it is the
+    Windows key. Apple ISO keyboards swap two keys, which are swapped back.
+  - Certificates: first one trusted and remembered under Application
+    Support/CommandS/freerdp, a changed one stops the connection.
+  - No saved password: the pane asks, and the answer stays in that tab.
 - **Tree clicks work like Explorer.** One click selects, a double click opens.
   - Double clicks are detected from pointer-down timestamps in a `Listener`,
     not with a double-tap recognizer, which would delay every single click.

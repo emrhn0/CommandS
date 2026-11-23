@@ -1,0 +1,18 @@
+name: commands_rdp_mac
+description: "Embedded RDP sessions for CommandS on macOS: FreeRDP drawn into a Flutter texture."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.2
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      macos:
+        pluginClass: CommandsRdpMacPlugin

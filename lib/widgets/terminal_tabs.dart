@@ -24,6 +24,7 @@ import 'context_menu.dart';
 import 'tree_drag.dart';
 import 'welcome_panel.dart';
 import 'new_connection_dialog.dart';
+import 'mac_rdp_view.dart';
 import 'rdp_embed_view.dart';
 import 'split_view_dialog.dart';
 import 'terminal_clipboard.dart';
@@ -684,7 +685,10 @@ Future<void> _showGroupMenu(BuildContext context, AppState app, TabGroup group, 
   if (key.startsWith('ctrlaltdel:')) {
     final id = key.substring('ctrlaltdel:'.length);
     for (final t in remote) {
-      if (t.id == id) (t.controller as RdpSessionController).sendCtrlAltDelete();
+      if (t.id != id) continue;
+      final c = t.controller;
+      if (c is RdpSessionController) c.sendCtrlAltDelete();
+      if (c is MacRdpSessionController) c.sendCtrlAltDelete();
     }
     return;
   }
@@ -724,6 +728,7 @@ void reconnectTab(OpenTab tab) {
 /// them, so it is sent from the tab's menu.
 bool canSendCtrlAltDel(OpenTab tab) {
   final c = tab.controller;
+  if (c is MacRdpSessionController) return c.canSendCtrlAltDel;
   return c is RdpSessionController && c.status == SessionStatus.running;
 }
 
@@ -768,7 +773,9 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
         await app.openConnection(ssh.connectionForDuplicate(id: tab.connectionId));
       }
     case 'ctrlaltdel':
-      (tab.controller as RdpSessionController).sendCtrlAltDelete();
+      final c = tab.controller;
+      if (c is RdpSessionController) c.sendCtrlAltDelete();
+      if (c is MacRdpSessionController) c.sendCtrlAltDelete();
     case 'sftp':
       final ssh = tab.controller as PtySessionController;
       ssh.sftpOpen.value = !ssh.sftpOpen.value;
@@ -1671,7 +1678,15 @@ class _SessionPane extends StatelessWidget {
       return RdpEmbedView(controller: controller as RdpSessionController, active: active);
     }
     if (controller is MacRdpSessionController) {
-      return _MacRdpPane(controller: controller as MacRdpSessionController);
+      final mac = controller as MacRdpSessionController;
+      // Drawn in the tab unless this build has no engine and an external
+      // client was started instead.
+      return ListenableBuilder(
+        listenable: mac,
+        builder: (context, _) => mac.embedded || mac.backend == null
+            ? MacRdpEmbedView(controller: mac, active: active)
+            : _MacRdpPane(controller: mac),
+      );
     }
     return _TerminalPane(controller: controller as TerminalSessionController, active: active);
   }
