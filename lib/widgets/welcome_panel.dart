@@ -433,7 +433,8 @@ class _WelcomePanelState extends State<WelcomePanel> {
                         ),
                       )
                     else
-                      for (final conn in recent) _RecentRow(conn: conn, accent: accent, palette: palette),
+                      for (final conn in recent)
+                        _RecentRow(conn: conn, accent: accent, palette: palette, separateAddress: true),
                   ],
                 ),
               ),
@@ -448,12 +449,19 @@ class _WelcomePanelState extends State<WelcomePanel> {
 /// One recent connection: a click opens it. On hover the row lights up in
 /// the accent colour and an arrow shows, so it reads as clickable.
 class _RecentRow extends StatefulWidget {
-  const _RecentRow({required this.conn, required this.accent, required this.palette, this.keyPrefix = 'welcome-recent'});
+  const _RecentRow({
+    required this.conn,
+    required this.accent,
+    required this.palette,
+    this.keyPrefix = 'welcome-recent',
+    this.separateAddress = false,
+  });
 
   final SavedConnection conn;
 
   /// Keeps the keys apart when a connection is both a favorite and recent.
   final String keyPrefix;
+  final bool separateAddress;
   final Color accent;
   final AppPalette palette;
 
@@ -471,8 +479,20 @@ class _RecentRowState extends State<_RecentRow> {
     final accent = widget.accent;
     final defaultPort = conn.protocol == ConnectionProtocol.rdp ? 3389 : 22;
     final address = conn.port == defaultPort ? conn.host : '${conn.host}:${conn.port}';
-    // Many names already carry the address; it is not repeated beside them.
-    final showAddress = !conn.name.toLowerCase().contains(conn.host.toLowerCase());
+    final host = conn.host.toLowerCase();
+    final showAddress = widget.separateAddress || !conn.name.toLowerCase().contains(host);
+    var displayName = conn.name;
+    if (widget.separateAddress) {
+      // Move a matching suffix to the address column without changing the saved name.
+      final separator = displayName.lastIndexOf(' - ');
+      if (separator > 0) {
+        final name = displayName.substring(0, separator).trimRight();
+        final suffix = displayName.substring(separator + 3).trim().toLowerCase();
+        if (name.isNotEmpty && (suffix == host || suffix == address.toLowerCase())) {
+          displayName = name;
+        }
+      }
+    }
     // The outermost folder the connection sits in, the customer or site.
     final site = context.read<AppState>().folderNamesOf(conn.folderId).firstOrNull;
     const fast = Duration(milliseconds: 120);
@@ -521,7 +541,7 @@ class _RecentRowState extends State<_RecentRow> {
                   children: [
                     Flexible(
                       child: Text(
-                        conn.name,
+                        displayName,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 13,

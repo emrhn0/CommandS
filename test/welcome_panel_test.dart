@@ -146,13 +146,19 @@ void main() {
       await closeAll(tester, app);
     });
 
-    testWidgets('an address already in the name is not repeated beside it', (tester) async {
+    testWidgets('a matching address suffix goes in the right column of a recent connection', (tester) async {
       final named = SavedConnection(name: 'SWITCH-01 - 192.0.2.30', host: '192.0.2.30');
       final plain = SavedConnection(name: 'DEVICE-01', host: '192.0.2.31');
-      final app = await show(tester, recent: [named, plain]);
-      expect(find.text('192.0.2.30'), findsNothing);
-      expect(find.text('SWITCH-01 - 192.0.2.30'), findsOneWidget);
-      expect(find.text('192.0.2.31'), findsOneWidget);
+      final customPort = SavedConnection(name: 'DEVICE-02 - 192.0.2.32', host: '192.0.2.32', port: 2222);
+      final app = await show(tester, recent: [named, plain, customPort]);
+      final formattedAddress = find.text(named.host);
+      final plainAddress = find.text(plain.host);
+      expect(formattedAddress, findsOneWidget);
+      expect(tester.getTopRight(formattedAddress).dx, tester.getTopRight(plainAddress).dx);
+      expect(find.text('SWITCH-01'), findsOneWidget);
+      expect(find.text('DEVICE-02'), findsOneWidget);
+      expect(find.text('192.0.2.32:2222'), findsOneWidget);
+      expect(named.name, 'SWITCH-01 - 192.0.2.30');
       await closeAll(tester, app);
     });
 
