@@ -124,7 +124,8 @@ void main() {
     await tester.tap(toggle);
     await tester.pump();
     expect(find.byKey(const Key('sidebar-new-connection')), findsNothing);
-    expect(find.text('Show the sidebar to pick a saved connection,\nor start a new one.'), findsOneWidget);
+    // Nothing saved yet: the welcome screen lists the first steps.
+    expect(find.byKey(const Key('welcome-first-steps')), findsOneWidget);
     expect(tester.getSize(terminal).width, greaterThan(initialWidth + 250));
     expect(app.sidebarWidth, 300);
     // The button that brings it back is where the hide button was, at the

@@ -26,9 +26,13 @@ import '../services/hostname_discovery.dart';
 import '../theme/theme_presets.dart';
 
 class OpenTab {
-  OpenTab({required this.id, required this.controller, this.connectionId});
+  OpenTab({required this.id, required this.controller, this.connectionId, DateTime? openedAt})
+      : openedAt = openedAt ?? DateTime.now();
   final String id;
   final SessionController controller;
+
+  /// When the tab was opened: the status bar shows how long it has been.
+  final DateTime openedAt;
 
   /// The saved connection this tab was opened from, so the tree can show
   /// which connections are open. Null for quick connections, until one is
@@ -216,6 +220,38 @@ class AppState extends ChangeNotifier {
   /// The pane last used inside a split; commands target that pane.
   String? focusedCommandTabId;
 
+  /// The welcome screen is showing over open sessions (the home button left
+  /// of the tabs). The sessions keep running; any tab, or a new one, brings
+  /// them back.
+  bool homeShown = false;
+
+  void showHome() {
+    if (tabs.isEmpty || homeShown) return;
+    homeShown = true;
+    notifyListeners();
+  }
+
+  /// Sessions opened today, for the welcome screen. Kept with its date, so a
+  /// new day starts again from zero.
+  int _openedCount = 0;
+  String _openedDay = '';
+  static const _kOpenedToday = 'commands.openedToday';
+
+  static String _dayOf(DateTime t) =>
+      '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+
+  int get openedToday => _openedDay == _dayOf(DateTime.now()) ? _openedCount : 0;
+
+  /// One more session opened today.
+  @visibleForTesting
+  void countOpened() {
+    final today = _dayOf(DateTime.now());
+    _openedCount = (_openedDay == today ? _openedCount : 0) + 1;
+    _openedDay = today;
+    final value = '$_openedDay $_openedCount';
+    unawaited(SharedPreferences.getInstance().then((p) => p.setString(_kOpenedToday, value)));
+  }
+
   OpenTab? get commandTab {
     final visible = tabIdsInLayout(paneLayout);
     for (final tab in tabs) {
@@ -248,7 +284,7 @@ class AppState extends ChangeNotifier {
     return switch (id) {
       AppCommandId.copyName || AppCommandId.copyAddress => tab != null,
       AppCommandId.copyPassword => commandPassword != null,
-      AppCommandId.typePassword => tab?.controller is PtySessionController &&
+      AppCommandId.typePassword => !homeShown && tab?.controller is PtySessionController &&
           tab!.controller.status == SessionStatus.running && commandPassword != null,
       _ => true,
     };
@@ -447,6 +483,11 @@ class AppState extends ChangeNotifier {
     connectionOrder = prefs.getStringList(_kConnectionOrder) ?? [];
     recentConnectionIds = prefs.getStringList(_kRecentConnections) ?? [];
     favoriteConnectionIds = prefs.getStringList(_kFavorites) ?? [];
+    final opened = (prefs.getString(_kOpenedToday) ?? '').split(' ');
+    if (opened.length == 2) {
+      _openedDay = opened[0];
+      _openedCount = int.tryParse(opened[1]) ?? 0;
+    }
     sidebarWidth = (prefs.getDouble(_kSidebarWidth) ?? defaultSidebarWidth).clamp(minSidebarWidth, maxSidebarWidth);
     sidebarVisible = prefs.getBool(_kSidebarVisible) ?? true;
     customLayouts = [
@@ -735,6 +776,49 @@ class AppState extends ChangeNotifier {
     f.name = newName;
     await _storage.saveFolders(folders);
     notifyListeners();
+  }
+
+  /// The colours a folder can be given, picked to stay readable on every
+  /// theme.
+  static const folderColors = <int>[
+    0xFF5B9CF5, // blue
+    0xFFB57CF0, // purple
+    0xFF2BB5A0, // teal
+    0xFF5FB85C, // green
+    0xFFE0B03A, // yellow
+    0xFFF08A4B, // orange
+    0xFFE5585D, // red
+    0xFFE36BA8, // pink
+  ];
+
+  Future<void> setFolderColor(String id, int? color) async {
+    final f = folders.where((e) => e.id == id).firstOrNull;
+    if (f == null) return;
+    f.color = color;
+    await _storage.saveFolders(folders);
+    notifyListeners();
+  }
+
+  /// The colour of folder [folderId], or of the nearest folder above it that
+  /// has one: a customer's colour carries to the folders inside it.
+  Color? folderColorOf(String? folderId) {
+    final seen = <String>{};
+    var id = folderId;
+    while (id != null && seen.add(id)) {
+      final folder = folders.where((f) => f.id == id).firstOrNull;
+      if (folder == null) return null;
+      if (folder.color != null) return Color(folder.color!);
+      id = folder.parentId;
+    }
+    return null;
+  }
+
+  /// The folder colour of the connection behind [tab], if any.
+  Color? tabColorOf(OpenTab tab) {
+    final id = tab.connectionId;
+    if (id == null) return null;
+    final conn = connections.where((c) => c.id == id).firstOrNull;
+    return conn == null ? null : folderColorOf(conn.folderId);
   }
 
   Future<void> deleteFolder(String id) async {
@@ -1419,6 +1503,8 @@ class AppState extends ChangeNotifier {
       }
     }
     tabs.add(tab);
+    homeShown = false;
+    countOpened();
     controller.statusStream.listen((_) => notifyListeners());
     return tab;
   }
@@ -1603,6 +1689,8 @@ class AppState extends ChangeNotifier {
     final controller = SerialSessionController(port: port, baud: baud);
     final tab = OpenTab(id: 'serial-${DateTime.now().microsecondsSinceEpoch}-${_tabSerial++}', controller: controller);
     tabs.add(tab);
+    homeShown = false;
+    countOpened();
     activeTabIndex = tabs.length - 1;
     paneLayout = PaneLeaf(tab.id);
     activeGroupId = null;
@@ -1617,6 +1705,8 @@ class AppState extends ChangeNotifier {
       controller: controller,
     );
     tabs.add(tab);
+    homeShown = false;
+    countOpened();
     activeTabIndex = tabs.length - 1;
     paneLayout = PaneLeaf(tab.id);
     activeGroupId = null;
@@ -1642,6 +1732,7 @@ class AppState extends ChangeNotifier {
     if (g == null) return;
     activeGroupId = g.id;
     paneLayout = g.layout;
+    homeShown = false;
     final index = tabs.indexWhere((t) => t.id == g.tabIds.first);
     if (index != -1) activeTabIndex = index;
     notifyListeners();
@@ -1867,6 +1958,7 @@ class AppState extends ChangeNotifier {
       paneLayout = withoutEmptyPanes(removeFromLayout(paneLayout, tab.id));
     }
     if (activeTabIndex >= tabs.length) activeTabIndex = tabs.length - 1;
+    if (tabs.isEmpty) homeShown = false;
     if (paneLayout == null && tabs.isNotEmpty) {
       final next = tabs[activeTabIndex];
       final g = groupOf(next.id);
@@ -1883,6 +1975,7 @@ class AppState extends ChangeNotifier {
 
   void setActiveTab(int index) {
     activeTabIndex = index;
+    homeShown = false;
     // A tab in a split brings its split back; any other tab is shown on its
     // own, leaving the split to return to from its own tab.
     final g = groupOf(tabs[index].id);

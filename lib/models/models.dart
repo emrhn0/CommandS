@@ -35,19 +35,25 @@ class ConnectionFolder {
   String name;
   String? parentId;
 
-  ConnectionFolder({String? id, required this.name, this.parentId})
+  /// A colour picked for the folder (ARGB), shown on its icon, the folders
+  /// inside it and the tabs of its connections. Null for none.
+  int? color;
+
+  ConnectionFolder({String? id, required this.name, this.parentId, this.color})
       : id = id ?? _uuid.v4();
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
         'parentId': parentId,
+        if (color != null) 'color': color,
       };
 
   factory ConnectionFolder.fromJson(Map<String, dynamic> json) => ConnectionFolder(
         id: json['id'] as String,
         name: json['name'] as String,
         parentId: json['parentId'] as String?,
+        color: json['color'] is int ? json['color'] as int : null,
       );
 }
 

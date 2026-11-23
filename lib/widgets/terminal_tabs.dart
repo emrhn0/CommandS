@@ -53,18 +53,26 @@ class TerminalTabsArea extends StatelessWidget {
       children: [
         _TabBarRow(app: app),
         const Divider(height: 1),
-        Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _PaneTreeView(node: layout, headers: layout is PaneSplit),
-              // Not over a split: its layout was set in Split View, and a tab
-              // dragged there only fills an empty pane.
-              if (app.draggingTabId != null && app.tabs.length > 1 && layout is! PaneSplit)
-                _LayoutPicker(tabId: app.draggingTabId!, tabCount: app.tabs.length),
-            ],
+        // The welcome screen over the sessions, from the home button: they
+        // keep running, and any tab brings them back. Embedded RDP windows
+        // hide while their panes are not built.
+        if (app.homeShown)
+          Expanded(child: WelcomePanel(sidebarVisible: sidebarVisible))
+        else ...[
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _PaneTreeView(node: layout, headers: layout is PaneSplit),
+                // Not over a split: its layout was set in Split View, and a tab
+                // dragged there only fills an empty pane.
+                if (app.draggingTabId != null && app.tabs.length > 1 && layout is! PaneSplit)
+                  _LayoutPicker(tabId: app.draggingTabId!, tabCount: app.tabs.length),
+              ],
+            ),
           ),
-        ),
+          if (app.commandTab case final tab?) SessionStatusBar(tab: tab),
+        ],
       ],
     );
   }
@@ -93,7 +101,7 @@ class _TabBarRow extends StatelessWidget {
             isGroup: true,
             title: group.name ?? tr('Split View'),
             tooltip: members.map(_tabTitle).join('\n'),
-            active: app.activeGroupId == group.id,
+            active: !app.homeShown && app.activeGroupId == group.id,
             icon: Icons.space_dashboard_outlined,
             status: _groupStatus(members),
             onTap: () => app.activateGroup(group.id),
@@ -112,9 +120,11 @@ class _TabBarRow extends StatelessWidget {
           isGroup: false,
           title: _tabTitle(tab),
           active:
+              !app.homeShown &&
               app.activeGroupId == null &&
               (visible.contains(tab.id) || (app.paneLayout == null && i == app.activeTabIndex)),
           icon: _tabIcon(tab),
+          color: app.tabColorOf(tab),
           status: tab.controller.status,
           onTap: () => app.setActiveTab(i),
           onClose: () => app.closeTab(i),
@@ -140,6 +150,7 @@ class _TabBarRow extends StatelessWidget {
       height: 36,
       child: Row(
         children: [
+          _HomeButton(active: app.homeShown, onTap: app.showHome),
           Expanded(
             // Behind the chips, the rest of the strip: a drop there goes last.
             child: DragTarget<_TabDrag>(
@@ -877,7 +888,12 @@ class _TabChip extends StatefulWidget {
     required this.onClose,
     required this.onMenu,
     this.tooltip,
+    this.color,
   });
+
+  /// The colour of the folder the connection is in, if it has one: the
+  /// tab's icon takes it, so a customer's tabs are told apart at a glance.
+  final Color? color;
 
   /// The sessions behind this chip, in tab order.
   final List<String> tabIds;
@@ -960,7 +976,7 @@ class _TabChipState extends State<_TabChip> {
             ),
           ),
           const SizedBox(width: 6),
-          Icon(widget.icon, size: 12),
+          Icon(widget.icon, size: 12, color: widget.color, key: widget.color == null ? null : const ValueKey('tab-folder-color')),
           const SizedBox(width: 4),
           Expanded(
             child: Text(widget.title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
@@ -2402,6 +2418,149 @@ class TerminalThemes {
       searchHitBackground: a?[8] ?? dark.searchHitBackground,
       searchHitBackgroundCurrent: a == null ? dark.searchHitBackgroundCurrent : foreground,
       searchHitForeground: background,
+    );
+  }
+}
+
+/// The house at the start of the tab bar: the welcome screen, with the open
+/// sessions listed, while they keep running.
+class _HomeButton extends StatelessWidget {
+  const _HomeButton({required this.active, required this.onTap});
+
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final palette = AppPalette.of(context);
+    return Tooltip(
+      message: tr('Home'),
+      child: InkWell(
+        key: const Key('tab-home'),
+        onTap: onTap,
+        child: Container(
+          width: 38,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? scheme.surface : Colors.transparent,
+            border: Border(
+              bottom: BorderSide(color: active ? scheme.primary : Colors.transparent, width: 2),
+              right: BorderSide(color: Theme.of(context).dividerColor),
+            ),
+          ),
+          child: Icon(Icons.home_outlined, size: 17, color: active ? scheme.primary : palette.textDim),
+        ),
+      ),
+    );
+  }
+}
+
+/// A thin line under the sessions about the one in use: its protocol, its
+/// address (a click copies it) and how long it has been open.
+class SessionStatusBar extends StatefulWidget {
+  const SessionStatusBar({super.key, required this.tab, this.now});
+
+  final OpenTab tab;
+
+  /// The time the duration is counted to; tests pass one in.
+  final DateTime Function()? now;
+
+  /// "42 min", or "2 h 5 min" from an hour on.
+  static String durationLabel(Duration d) {
+    final minutes = d.inMinutes;
+    if (minutes < 60) return tr('{n} min', {'n': minutes});
+    return tr('{h} h {m} min', {'h': minutes ~/ 60, 'm': minutes % 60});
+  }
+
+  @override
+  State<SessionStatusBar> createState() => _SessionStatusBarState();
+}
+
+class _SessionStatusBarState extends State<SessionStatusBar> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // The minutes move on by themselves.
+    _tick = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final palette = AppPalette.of(context);
+    final accent = Theme.of(context).colorScheme.primary;
+    final c = widget.tab.controller;
+    final protocol = switch (c) {
+      RdpSessionController() || MacRdpSessionController() => 'RDP',
+      SerialSessionController() => 'Serial',
+      _ => 'SSH',
+    };
+    final conn = app.connections.where((x) => x.id == widget.tab.connectionId).firstOrNull;
+    final defaultPort = protocol == 'RDP' ? 3389 : 22;
+    final address = switch (conn) {
+      final conn? when conn.port != defaultPort && protocol != 'Serial' => '${conn.host}:${conn.port}',
+      final conn? => conn.host,
+      null => c.host,
+    };
+    final now = widget.now?.call() ?? DateTime.now();
+    final style = TextStyle(fontSize: 11, color: palette.textDim);
+    return Container(
+      key: const Key('session-status-bar'),
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: Theme.of(context).dividerColor))),
+      child: Row(
+        children: [
+          Text(protocol, style: style.copyWith(color: accent, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 8),
+          // The address takes the room up to the time, which sits at the end.
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Tooltip(
+              message: tr('Copy address'),
+              child: InkWell(
+                key: const Key('session-status-address'),
+                onTap: () async {
+                  await Clipboard.setData(ClipboardData(text: address));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Host address copied'))));
+                  }
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(address, overflow: TextOverflow.ellipsis, style: style.copyWith(color: palette.text)),
+                    ),
+                    const SizedBox(width: 5),
+                    Icon(Icons.copy_rounded, size: 11, color: palette.textDim),
+                  ],
+                ),
+              ),
+            ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            SessionStatusBar.durationLabel(now.difference(widget.tab.openedAt)),
+            key: const Key('session-status-duration'),
+            style: style,
+          ),
+        ],
+      ),
     );
   }
 }

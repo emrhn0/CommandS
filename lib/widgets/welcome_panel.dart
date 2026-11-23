@@ -9,6 +9,9 @@ import 'package:provider/provider.dart';
 import '../l10n/strings.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import '../screens/settings_screen.dart';
+import '../services/app_commands.dart';
+import '../services/session_controller.dart';
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
 import '../theme/wordmark.dart';
@@ -341,16 +344,9 @@ class _WelcomePanelState extends State<WelcomePanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                tr('{connections} connections, {folders} folders', {
-                  'connections': app.connections.length,
-                  'folders': app.folders.length,
-                }),
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12.5, color: palette.textDim),
-              ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 16),
+              _Stats(app: app, palette: palette),
+              const SizedBox(height: 18),
               Wrap(
                 alignment: WrapAlignment.center,
                 spacing: 10,
@@ -374,6 +370,10 @@ class _WelcomePanelState extends State<WelcomePanel> {
               _searchBox(palette, results.length, results),
               const SizedBox(height: 14),
               if (searching) _results(palette, accent, results),
+              if (!searching && app.tabs.isNotEmpty) ...[
+                _OpenSessions(app: app, palette: palette, accent: accent),
+                const SizedBox(height: 14),
+              ],
               if (!searching && favorites.isNotEmpty) ...[
                 Container(
                   key: const Key('welcome-favorites'),
@@ -422,7 +422,9 @@ class _WelcomePanelState extends State<WelcomePanel> {
                       style: TextStyle(fontSize: 11, letterSpacing: 0.8, color: palette.textDim, fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 6),
-                    if (recent.isEmpty)
+                    if (recent.isEmpty && app.connections.isEmpty)
+                      _FirstSteps(accent: accent, palette: palette)
+                    else if (recent.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
@@ -438,6 +440,8 @@ class _WelcomePanelState extends State<WelcomePanel> {
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+              _Shortcuts(app: app, palette: palette),
             ],
           ),
         ),
@@ -620,4 +624,206 @@ class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixi
           decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
         ),
       );
+}
+
+/// The numbers under the greeting, each in a small card: saved connections,
+/// sessions open now, sessions opened today and folders.
+class _Stats extends StatelessWidget {
+  const _Stats({required this.app, required this.palette});
+
+  final AppState app;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget card(String key, int value, String label, {Color? color}) => Expanded(
+          child: Container(
+            key: ValueKey('welcome-stat-$key'),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: palette.panel,
+              border: Border.all(color: palette.border),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$value', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: color ?? palette.text)),
+                const SizedBox(height: 2),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: palette.textDim)),
+              ],
+            ),
+          ),
+        );
+    final open = app.tabs.length;
+    return Row(
+      key: const Key('welcome-stats'),
+      children: [
+        card('connections', app.connections.length, tr('Connections')),
+        const SizedBox(width: 8),
+        // Green while something is open, the colour of a live session.
+        card('open', open, tr('Open sessions'), color: open > 0 ? const Color(0xFF2EB85C) : null),
+        const SizedBox(width: 8),
+        card('today', app.openedToday, tr('Opened today')),
+        const SizedBox(width: 8),
+        card('folders', app.folders.length, tr('Folders')),
+      ],
+    );
+  }
+}
+
+/// The sessions still open behind the welcome screen (shown from the home
+/// button): a click goes back to one.
+class _OpenSessions extends StatelessWidget {
+  const _OpenSessions({required this.app, required this.palette, required this.accent});
+
+  final AppState app;
+  final AppPalette palette;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('welcome-open-sessions'),
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+      decoration: BoxDecoration(
+        color: palette.panel,
+        border: Border.all(color: palette.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 6),
+            child: Text(
+              tr('Open sessions · {n}', {'n': app.tabs.length}).toUpperCase(),
+              style: TextStyle(fontSize: 11, letterSpacing: 0.8, color: palette.textDim, fontWeight: FontWeight.w500),
+            ),
+          ),
+          for (var i = 0; i < app.tabs.length; i++) _openRow(context, i),
+        ],
+      ),
+    );
+  }
+
+  Widget _openRow(BuildContext context, int i) {
+    final tab = app.tabs[i];
+    final c = tab.controller;
+    final title = c.tabTitle ?? c.host;
+    final color = switch (c.status) {
+      SessionStatus.running => const Color(0xFF2EB85C),
+      SessionStatus.starting => const Color(0xFFE0A526),
+      SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
+    };
+    return InkWell(
+      key: ValueKey('welcome-open-${tab.id}'),
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => app.setActiveTab(i),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+        child: Row(
+          children: [
+            Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(title, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: palette.text)),
+                  ),
+                  if (title != c.host) ...[
+                    const SizedBox(width: 8),
+                    Text(c.host, style: TextStyle(fontSize: 12, color: palette.textDim)),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_rounded, size: 14, color: palette.textDim),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What the recent list shows before there is a single saved connection.
+class _FirstSteps extends StatelessWidget {
+  const _FirstSteps({required this.accent, required this.palette});
+
+  final Color accent;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget step(String key, IconData icon, String label, VoidCallback onTap) => InkWell(
+          key: ValueKey('welcome-first-$key'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: accent),
+                const SizedBox(width: 10),
+                Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: palette.text))),
+              ],
+            ),
+          ),
+        );
+    return Column(
+      key: const Key('welcome-first-steps'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        step('add', Icons.add, tr('Add your first connection'), () => showNewConnectionDialog(context)),
+        step('import', Icons.file_download_outlined, tr('Import from another app'), () => showImportDialog(context)),
+        step('keys', Icons.keyboard_outlined, tr('See the shortcuts'),
+            () => showSettings(context, page: SettingsPage.hotkeys)),
+      ],
+    );
+  }
+}
+
+/// A line of the shortcuts worth knowing, under everything else: the ones set
+/// in Settings > Hotkeys, as they are set now.
+class _Shortcuts extends StatelessWidget {
+  const _Shortcuts({required this.app, required this.palette});
+
+  final AppState app;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <(String, List<String>)>[
+      if (app.hotkeyFor(AppCommandId.quickSearch) case final key?) (tr('Search'), key.label.split(' + ')),
+      if (app.hotkeyFor(AppCommandId.palette) case final key?) (tr('Commands'), key.label.split(' + ')),
+      (tr('Find in terminal'), ['Ctrl', 'Shift', 'F']),
+    ];
+    Widget keyCap(String k) => Container(
+          margin: const EdgeInsets.only(right: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            border: Border.all(color: palette.border),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(k, style: TextStyle(fontSize: 11, color: palette.text)),
+        );
+    return Wrap(
+      key: const Key('welcome-shortcuts'),
+      alignment: WrapAlignment.center,
+      spacing: 16,
+      runSpacing: 8,
+      children: [
+        for (final (label, keys) in items)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final k in keys) keyCap(k),
+              const SizedBox(width: 3),
+              Text(label, style: TextStyle(fontSize: 11.5, color: palette.textDim)),
+            ],
+          ),
+      ],
+    );
+  }
 }

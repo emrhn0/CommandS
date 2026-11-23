@@ -80,13 +80,15 @@ void main() {
   });
 
   group('welcome panel', () {
-    Future<AppState> show(WidgetTester tester, {List<SavedConnection> recent = const []}) async {
+    Future<AppState> show(WidgetTester tester,
+        {List<SavedConnection> recent = const [], List<SavedConnection> saved = const []}) async {
       tester.view.physicalSize = const Size(1000, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final app = AppState();
       await tester.pump();
       app.connections.addAll(recent);
+      app.connections.addAll(saved);
       app.recentConnectionIds = [for (final c in recent) c.id];
       await tester.pumpWidget(
         ChangeNotifierProvider.value(
@@ -103,7 +105,12 @@ void main() {
       final b = conn('SERVER-A', protocol: ConnectionProtocol.rdp);
       final app = await show(tester, recent: [a, b]);
       expect(find.byKey(const Key('welcome-panel')), findsOneWidget);
-      expect(find.text('2 connections, 0 folders'), findsOneWidget);
+      // The numbers in small cards: saved, open now, opened today, folders.
+      Text stat(String key) => tester.widget<Text>(
+          find.descendant(of: find.byKey(ValueKey('welcome-stat-$key')), matching: find.byType(Text)).first);
+      expect(stat('connections').data, '2');
+      expect(stat('open').data, '0');
+      expect(stat('folders').data, '0');
       expect(find.text('DEVICE-01'), findsOneWidget);
       expect(find.text('SERVER-A'), findsOneWidget);
       expect(find.text('RDP'), findsOneWidget);
@@ -225,10 +232,23 @@ void main() {
       await closeAll(tester, app);
     });
 
-    testWidgets('with nothing opened yet it says how to start', (tester) async {
+    testWidgets('with nothing saved yet it lists the first steps', (tester) async {
       final app = await show(tester);
-      expect(find.textContaining('Pick a saved connection on the left'), findsOneWidget);
+      expect(find.byKey(const Key('welcome-first-steps')), findsOneWidget);
+      expect(find.text('Add your first connection'), findsOneWidget);
+      expect(find.text('Import from another app'), findsOneWidget);
       expect(find.byKey(const Key('welcome-new-connection')), findsOneWidget);
+      // The shortcuts line, from Settings > Hotkeys.
+      expect(find.byKey(const Key('welcome-shortcuts')), findsOneWidget);
+      expect(find.text('Search'), findsOneWidget);
+      expect(find.text('Commands'), findsOneWidget);
+      await closeAll(tester, app);
+    });
+
+    testWidgets('with connections saved but none opened yet it says how to start', (tester) async {
+      final app = await show(tester, saved: [conn('DEVICE-01')]);
+      expect(find.byKey(const Key('welcome-first-steps')), findsNothing);
+      expect(find.textContaining('Pick a saved connection on the left'), findsOneWidget);
       await closeAll(tester, app);
     });
 

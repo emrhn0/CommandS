@@ -1534,6 +1534,11 @@ class _FolderRowState extends State<_FolderRow> {
       // One filled folder icon, open or not, as in Remote Desktop Manager: the
       // chevron already says which.
       icon: Icons.folder,
+      // A coloured folder, or one inside a coloured folder, shows its colour.
+      leading: switch (app.folderColorOf(widget.folder.id)) {
+        final color? => Icon(Icons.folder, size: 16, color: color, key: ValueKey('folder-color-${widget.folder.id}')),
+        null => null,
+      },
       title: widget.folder.name,
       trailingCount: childCount == 0 ? null : childCount,
       bold: true,
@@ -1542,6 +1547,7 @@ class _FolderRowState extends State<_FolderRow> {
         MenuAction('new', 'New connection here', Icons.add, separatorBefore: true),
         MenuAction('newFolder', 'New folder here', Icons.create_new_folder_outlined),
         MenuAction('rename', 'Rename', Icons.edit_outlined),
+        MenuAction('color', 'Color…', Icons.palette_outlined),
         MenuAction('sort', 'Sort contents', Icons.sort_rounded, separatorBefore: true),
         MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
@@ -1564,6 +1570,8 @@ class _FolderRowState extends State<_FolderRow> {
             initial: widget.folder.name,
           );
           if (name != null) app.renameFolder(widget.folder.id, name);
+        } else if (key == 'color') {
+          await _pickColor(context, app);
         } else if (key == 'sort') {
           await _sortContents(context, app);
         } else if (key == 'delete') {
@@ -1571,6 +1579,17 @@ class _FolderRowState extends State<_FolderRow> {
         }
       },
     );
+  }
+
+  /// Gives the folder a colour, or takes it away.
+  Future<void> _pickColor(BuildContext context, AppState app) async {
+    final folder = widget.folder;
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (context) => FolderColorDialog(name: folder.name, current: folder.color),
+    );
+    // -1 is "No color"; null is a dialog closed without a choice.
+    if (picked != null) await app.setFolderColor(folder.id, picked < 0 ? null : picked);
   }
 
   /// Sorts what is directly inside this folder, from a menu that names each
@@ -2295,7 +2314,7 @@ class _FilterChips extends StatelessWidget {
           children: [
             for (final f in shown)
               Padding(
-                padding: const EdgeInsets.only(right: 5),
+                padding: const EdgeInsets.only(right: 10),
                 child: _chip(f, palette, accent),
               ),
           ],
@@ -2306,37 +2325,96 @@ class _FilterChips extends StatelessWidget {
 
   Widget _chip(TreeFilter f, AppPalette palette, Color accent) {
     final on = f == value;
-    final color = on ? accent : palette.textDim;
+    // Plain words, the one that is on underlined: three framed chips in a
+    // row made the head of the list heavy.
+    final color = on ? palette.text : palette.textDim;
     // Favorites is a star alone; the others say what they are.
     final label = f == TreeFilter.favorites ? null : (f == TreeFilter.all ? tr(f.label) : f.label);
     return Tooltip(
       message: f == TreeFilter.favorites ? tr('Favorites') : '',
       child: InkWell(
         key: ValueKey('tree-filter-${f.name}'),
-        borderRadius: BorderRadius.circular(12),
-        // A second click on the chip that is on goes back to everything.
+        // A second click on the one that is on goes back to everything.
         onTap: () => onChanged(on ? TreeFilter.all : f),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: on ? accent.withValues(alpha: 0.14) : Colors.transparent,
-            border: Border.all(color: on ? accent.withValues(alpha: 0.7) : palette.border),
-            borderRadius: BorderRadius.circular(12),
+            border: Border(bottom: BorderSide(color: on ? accent : Colors.transparent, width: 2)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (f.icon != null && label == null) Icon(f.icon, size: 13, color: color),
-              if (label != null) Text(label, style: TextStyle(fontSize: 11.5, color: color)),
-              if (f != TreeFilter.all || on) ...[
-                const SizedBox(width: 4),
-                Text('${counts[f] ?? 0}', style: TextStyle(fontSize: 10.5, color: color.withValues(alpha: 0.75))),
-              ],
+              if (f.icon != null && label == null) Icon(f.icon, size: 13, color: on ? accent : color),
+              if (label != null)
+                Text(label, style: TextStyle(fontSize: 11.5, color: color, fontWeight: on ? FontWeight.w600 : null)),
+              const SizedBox(width: 4),
+              Text('${counts[f] ?? 0}', style: TextStyle(fontSize: 10.5, color: palette.textDim.withValues(alpha: 0.8))),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The colours a folder can take, and "No color". Pops the picked ARGB value,
+/// or -1 for none.
+class FolderColorDialog extends StatelessWidget {
+  const FolderColorDialog({super.key, required this.name, this.current});
+
+  final String name;
+  final int? current;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    return AlertDialog(
+      title: Text(tr('Color for "{name}"', {'name': name})),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tr('Shown on the folder, the folders inside it and the tabs of its connections.'),
+            style: TextStyle(fontSize: 12, color: palette.textDim),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final color in AppState.folderColors)
+                InkWell(
+                  key: ValueKey('folder-swatch-$color'),
+                  customBorder: const CircleBorder(),
+                  onTap: () => Navigator.of(context).pop(color),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Color(color),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: color == current ? palette.text : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: color == current ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: const Key('folder-color-none'),
+          onPressed: () => Navigator.of(context).pop(-1),
+          child: Text(tr('No color')),
+        ),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Cancel'))),
+      ],
     );
   }
 }

@@ -137,18 +137,29 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 100));
 
+    // Where a host is shown in the tabs and pane bars, the status bar aside.
+    int shown(String text) =>
+        find.text(text).evaluate().length -
+        find
+            .descendant(of: find.byKey(const Key('session-status-bar')), matching: find.text(text))
+            .evaluate()
+            .length;
+
     // One tab for the split and one for the new session. The sessions in the
     // split are not repeated in the strip: they get a bar above their pane.
     expect(find.text('Split View'), findsNWidgets(2), reason: 'the split tab and the Split View button');
-    expect(find.text('192.0.2.71'), findsNothing);
-    expect(find.text('192.0.2.74'), findsOneWidget);
+    expect(shown('192.0.2.71'), 0);
+    expect(shown('192.0.2.74'), 1);
+    // The session on screen is also named in the status bar under it.
+    expect(find.descendant(of: find.byKey(const Key('session-status-bar')), matching: find.text('192.0.2.74')),
+        findsOneWidget);
     expect(app.activeGroupId, isNull);
 
     await tester.tap(find.text('Split View').first);
     await tester.pump(const Duration(milliseconds: 100));
     expect(app.activeGroupId, app.groups.single.id);
     expect(tabIdsInLayoutOrdered(app.paneLayout), ids);
-    expect(find.text('192.0.2.71'), findsOneWidget, reason: 'on its pane bar');
+    expect(shown('192.0.2.71'), 1, reason: 'on its pane bar');
 
     await tester.tap(find.text('Split View').first, buttons: kSecondaryMouseButton);
     for (var i = 0; i < 5; i++) {
@@ -159,8 +170,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(app.groups, isEmpty);
-    expect(find.text('192.0.2.71'), findsOneWidget);
-    expect(find.text('192.0.2.74'), findsOneWidget);
+    expect(shown('192.0.2.71'), 1);
+    expect(shown('192.0.2.74'), 1);
 
     await tester.pumpWidget(const SizedBox());
     for (final t in [...app.tabs]) {

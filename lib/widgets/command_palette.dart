@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
+import '../models/models.dart';
 import '../providers/app_state.dart';
 import '../services/app_commands.dart';
 import '../theme/app_theme.dart';
@@ -50,18 +51,30 @@ class _CommandPaletteState extends State<_CommandPalette> {
     final app = context.watch<AppState>();
     final palette = AppPalette.of(context);
     final accent = Theme.of(context).colorScheme.primary;
-    final query = _search.text.trim().toLowerCase();
-    final commands = AppCommand.all
-        .where(
-          (command) =>
-              query.isEmpty ||
-              tr(command.title).toLowerCase().contains(query) ||
-              command.title.toLowerCase().contains(query),
-        )
-        .toList();
-    if (_selected >= commands.length)
-      _selected = commands.isEmpty ? 0 : commands.length - 1;
+    final raw = _search.text.trim();
+    // "@" turns the palette to the saved connections: one opens on Enter.
+    final connectionMode = raw.startsWith('@');
+    final query = (connectionMode ? raw.substring(1).trim() : raw).toLowerCase();
+    final commands = connectionMode
+        ? const <AppCommand>[]
+        : AppCommand.all
+            .where(
+              (command) =>
+                  query.isEmpty ||
+                  tr(command.title).toLowerCase().contains(query) ||
+                  command.title.toLowerCase().contains(query),
+            )
+            .toList();
+    final connections = connectionMode ? paletteConnections(app, query) : const <SavedConnection>[];
+    final count = connectionMode ? connections.length : commands.length;
+    if (_selected >= count) _selected = count == 0 ? 0 : count - 1;
     void choose(int index) {
+      if (connectionMode) {
+        final connection = connections[index];
+        Navigator.of(context).pop();
+        app.openConnection(connection);
+        return;
+      }
       final command = commands[index];
       if (app.canRunCommand(command.id)) Navigator.of(context).pop(command.id);
     }
@@ -102,15 +115,15 @@ class _CommandPaletteState extends State<_CommandPalette> {
                     if (event is! KeyDownEvent && event is! KeyRepeatEvent)
                       return KeyEventResult.ignored;
                     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                      _move(1, commands.length);
+                      _move(1, count);
                       return KeyEventResult.handled;
                     }
                     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                      _move(-1, commands.length);
+                      _move(-1, count);
                       return KeyEventResult.handled;
                     }
                     if (event.logicalKey == LogicalKeyboardKey.enter) {
-                      if (commands.isNotEmpty) choose(_selected);
+                      if (count > 0) choose(_selected);
                       return KeyEventResult.handled;
                     }
                     return KeyEventResult.ignored;
@@ -126,7 +139,7 @@ class _CommandPaletteState extends State<_CommandPalette> {
                         size: 18,
                         color: palette.textDim,
                       ),
-                      hintText: tr('Find a command'),
+                      hintText: tr('Find a command, or type @ for a connection'),
                       hintStyle: TextStyle(color: palette.textDim),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
@@ -135,18 +148,79 @@ class _CommandPaletteState extends State<_CommandPalette> {
                     ),
                     onChanged: (_) => setState(() => _selected = 0),
                     onSubmitted: (_) {
-                      if (commands.isNotEmpty) choose(_selected);
+                      if (count > 0) choose(_selected);
                     },
                   ),
                 ),
               ),
               Divider(height: 1, color: palette.border),
-              if (commands.isEmpty)
+              if (count == 0)
                 Padding(
                   padding: const EdgeInsets.all(18),
                   child: Text(
-                    tr('No matching commands'),
+                    connectionMode ? tr('No matching connections') : tr('No matching commands'),
                     style: TextStyle(color: palette.textDim),
+                  ),
+                )
+              else if (connectionMode)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 46 * 8),
+                  child: ListView.builder(
+                    controller: _scroll,
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    itemExtent: 46,
+                    itemCount: connections.length,
+                    itemBuilder: (context, index) {
+                      final connection = connections[index];
+                      return Material(
+                        color: index == _selected ? accent.withValues(alpha: 0.12) : Colors.transparent,
+                        child: InkWell(
+                          key: ValueKey('palette-connection-${connection.id}'),
+                          onHover: (hover) {
+                            if (hover) setState(() => _selected = index);
+                          },
+                          onTap: () => choose(index),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 17),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  connection.protocol == ConnectionProtocol.rdp
+                                      ? Icons.desktop_windows_outlined
+                                      : Icons.terminal,
+                                  size: 17,
+                                  color: palette.textDim,
+                                ),
+                                const SizedBox(width: 13),
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          connection.name,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(fontSize: 13, color: palette.text),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          connection.host,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(fontSize: 12, color: palette.textDim),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(tr('Open'), style: TextStyle(fontSize: 11, color: palette.textDim)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 )
               else
@@ -234,4 +308,25 @@ class _CommandPaletteState extends State<_CommandPalette> {
       ),
     );
   }
+}
+
+/// The saved connections the palette offers after "@": name or address
+/// containing [query], favorites and recent ones first, at most 30.
+List<SavedConnection> paletteConnections(AppState app, String query) {
+  final q = query.toLowerCase();
+  final matching = app.connections
+      .where((c) => q.isEmpty || c.name.toLowerCase().contains(q) || c.host.toLowerCase().contains(q))
+      .toList();
+  int rank(SavedConnection c) {
+    final recent = app.recentConnectionIds.indexOf(c.id);
+    if (recent >= 0) return recent;
+    return app.isFavorite(c.id) ? 100 : 1000;
+  }
+  // Stable: equal ranks keep the list's own order.
+  final order = {for (var i = 0; i < matching.length; i++) matching[i].id: i};
+  matching.sort((a, b) {
+    final byRank = rank(a).compareTo(rank(b));
+    return byRank != 0 ? byRank : order[a.id]!.compareTo(order[b.id]!);
+  });
+  return matching.take(30).toList();
 }
