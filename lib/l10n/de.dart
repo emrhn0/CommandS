@@ -82,6 +82,9 @@ const german = <String, String>{
   'Restore': 'Wiederherstellen',
 
   // ---- Sidebar / tree ----
+  'New': 'Neu',
+  '{version} ready': '{version} bereit',
+  'Update': 'Aktualisieren',
   'New Connection': 'Neue Verbindung',
   'Filter connections': 'Verbindungen filtern',
   'Select all': 'Alle auswählen',

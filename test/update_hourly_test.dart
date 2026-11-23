@@ -175,15 +175,32 @@ void main() {
   });
 
   for (final dark in [false, true]) {
-    testWidgets('the update button is green in the ${dark ? 'dark' : 'light'} theme', (tester) async {
+    testWidgets('the update note is green in the ${dark ? 'dark' : 'light'} theme', (tester) async {
       UpdateService.available.value = _release;
       addTearDown(() => UpdateService.available.value = null);
       await tester.pumpWidget(MaterialApp(
         theme: dark ? ThemeData.dark() : ThemeData.light(),
-        home: const Scaffold(body: Center(child: UpdateButton(compact: true))),
+        home: const Scaffold(body: Center(child: UpdateNote(otherwise: Text('CAPTION')))),
       ));
       final material = tester.widget<Material>(find.byKey(const ValueKey('update-button')));
-      expect(material.color, updateGreen);
+      expect(material.color, updateGreen.withValues(alpha: 0.16));
+      final ink = UpdateNote.inkFor(dark ? Brightness.dark : Brightness.light);
+      expect(tester.widget<Text>(find.text('${_release.version} ready')).style?.color, ink);
+      expect(tester.widget<Text>(find.text(' · Update')).style?.color, ink);
+      // With too little room the version gives way; Update stays.
+      await tester.pumpWidget(MaterialApp(
+        theme: dark ? ThemeData.dark() : ThemeData.light(),
+        home: const Scaffold(body: Center(child: SizedBox(width: 120, child: UpdateNote(otherwise: Text('CAPTION'))))),
+      ));
+      expect(find.text('${_release.version} ready'), findsNothing);
+      expect(find.text('Update'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      // The note takes the caption's place.
+      expect(find.text('CAPTION'), findsNothing);
+      UpdateService.available.value = null;
+      await tester.pump();
+      expect(find.byKey(const ValueKey('update-button')), findsNothing);
+      expect(find.text('CAPTION'), findsOneWidget);
     });
   }
 }

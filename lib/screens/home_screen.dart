@@ -159,39 +159,27 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         child: Row(
                           children: [
-                            // The panel's main action fills its first row.
-                            Expanded(
-                              child: SizedBox(
-                                height: 26,
-                                child: width < 230
-                                    ? Tooltip(
-                                        message: tr('New Connection'),
-                                        child: ElevatedButton(
-                                          key: const Key('sidebar-new-connection'),
-                                          style: ElevatedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                                            minimumSize: const Size(0, 26),
-                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          ),
-                                          onPressed: () => showNewConnectionDialog(context),
-                                          child: const Icon(Icons.add, size: 15),
-                                        ),
-                                      )
-                                    : ElevatedButton.icon(
-                                        key: const Key('sidebar-new-connection'),
-                                        style: ElevatedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                                          minimumSize: const Size(0, 26),
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                        onPressed: () => showNewConnectionDialog(context),
-                                        icon: const Icon(Icons.add, size: 15),
-                                        label: Text(tr('New Connection'), style: const TextStyle(fontSize: 12)),
-                                      ),
+                            // The panel's name, or in its place the update
+                            // on offer, once a newer release has been found.
+                            Expanded(child: UpdateNote(otherwise: _SidebarCaption(tr('Connections')))),
+                            const SizedBox(width: 6),
+                            // A small button: the list below is what the panel is for.
+                            Tooltip(
+                              message: tr('New Connection'),
+                              child: ElevatedButton.icon(
+                                key: const Key('sidebar-new-connection'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 9),
+                                  minimumSize: const Size(0, 24),
+                                  fixedSize: const Size.fromHeight(24),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                ),
+                                onPressed: () => showNewConnectionDialog(context),
+                                icon: const Icon(Icons.add, size: 14),
+                                label: Text(tr('New'), style: const TextStyle(fontSize: 12)),
                               ),
                             ),
-                            // Only appears once a newer release has been found.
-                            const UpdateButton(compact: true),
                           ],
                         ),
                       ),
@@ -363,15 +351,73 @@ class _TitleSearchBoxState extends State<_TitleSearchBox> {
   }
 }
 
+/// The sidebar header's name for the list, in small capitals.
+class _SidebarCaption extends StatelessWidget {
+  const _SidebarCaption(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        text.toUpperCase(),
+        key: const Key('sidebar-caption'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: TextStyle(fontSize: 11, letterSpacing: 0.6, color: AppPalette.of(context).textDim),
+      ),
+    );
+  }
+}
+
+/// The app's mark at the top of the hidden panel's strip. A beta adds a
+/// small ß at the mark's lower right corner; a normal release shows the mark
+/// alone.
+class RailBrand extends StatelessWidget {
+  const RailBrand({super.key, required this.beta});
+
+  final bool beta;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!beta) return const AppMark(size: 16);
+    final theme = Theme.of(context);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const AppMark(size: 16),
+        Positioned(
+          right: -5,
+          bottom: -5,
+          child: Container(
+            key: const Key('sidebar-beta-mark'),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              // Cut out of the mark in the strip's own colour.
+              color: theme.scaffoldBackgroundColor,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              'ß',
+              style: TextStyle(fontSize: 9, height: 1, fontWeight: FontWeight.w600, color: theme.colorScheme.primary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Keeps Settings and the show button available when the panel is hidden.
 class _CollapsedSidebarRail extends StatelessWidget {
   const _CollapsedSidebarRail();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final divider = theme.dividerColor;
-    final accent = theme.colorScheme.primary;
+    final divider = Theme.of(context).dividerColor;
     return Container(
       key: const Key('sidebar-rail'),
       width: _collapsedSidebarWidth,
@@ -384,32 +430,7 @@ class _CollapsedSidebarRail extends StatelessWidget {
             child: Semantics(
               label: appName,
               excludeSemantics: true,
-              child: Column(
-                key: const Key('sidebar-compact-branding'),
-                children: [
-                  const AppMark(size: 16),
-                  if (buildChannel == ReleaseChannel.beta) ...[
-                    const SizedBox(height: 5),
-                    Container(
-                      key: const Key('sidebar-beta-tile'),
-                      width: 14,
-                      height: 14,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          'ß',
-                          style: TextStyle(fontSize: 11, height: 1, fontWeight: FontWeight.w600, color: accent),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+              child: const RailBrand(key: Key('sidebar-compact-branding'), beta: buildChannel == ReleaseChannel.beta),
             ),
           ),
           const Spacer(),

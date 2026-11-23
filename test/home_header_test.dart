@@ -33,8 +33,14 @@ void main() {
     await tester.pumpAndSettle();
 
     final button = find.byKey(const Key('sidebar-new-connection'));
+    final caption = find.byKey(const Key('sidebar-caption'));
     expect(button, findsOneWidget);
-    expect(tester.getTopLeft(button).dx, lessThan(24));
+    // The list's name on the left, a small New button on the right.
+    expect(tester.widget<Text>(caption).data, 'CONNECTIONS');
+    expect(tester.getTopLeft(caption).dx, lessThan(24));
+    expect(tester.getTopRight(button).dx, greaterThan(app.sidebarWidth - 24));
+    expect(tester.getSize(button).height, 24);
+    expect(tester.getSize(button).width, lessThan(100));
     // The panel's foot: the hide button on the left, Settings on the right,
     // under everything else in the panel.
     final footer = tester.getRect(find.byKey(const Key('sidebar-footer')));
@@ -60,8 +66,17 @@ void main() {
     );
     app.setSidebarWidth(AppState.minSidebarWidth);
     await tester.pump();
-    expect(button, findsOneWidget);
-    expect(tester.getTopLeft(button).dx, lessThan(24));
+    // The update takes the caption's place, even in the narrowest panel.
+    final note = find.byKey(const ValueKey('update-button'));
+    expect(caption, findsNothing);
+    expect(note, findsOneWidget);
+    expect(tester.getTopLeft(note).dx, lessThan(24));
+    expect(tester.getRect(note).right, lessThanOrEqualTo(tester.getRect(button).left));
+    expect(tester.getTopRight(button).dx, greaterThan(AppState.minSidebarWidth - 24));
+    // The version may give way there, the word Update never does.
+    final action = find.byKey(const ValueKey('update-note-action'));
+    expect(tester.widget<Text>(action).data, contains('Update'));
+    expect(tester.getRect(action).right, lessThanOrEqualTo(tester.getRect(note).right));
     expect(tester.takeException(), isNull);
 
     await tester.tap(button);
@@ -123,27 +138,11 @@ void main() {
     expect(tester.getRect(settings).bottom, lessThan(tester.getRect(toggle).top));
     expect(wordmark, findsNothing);
     final mark = find.descendant(of: compactBranding, matching: find.byType(AppMark));
-    final betaTile = find.byKey(const Key('sidebar-beta-tile'));
-    final beta = find.descendant(of: betaTile, matching: find.text('ß'));
     expect(mark, findsOneWidget);
     expect(tester.getTopLeft(mark).dy, greaterThanOrEqualTo(10));
-    if (buildChannel == ReleaseChannel.beta) {
-      expect(tester.getRect(betaTile).top - tester.getRect(mark).bottom, 5);
-      expect(tester.getCenter(betaTile).dx, tester.getCenter(mark).dx);
-      Color? tileColor() => (tester.widget<Container>(betaTile).decoration as BoxDecoration).color;
-      final firstAccent = theme.value.colorScheme.primary;
-      expect(tester.widget<Text>(beta).style?.color, firstAccent);
-      expect(tileColor(), firstAccent.withValues(alpha: 0.18));
-      theme.value = AppTheme.dark();
-      await tester.pumpAndSettle();
-      final nextAccent = theme.value.colorScheme.primary;
-      expect(nextAccent, isNot(firstAccent));
-      expect(tester.widget<Text>(beta).style?.color, nextAccent);
-      expect(tileColor(), nextAccent.withValues(alpha: 0.18));
-    } else {
-      expect(betaTile, findsNothing);
-      expect(find.descendant(of: compactBranding, matching: find.text('ß')), findsNothing);
-    }
+    // This build's own channel decides the ß.
+    expect(find.byKey(const Key('sidebar-beta-mark')),
+        buildChannel == ReleaseChannel.beta ? findsOneWidget : findsNothing);
 
     await tester.tap(settings);
     await tester.pumpAndSettle();
@@ -190,5 +189,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('sidebar-new-connection')), findsNothing);
     expect(find.byKey(const Key('sidebar-toggle')), findsOneWidget);
+  });
+
+  for (final dark in [false, true]) {
+    testWidgets("a beta puts a small ß on the mark's corner (${dark ? 'dark' : 'light'})", (tester) async {
+      final theme = dark ? AppTheme.dark() : AppTheme.light();
+      await tester.pumpWidget(MaterialApp(
+        theme: theme,
+        home: const Scaffold(body: Center(child: RailBrand(beta: true))),
+      ));
+      final mark = tester.getRect(find.byType(AppMark));
+      final badge = find.byKey(const Key('sidebar-beta-mark'));
+      final rect = tester.getRect(badge);
+      // On the lower right corner, overlapping the mark, and small.
+      expect(rect.right, greaterThan(mark.right));
+      expect(rect.bottom, greaterThan(mark.bottom));
+      expect(rect.left, lessThan(mark.right));
+      expect(rect.top, lessThan(mark.bottom));
+      expect(rect.height, lessThanOrEqualTo(10));
+      final text = tester.widget<Text>(find.descendant(of: badge, matching: find.text('ß')));
+      expect(text.style?.fontSize, 9);
+      expect(text.style?.color, theme.colorScheme.primary);
+      expect((tester.widget<Container>(badge).decoration as BoxDecoration).color, theme.scaffoldBackgroundColor);
+    });
+  }
+
+  testWidgets('a normal release shows the mark alone', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.dark(),
+      home: const Scaffold(body: Center(child: RailBrand(beta: false))),
+    ));
+    expect(find.byType(AppMark), findsOneWidget);
+    expect(find.text('ß'), findsNothing);
   });
 }

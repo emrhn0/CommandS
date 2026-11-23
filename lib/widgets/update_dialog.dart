@@ -10,7 +10,7 @@ import '../l10n/strings.dart';
 
 /// Checks for a new release in the background on every launch and, if there
 /// is one, asks whether to install it -- unless the user chose to skip that
-/// version, in which case only [UpdateButton] offers it.
+/// version, in which case only [UpdateNote] offers it.
 ///
 /// Wrapped around the app's home screen rather than run from `main()` so the
 /// prompt has a [Navigator] to open on and the window is already up: a dialog
@@ -319,53 +319,84 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 const updateGreen = Color(0xFF2EB85C);
 
 /// The way back to an update after "Remind me later" (or "Skip"), without
-/// restarting the app to get the prompt again. Lives in the sidebar header and
-/// takes no space at all until there is something to offer.
-class UpdateButton extends StatelessWidget {
-  const UpdateButton({super.key, this.compact = false});
+/// restarting the app to get the prompt again. It takes the place of the
+/// sidebar header's caption, [otherwise], while there is something to offer,
+/// and takes no space of its own.
+class UpdateNote extends StatelessWidget {
+  const UpdateNote({super.key, required this.otherwise});
 
-  final bool compact;
+  final Widget otherwise;
+
+  /// The note's padding, icon and the gap after it, around its text.
+  static const double _chrome = 8 + 13 + 5 + 8 + 1;
+
+  /// The note's text and icon on its green tint, readable in either theme.
+  static Color inkFor(Brightness brightness) =>
+      brightness == Brightness.dark ? const Color(0xFF5FD88A) : const Color(0xFF1E8A43);
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<UpdateInfo?>(
       valueListenable: UpdateService.available,
       builder: (context, info, _) {
-        if (info == null) return const SizedBox.shrink();
-        return Tooltip(
-          message: tr(info.channel == ReleaseChannel.beta
-              ? 'CommandS Beta {version} is available'
-              : 'CommandS {version} is available', {'version': info.version}),
-          child: Material(
-            // Filled, unlike everything else in the header: it is the one
-            // control there that is not always present, and it should be
-            // noticed the first time it is. Green in either theme, the
-            // colour of "go" rather than the theme's own.
-            key: const ValueKey('update-button'),
-            color: updateGreen,
-            borderRadius: BorderRadius.circular(4),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(4),
-              onTap: () => showUpdateDialog(context, info),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.system_update_alt, size: 13, color: Colors.white),
-                    if (!compact) ...[
-                      const SizedBox(width: 5),
-                      Text(
-                        tr('Update to {version}', {'version': info.version}),
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
-                      ),
-                    ],
-                  ],
+        if (info == null) return otherwise;
+        final ink = inkFor(Theme.of(context).brightness);
+        final style = TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: ink);
+        final version = tr('{version} ready', {'version': info.version});
+        final action = tr('Update');
+        return LayoutBuilder(builder: (context, constraints) {
+          // In a narrow panel the version gives way (the tooltip still has
+          // it), never the word that says what a click does.
+          final full = TextPainter(
+            text: TextSpan(text: '$version · $action', style: DefaultTextStyle.of(context).style.merge(style)),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+            maxLines: 1,
+          )..layout();
+          final showVersion = constraints.maxWidth >= full.width + _chrome;
+          full.dispose();
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: Tooltip(
+              message: tr(info.channel == ReleaseChannel.beta
+                  ? 'CommandS Beta {version} is available'
+                  : 'CommandS {version} is available', {'version': info.version}),
+              child: Material(
+                // Green in either theme, the colour of "go" rather than the
+                // theme's own: it is the one thing in the header that is not
+                // always there, and it should be noticed.
+                key: const ValueKey('update-button'),
+                color: updateGreen.withValues(alpha: 0.16),
+                shape: const StadiumBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => showUpdateDialog(context, info),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.system_update_alt, size: 13, color: ink),
+                        const SizedBox(width: 5),
+                        if (showVersion) Text(version, key: const ValueKey('update-note-version'), style: style),
+                        Flexible(
+                          child: Text(
+                            showVersion ? ' · $action' : action,
+                            key: const ValueKey('update-note-action'),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: style,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
+          );
+        });
       },
     );
   }

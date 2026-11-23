@@ -83,6 +83,9 @@ const turkish = <String, String>{
   'Restore': 'Önceki boyut',
 
   // ---- Sidebar / tree ----
+  'New': 'Yeni',
+  '{version} ready': '{version} hazır',
+  'Update': 'Güncelle',
   'New Connection': 'Yeni Bağlantı',
   'Filter connections': 'Bağlantılarda ara',
   'Select all': 'Tümünü seç',
