@@ -105,6 +105,8 @@ const german = <String, String>{
   'Shown on the folder, the folders inside it and the tabs of its connections.': 'Wird am Ordner, an den Ordnern darin und an den Tabs seiner Verbindungen gezeigt.',
   '{h} h {m} min': '{h} Std. {m} Min.',
   '{n} min': '{n} Min.',
+  'No saved connections yet.\nUse "+ New" above to add one,\nor import from a file.': 'Noch keine gespeicherten Verbindungen.\nOben mit „+ Neu“ eine hinzufügen\noder aus einer Datei importieren.',
+  'Get started': 'Erste Schritte',
   'New Connection': 'Neue Verbindung',
   'Filter connections': 'Verbindungen filtern',
   'Select all': 'Alle auswählen',

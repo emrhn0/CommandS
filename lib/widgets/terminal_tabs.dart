@@ -941,19 +941,21 @@ class _TabChipState extends State<_TabChip> {
 
   Widget _chip(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final palette = AppPalette.of(context);
+    final active = widget.active;
+    // On the accent fill of the tab in use, its own text and icons.
+    final ink = active ? scheme.onPrimary : null;
+    // Rounded pills with a gap between them; the one in use is filled with
+    // the accent, so it stands out among many.
     return Container(
-      constraints: const BoxConstraints(minWidth: 120, maxWidth: 200),
-      height: 36,
-      margin: const EdgeInsets.only(right: 2),
+      key: ValueKey('tab-pill-${widget.tabIds.first}'),
+      constraints: const BoxConstraints(minWidth: 110, maxWidth: 200),
+      height: 28,
+      margin: const EdgeInsets.only(right: 4, top: 4, bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: widget.active ? scheme.surface : Colors.transparent,
-        border: Border(
-          bottom: BorderSide(
-            color: widget.active ? scheme.primary : Colors.transparent,
-            width: 2,
-          ),
-        ),
+        color: active ? scheme.primary : palette.panelAlt,
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.max,
@@ -964,8 +966,9 @@ class _TabChipState extends State<_TabChip> {
           // (applying a split does that) sat grey until something else
           // happened. The tab bar rebuilds on every status change anyway.
           Container(
-            width: 7,
-            height: 7,
+            key: const ValueKey('tab-status'),
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(
               color: switch (widget.status) {
                 SessionStatus.running => const Color(0xFF2EB85C),
@@ -973,18 +976,29 @@ class _TabChipState extends State<_TabChip> {
                 SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
               },
               shape: BoxShape.circle,
+              // A ring keeps the colour readable on the accent fill.
+              border: active ? Border.all(color: scheme.onPrimary, width: 1.5) : null,
             ),
           ),
           const SizedBox(width: 6),
-          Icon(widget.icon, size: 12, color: widget.color, key: widget.color == null ? null : const ValueKey('tab-folder-color')),
-          const SizedBox(width: 4),
+          Icon(
+            widget.icon,
+            size: 12,
+            color: ink ?? widget.color,
+            key: widget.color == null ? null : const ValueKey('tab-folder-color'),
+          ),
+          const SizedBox(width: 5),
           Expanded(
-            child: Text(widget.title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+            child: Text(
+              widget.title,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: ink, fontWeight: active ? FontWeight.w600 : null),
+            ),
           ),
           _AgentMark(tabIds: widget.tabIds),
           InkWell(
             onTap: widget.onClose,
-            child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 14)),
+            child: Padding(padding: const EdgeInsets.all(2), child: Icon(Icons.close, size: 14, color: ink)),
           ),
         ],
       ),
@@ -2436,21 +2450,22 @@ class _HomeButton extends StatelessWidget {
     final palette = AppPalette.of(context);
     return Tooltip(
       message: tr('Home'),
-      child: InkWell(
-        key: const Key('tab-home'),
-        onTap: onTap,
-        child: Container(
-          width: 38,
-          height: 36,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: active ? scheme.surface : Colors.transparent,
-            border: Border(
-              bottom: BorderSide(color: active ? scheme.primary : Colors.transparent, width: 2),
-              right: BorderSide(color: Theme.of(context).dividerColor),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
+        child: Material(
+          key: const Key('tab-home'),
+          // Filled like a tab in use while the welcome screen shows.
+          color: active ? scheme.primary : palette.panelAlt,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: SizedBox(
+              width: 32,
+              height: 28,
+              child: Icon(Icons.home_outlined, size: 17, color: active ? scheme.onPrimary : palette.textDim),
             ),
           ),
-          child: Icon(Icons.home_outlined, size: 17, color: active ? scheme.primary : palette.textDim),
         ),
       ),
     );

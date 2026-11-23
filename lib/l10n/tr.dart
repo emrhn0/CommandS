@@ -106,6 +106,8 @@ const turkish = <String, String>{
   'Shown on the folder, the folders inside it and the tabs of its connections.': 'Klasörde, içindeki klasörlerde ve bağlantılarının sekmelerinde görünür.',
   '{h} h {m} min': '{h} sa {m} dk',
   '{n} min': '{n} dk',
+  'No saved connections yet.\nUse "+ New" above to add one,\nor import from a file.': 'Henüz kayıtlı bağlantı yok.\nEklemek için yukarıdaki "+ Yeni"yi kullan\nya da bir dosyadan içe aktar.',
+  'Get started': 'Başlarken',
   'New Connection': 'Yeni Bağlantı',
   'Filter connections': 'Bağlantılarda ara',
   'Select all': 'Tümünü seç',

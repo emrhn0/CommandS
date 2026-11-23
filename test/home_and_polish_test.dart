@@ -254,14 +254,23 @@ void main() {
       await app.addFolder('CUSTOMER-A');
       final folder = app.folders.single;
       await app.setFolderColor(folder.id, AppState.folderColors[1]);
-      final c = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10', folderId: folder.id);
-      app.connections.add(c);
-      final sessions = _openSessions(app, [c]);
+      final a = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10');
+      final b = SavedConnection(name: 'DEVICE-02', host: '192.0.2.11', folderId: folder.id);
+      app.connections.addAll([a, b]);
+      final sessions = _openSessions(app, [a, b]);
       await _pumpTabs(tester, app);
+      // DEVICE-02's tab is not the one in use: its icon shows the folder's colour.
       final icon = tester.widget<Icon>(find.byKey(const ValueKey('tab-folder-color')));
       expect(icon.color, Color(AppState.folderColors[1]));
+      // In use, the tab is filled with the accent and its icon follows the text.
+      app.setActiveTab(1);
+      await tester.pump();
+      final theme = Theme.of(tester.element(find.byKey(const ValueKey('tab-pill-tab-DEVICE-02'))));
+      expect(tester.widget<Icon>(find.byKey(const ValueKey('tab-folder-color'))).color, theme.colorScheme.onPrimary);
       await tester.pumpWidget(const SizedBox());
-      sessions.single.dispose();
+      for (final s in sessions) {
+        s.dispose();
+      }
     });
   });
 
@@ -345,5 +354,45 @@ void main() {
     await tester.pump();
     expect(borderOf('ssh').bottom.color, accent);
     expect(borderOf('all').bottom.color, Colors.transparent);
+  });
+
+  testWidgets('before anything is saved the welcome box says Get started, and the empty list points at + New',
+      (tester) async {
+    final app = AppState();
+    await app.ready;
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(
+        theme: AppTheme.dark(),
+        home: const Scaffold(body: Row(children: [SizedBox(width: 280, child: ConnectionTree()), Expanded(child: TerminalTabsArea())])),
+      ),
+    ));
+    await tester.pump();
+    expect(tester.widget<Text>(find.byKey(const Key('welcome-recent-title'))).data, 'GET STARTED');
+    expect(tester.widget<Text>(find.byKey(const Key('tree-empty-hint'))).data, contains('"+ New"'));
+  });
+
+  testWidgets('the home button is a pill, filled while the welcome screen shows', (tester) async {
+    final app = AppState();
+    await app.ready;
+    final c = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10');
+    app.connections.add(c);
+    final sessions = _openSessions(app, [c]);
+    await _pumpTabs(tester, app);
+    final scheme = AppTheme.dark().colorScheme;
+    Color? fill() => tester.widget<Material>(find.byKey(const Key('tab-home'))).color;
+    expect(fill(), isNot(scheme.primary));
+    await tester.tap(find.byKey(const Key('tab-home')));
+    await tester.pump();
+    expect(fill(), scheme.primary);
+    final pill = tester.widget<Container>(find.byKey(const ValueKey('tab-pill-tab-DEVICE-01')));
+    expect((pill.decoration as BoxDecoration).color, isNot(scheme.primary), reason: 'no tab is in use on the home screen');
+    await tester.pumpWidget(const SizedBox());
+    for (final s in sessions) {
+      s.dispose();
+    }
   });
 }

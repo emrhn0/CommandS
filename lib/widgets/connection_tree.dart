@@ -1470,7 +1470,9 @@ class _EmptyTreeHint extends StatelessWidget {
           Icon(Icons.dns_outlined, size: 24, color: dim),
           const SizedBox(height: 8),
           Text(
-            'No saved connections yet.\nUse "+ New Connection" above to add one,\nor import from a file.',
+            // The button at the top of the panel says "+ New".
+            tr('No saved connections yet.\nUse "+ New" above to add one,\nor import from a file.'),
+            key: const Key('tree-empty-hint'),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: dim),
           ),

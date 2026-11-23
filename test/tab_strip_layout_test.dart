@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('active tab underline reaches the bottom of the tab strip', (tester) async {
+  testWidgets('tabs are pills inside the strip, the one in use filled with the accent', (tester) async {
     SharedPreferences.setMockInitialValues({});
     PtySessionController.checkReachability = false;
     addTearDown(() => PtySessionController.checkReachability = true);
@@ -25,15 +25,19 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 50));
 
-    final chip = find.ancestor(
-      of: find.text('DEVICE-01'),
-      matching: find.byWidgetPredicate(
-        (widget) => widget is Container && widget.constraints?.minWidth == 120 && widget.decoration is BoxDecoration,
-      ),
-    );
+    final chip = find.byKey(const ValueKey('tab-pill-one'));
     expect(chip, findsOneWidget);
     final divider = find.byWidgetPredicate((widget) => widget is Divider && widget.height == 1).first;
-    expect(tester.getBottomLeft(chip).dy, tester.getTopLeft(divider).dy);
+    // Inside the strip, with room above and below.
+    final pill = tester.getRect(find.descendant(of: chip, matching: find.byType(DecoratedBox)).first);
+    expect(pill.bottom, lessThan(tester.getTopLeft(divider).dy));
+    expect(pill.top, greaterThan(tester.getRect(find.byType(TerminalTabsArea)).top));
+    expect(pill.height, 28);
+    final theme = Theme.of(tester.element(chip));
+    final box = tester.widget<Container>(chip).decoration as BoxDecoration;
+    expect(box.color, theme.colorScheme.primary);
+    expect(box.borderRadius, BorderRadius.circular(8));
+    expect(tester.widget<Text>(find.text('DEVICE-01')).style?.color, theme.colorScheme.onPrimary);
 
     await tester.pumpWidget(const SizedBox());
     controller.dispose();

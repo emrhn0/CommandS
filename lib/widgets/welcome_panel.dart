@@ -418,7 +418,10 @@ class _WelcomePanelState extends State<WelcomePanel> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      tr('Recently opened').toUpperCase(),
+                      // Before anything is saved, the box holds the first steps.
+                      (recent.isEmpty && app.connections.isEmpty ? tr('Get started') : tr('Recently opened'))
+                          .toUpperCase(),
+                      key: const Key('welcome-recent-title'),
                       style: TextStyle(fontSize: 11, letterSpacing: 0.8, color: palette.textDim, fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 6),
