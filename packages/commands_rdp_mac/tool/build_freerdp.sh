@@ -65,6 +65,8 @@ for ARCH in arm64 x86_64; do
       -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
       -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOY" \
       -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local;/opt/local" \
+      -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON \
+      -DWITH_JSON_DISABLED=ON \
       -DOPENSSL_ROOT_DIR="$PREFIX" -DOPENSSL_USE_STATIC_LIBS=ON \
       -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DWITH_WINPR_TOOLS=OFF \
       -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
@@ -98,6 +100,26 @@ for ARCH in arm64 x86_64; do
 done
 
 lipo -create "$WORK/libfreerdp-all-arm64.a" "$WORK/libfreerdp-all-x86_64.a" -output "$WORK/libfreerdp-all.a"
+
+# Link the plugin's C layer against the archive, for both architectures, with
+# only the system frameworks Package.swift lists. A library found on the build
+# machine (Homebrew's json-c once was, through pkg-config, on CI) would show up
+# here as an undefined symbol instead of breaking the app's link much later.
+SRC="$HERE/macos/commands_rdp_mac/Sources/CRdpMac"
+cat > "$WORK/link_check.c" <<'C'
+#include "rdp_mac.h"
+int main(void) { return cmd_rdp_start(0, 0) != 0; }
+C
+for ARCH in arm64 x86_64; do
+  clang -arch "$ARCH" -mmacosx-version-min=$DEPLOY -w -o "$WORK/link_check-$ARCH" \
+    "$WORK/link_check.c" "$SRC/rdp_mac.c" -I "$SRC/include" \
+    -I "$WORK/prefix-$ARCH/include/freerdp3" -I "$WORK/prefix-$ARCH/include/winpr3" \
+    "$WORK/libfreerdp-all.a" \
+    -framework CoreFoundation -framework Security -framework IOKit \
+    -framework SystemConfiguration -framework Carbon -framework VideoToolbox \
+    -framework CoreMedia -framework CoreVideo -lz
+done
+echo "Link check passed (arm64, x86_64)."
 
 # Headers are the same for both architectures; flatten them into one tree.
 HDR="$WORK/headers"
