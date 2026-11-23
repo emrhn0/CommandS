@@ -84,7 +84,7 @@ void main() {
         CredentialProfile(
           id: 'profile',
           name: 'Shared',
-          password: 'test-secret',
+          password: 'example-password',
         ),
       );
       final firstSession = PtySessionController(
@@ -113,7 +113,7 @@ void main() {
       );
       app.focusCommandTab('second');
       expect(app.commandConnection?.name, 'DEVICE-02');
-      expect(app.commandPassword, 'test-secret');
+      expect(app.commandPassword, 'example-password');
       expect(app.canRunCommand(AppCommandId.copyPassword), isTrue);
       expect(app.canRunCommand(AppCommandId.typePassword), isFalse);
       secondSession.debugSetStatus(SessionStatus.running);
@@ -212,7 +212,7 @@ void main() {
     await app.ready;
     final connection = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10', credentialProfileId: 'profile');
     app.connections.add(connection);
-    app.credentialProfiles.add(CredentialProfile(id: 'profile', name: 'Shared', password: 'test-secret'));
+    app.credentialProfiles.add(CredentialProfile(id: 'profile', name: 'Shared', password: 'example-password'));
     final session = _RecordingSession(connection.host)..debugSetStatus(SessionStatus.running);
     app.tabs.add(OpenTab(id: 'device', controller: session, connectionId: connection.id));
     app.activeTabIndex = 0;
@@ -240,12 +240,12 @@ void main() {
     expect(copied, '192.0.2.10');
     await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
     await tester.pump(const Duration(milliseconds: 100));
-    expect(copied, 'test-secret');
+    expect(copied, 'example-password');
     await tester.sendKeyEvent(LogicalKeyboardKey.keyT);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump(const Duration(milliseconds: 100));
-    expect(session.typed, 'test-secret');
+    expect(session.typed, 'example-password');
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     app.dispose();
