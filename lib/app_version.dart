@@ -1,5 +1,5 @@
 /// CI supplies the release tag. Local builds use the current source version.
-const String appVersion = String.fromEnvironment('COMMANDS_VERSION', defaultValue: 'v1.9.0-beta.2');
+const String appVersion = String.fromEnvironment('COMMANDS_VERSION', defaultValue: 'v1.9.0');
 
 enum ReleaseChannel { stable, beta }
 
