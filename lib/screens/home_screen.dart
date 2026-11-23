@@ -62,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final command = app.commandFor(event, keyboard);
     if (command == null || !app.canRunCommand(command)) return false;
     if (command == AppCommandId.quickSearch && event.logicalKey == LogicalKeyboardKey.keyK &&
-        keyboard.isControlPressed && !keyboard.isShiftPressed) {
+        !keyboard.isShiftPressed) {
       final focused = FocusManager.instance.primaryFocus?.context;
       if (focused != null && focused.findAncestorWidgetOfExactType<TerminalView>() != null) return false;
     }

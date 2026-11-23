@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -91,13 +92,18 @@ class Hotkey {
 
   bool get hasModifier => control || alt || meta;
 
-  bool matches(KeyEvent event, HardwareKeyboard keyboard) =>
-      event is KeyDownEvent &&
-      event.logicalKey == key &&
-      keyboard.isControlPressed == control &&
-      keyboard.isShiftPressed == shift &&
-      keyboard.isAltPressed == alt &&
-      keyboard.isMetaPressed == meta;
+  bool matches(KeyEvent event, HardwareKeyboard keyboard) {
+    if (event is! KeyDownEvent || event.logicalKey != key) return false;
+    if (keyboard.isShiftPressed != shift || keyboard.isAltPressed != alt) return false;
+    if (keyboard.isControlPressed == control && keyboard.isMetaPressed == meta) return true;
+    // On a Mac, Cmd does what Ctrl does elsewhere: Cmd+K searches, as it
+    // always has.
+    return defaultTargetPlatform == TargetPlatform.macOS &&
+        control &&
+        !meta &&
+        keyboard.isMetaPressed &&
+        !keyboard.isControlPressed;
+  }
 
   static Hotkey? fromEvent(KeyEvent event, HardwareKeyboard keyboard) {
     if (event is! KeyDownEvent) return null;
