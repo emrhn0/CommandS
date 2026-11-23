@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,10 +8,13 @@ import 'package:xterm/xterm.dart' show TerminalView;
 
 import '../app_version.dart';
 import '../providers/app_state.dart';
+import '../services/app_commands.dart';
+import '../services/pty_session.dart';
 import '../theme/app_mark.dart';
 import '../theme/app_theme.dart';
 
 import '../widgets/connection_tree.dart';
+import '../widgets/command_palette.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/new_connection_dialog.dart';
 import '../widgets/quick_connect_bar.dart';
@@ -48,20 +52,49 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  /// Ctrl+K opens quick search, anywhere but in a terminal: there Ctrl+K
-  /// belongs to the session (it deletes to the end of the line on Cisco and
-  /// in bash), and Ctrl+Shift+K opens it instead.
+  /// The default Ctrl+K searches outside a terminal. Inside one it belongs
+  /// to the session; Ctrl+Shift+K remains its search shortcut.
   bool _onKey(KeyEvent event) {
-    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyK) return false;
-    final keyboard = HardwareKeyboard.instance;
-    if (!(keyboard.isControlPressed || keyboard.isMetaPressed) || keyboard.isShiftPressed || keyboard.isAltPressed) {
-      return false;
-    }
+    if (event is! KeyDownEvent) return false;
     if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return false;
-    final focused = FocusManager.instance.primaryFocus?.context;
-    if (focused != null && focused.findAncestorWidgetOfExactType<TerminalView>() != null) return false;
-    showQuickSearch(context);
+    final keyboard = HardwareKeyboard.instance;
+    final app = context.read<AppState>();
+    final command = app.commandFor(event, keyboard);
+    if (command == null || !app.canRunCommand(command)) return false;
+    if (command == AppCommandId.quickSearch && event.logicalKey == LogicalKeyboardKey.keyK &&
+        keyboard.isControlPressed && !keyboard.isShiftPressed) {
+      final focused = FocusManager.instance.primaryFocus?.context;
+      if (focused != null && focused.findAncestorWidgetOfExactType<TerminalView>() != null) return false;
+    }
+    unawaited(_runCommand(command));
     return true;
+  }
+
+  Future<void> _runCommand(AppCommandId id) async {
+    if (!mounted) return;
+    final app = context.read<AppState>();
+    if (!app.canRunCommand(id)) return;
+    switch (id) {
+      case AppCommandId.palette:
+        final chosen = await showCommandPalette(context);
+        if (chosen != null && mounted) await _runCommand(chosen);
+      case AppCommandId.quickSearch:
+        await showQuickSearch(context);
+      case AppCommandId.settings:
+        await showSettings(context);
+      case AppCommandId.copyName:
+        final tab = app.commandTab!;
+        await Clipboard.setData(ClipboardData(text: app.commandConnection?.name ?? tab.controller.tabTitle ?? tab.controller.host));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Connection name copied'))));
+      case AppCommandId.copyAddress:
+        await Clipboard.setData(ClipboardData(text: app.commandTab!.controller.host));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Host address copied'))));
+      case AppCommandId.copyPassword:
+        await Clipboard.setData(ClipboardData(text: app.commandPassword!));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Host password copied'))));
+      case AppCommandId.typePassword:
+        (app.commandTab!.controller as PtySessionController).sendInput(app.commandPassword!);
+    }
   }
 
   Future<void> _offerRestore() async {

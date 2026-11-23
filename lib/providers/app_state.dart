@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
@@ -18,6 +19,7 @@ import '../services/rdp_session.dart';
 import '../services/serial_session.dart';
 import '../services/session_controller.dart';
 import '../services/backup_service.dart';
+import '../services/app_commands.dart';
 import '../services/storage_service.dart';
 import '../services/pty_session.dart';
 import '../services/hostname_discovery.dart';
@@ -211,6 +213,94 @@ class AppState extends ChangeNotifier {
   final List<OpenTab> tabs = [];
   int activeTabIndex = -1;
 
+  /// The pane last used inside a split; commands target that pane.
+  String? focusedCommandTabId;
+
+  OpenTab? get commandTab {
+    final visible = tabIdsInLayout(paneLayout);
+    for (final tab in tabs) {
+      if (tab.id == focusedCommandTabId && visible.contains(tab.id)) return tab;
+    }
+    if (activeTabIndex < 0 || activeTabIndex >= tabs.length) return null;
+    return tabs[activeTabIndex];
+  }
+
+  void focusCommandTab(String id) => focusedCommandTabId = id;
+
+  SavedConnection? get commandConnection {
+    final id = commandTab?.connectionId;
+    if (id == null) return null;
+    for (final connection in connections) {
+      if (connection.id == id) return connection;
+    }
+    return null;
+  }
+
+  String? get commandPassword {
+    final connection = commandConnection;
+    if (connection == null) return null;
+    final login = resolved(connection);
+    return login.rememberPassword && login.password.isNotEmpty ? login.password : null;
+  }
+
+  bool canRunCommand(AppCommandId id) {
+    final tab = commandTab;
+    return switch (id) {
+      AppCommandId.copyName || AppCommandId.copyAddress => tab != null,
+      AppCommandId.copyPassword => commandPassword != null,
+      AppCommandId.typePassword => tab?.controller is PtySessionController &&
+          tab!.controller.status == SessionStatus.running && commandPassword != null,
+      _ => true,
+    };
+  }
+
+  /// Explicit overrides; an empty string means the shortcut was removed.
+  final Map<AppCommandId, String> _commandHotkeys = {};
+  static const _kCommandHotkeys = 'commands.hotkeys';
+
+  Hotkey? hotkeyFor(AppCommandId id) {
+    final override = _commandHotkeys[id];
+    return override == null ? AppCommand.of(id).defaultHotkey : Hotkey.decode(override);
+  }
+
+  AppCommandId? commandFor(KeyEvent event, HardwareKeyboard keyboard) {
+    for (final command in AppCommand.all) {
+      if (hotkeyFor(command.id)?.matches(event, keyboard) ?? false) return command.id;
+    }
+    return null;
+  }
+
+  /// Returns false when a shortcut belongs to another command or a built-in terminal shortcut.
+  Future<bool> setCommandHotkey(AppCommandId id, Hotkey? hotkey) async {
+    if (hotkey != null) {
+      if (!hotkey.hasModifier) return false;
+      for (final command in AppCommand.all) {
+        if (command.id != id && hotkeyFor(command.id) == hotkey) return false;
+      }
+      // Quick search and terminal search, enable/sudo fill are handled by their own views.
+      const reserved = [
+        Hotkey(LogicalKeyboardKey.keyK, control: true),
+        Hotkey(LogicalKeyboardKey.keyK, control: true, shift: true),
+        Hotkey(LogicalKeyboardKey.keyF, control: true, shift: true),
+        Hotkey(LogicalKeyboardKey.keyY, control: true, shift: true),
+      ];
+      if (reserved.contains(hotkey) && !(id == AppCommandId.quickSearch &&
+          hotkey == const Hotkey(LogicalKeyboardKey.keyK, control: true))) return false;
+    }
+    _commandHotkeys[id] = hotkey?.encode() ?? '';
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kCommandHotkeys, jsonEncode({for (final e in _commandHotkeys.entries) e.key.name: e.value}));
+    return true;
+  }
+
+  Future<void> resetCommandHotkey(AppCommandId id) async {
+    _commandHotkeys.remove(id);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kCommandHotkeys, jsonEncode({for (final e in _commandHotkeys.entries) e.key.name: e.value}));
+  }
+
   ThemeMode themeMode = ThemeMode.light;
   /// Betas are offered only when this is turned on in Settings, a beta
   /// install included.
@@ -343,6 +433,17 @@ class AppState extends ChangeNotifier {
     }
     final prefs = await SharedPreferences.getInstance();
     folderOrder = prefs.getStringList(_kFolderOrder) ?? [];
+    try {
+      final saved = jsonDecode(prefs.getString(_kCommandHotkeys) ?? '{}') as Map<String, dynamic>;
+      for (final command in AppCommand.all) {
+        final value = saved[command.id.name];
+        if (value is String && (value.isEmpty || Hotkey.decode(value) != null)) {
+          _commandHotkeys[command.id] = value;
+        }
+      }
+    } catch (_) {
+      // An unreadable optional setting leaves the default shortcuts intact.
+    }
     connectionOrder = prefs.getStringList(_kConnectionOrder) ?? [];
     recentConnectionIds = prefs.getStringList(_kRecentConnections) ?? [];
     favoriteConnectionIds = prefs.getStringList(_kFavorites) ?? [];
