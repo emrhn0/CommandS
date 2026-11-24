@@ -64,20 +64,32 @@ void main() {
       checksumsUrl: null,
       method: null,
     );
-    app.setSidebarWidth(AppState.minSidebarWidth);
-    await tester.pump();
-    // The update takes the caption's place, even in the narrowest panel.
     final note = find.byKey(const ValueKey('update-button'));
-    expect(caption, findsNothing);
-    expect(note, findsOneWidget);
-    expect(tester.getTopLeft(note).dx, lessThan(24));
-    expect(tester.getRect(note).right, lessThanOrEqualTo(tester.getRect(button).left));
-    expect(tester.getTopRight(button).dx, greaterThan(AppState.minSidebarWidth - 24));
+    for (final width in [AppState.defaultSidebarWidth, AppState.minSidebarWidth]) {
+      app.setSidebarWidth(width);
+      await tester.pump();
+      expect(caption, findsNothing);
+      expect(note, findsOneWidget);
+      final noteBounds = tester.getRect(note);
+      final buttonBounds = tester.getRect(button);
+      expect(noteBounds.top, buttonBounds.top);
+      expect(noteBounds.height, buttonBounds.height);
+      expect(buttonBounds.left - noteBounds.right, greaterThanOrEqualTo(8));
+      expect(noteBounds.left, lessThan(24));
+      expect(buttonBounds.right, greaterThan(width - 24));
+    }
     // The version may give way there, the word Update never does.
     final action = find.byKey(const ValueKey('update-note-action'));
     expect(tester.widget<Text>(action).data, contains('Update'));
     expect(tester.getRect(action).right, lessThanOrEqualTo(tester.getRect(note).right));
     expect(tester.takeException(), isNull);
+
+    final boundsWithUpdate = tester.getRect(button);
+    UpdateService.available.value = null;
+    await tester.pump();
+    expect(caption, findsOneWidget);
+    expect(note, findsNothing);
+    expect(tester.getRect(button), boundsWithUpdate);
 
     await tester.tap(button);
     await tester.pumpAndSettle();
