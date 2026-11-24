@@ -370,6 +370,9 @@ const turkish = <String, String>{
   'SSH terminal': 'SSH terminali',
   'Language': 'Dil',
   'General': 'Genel',
+  'Battery saver': 'Pil tasarrufu',
+  'Keeps the welcome screen still to reduce CPU and GPU usage.':
+      'CPU ve GPU kullanımını azaltmak için karşılama ekranındaki efektleri durdurur.',
   'Privacy': 'Gizlilik',
   'Passwords': 'Parolalar',
   'Remembered passwords are encrypted and kept on this computer. An export includes them only if you choose to.':

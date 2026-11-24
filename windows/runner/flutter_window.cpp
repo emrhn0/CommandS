@@ -90,6 +90,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);
     if (result) {
+      // window_manager consumes the minimize message after notifying Dart.
+      // The child Flutter view still needs to become zero-sized so the
+      // engine stops counting it as a visible window.
+      if (message == WM_SIZE && wparam == SIZE_MINIMIZED) {
+        Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+      }
       return *result;
     }
   }

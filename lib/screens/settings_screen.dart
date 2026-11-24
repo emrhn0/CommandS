@@ -74,7 +74,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<Widget> _content(SettingsPage page, bool hasMcpServer) {
     switch (page) {
       case SettingsPage.general:
-        return const [_Section(children: [_LanguagePicker()])];
+        return const [
+          _Section(children: [_LanguagePicker()]),
+          SizedBox(height: 18),
+          _Section(children: [_BatterySaverSetting()]),
+        ];
       case SettingsPage.theme:
         return const [
           _Section(title: 'App theme', children: [_ThemePicker()]),
@@ -753,6 +757,25 @@ class _LanguagePicker extends StatelessWidget {
           style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
         ),
       ],
+    );
+  }
+}
+
+class _BatterySaverSetting extends StatelessWidget {
+  const _BatterySaverSetting();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: SwitchListTile(
+        key: const ValueKey('battery-saver'),
+        contentPadding: EdgeInsets.zero,
+        value: context.select((AppState app) => app.batterySaverEnabled),
+        onChanged: context.read<AppState>().setBatterySaverEnabled,
+        title: Text(tr('Battery saver')),
+        subtitle: Text(tr('Keeps the welcome screen still to reduce CPU and GPU usage.')),
+      ),
     );
   }
 }

@@ -372,6 +372,9 @@ const german = <String, String>{
   'SSH terminal': 'SSH-Terminal',
   'Language': 'Sprache',
   'General': 'Allgemein',
+  'Battery saver': 'Energiesparmodus',
+  'Keeps the welcome screen still to reduce CPU and GPU usage.':
+      'Stoppt die Effekte auf dem Startbildschirm, um CPU und GPU zu entlasten.',
   'Privacy': 'Datenschutz',
   'Passwords': 'Passwörter',
   'Remembered passwords are encrypted and kept on this computer. An export includes them only if you choose to.':

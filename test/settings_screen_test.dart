@@ -75,6 +75,22 @@ void main() {
     }
   }
 
+  testWidgets('Battery saver starts enabled and remembers the setting', (tester) async {
+    await tester.pumpWidget(_app(const SettingsScreen(), dark: false));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('battery-saver'));
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    final reloaded = AppState();
+    await reloaded.ready;
+    expect(reloaded.batterySaverEnabled, isFalse);
+    reloaded.dispose();
+  });
+
   testWidgets('connection cards and terminal size control align at desktop width', (tester) async {
     tester.view.physicalSize = const Size(900, 900);
     tester.view.devicePixelRatio = 1;

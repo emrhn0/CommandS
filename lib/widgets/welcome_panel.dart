@@ -145,9 +145,19 @@ class _WelcomePanelState extends State<WelcomePanel> {
   void initState() {
     super.initState();
     _line = WelcomePanel.picker.next(_now);
-    _rotate = Timer.periodic(WelcomePanel.rotateEvery, (_) {
-      if (mounted) setState(() => _line = WelcomePanel.picker.next(_now));
-    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (Provider.of<AppState>(context).batterySaverEnabled) {
+      _rotate?.cancel();
+      _rotate = null;
+    } else {
+      _rotate ??= Timer.periodic(WelcomePanel.rotateEvery, (_) {
+        setState(() => _line = WelcomePanel.picker.next(_now));
+      });
+    }
   }
 
   @override
@@ -290,6 +300,7 @@ class _WelcomePanelState extends State<WelcomePanel> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final animate = WelcomePanel.animate && !app.batterySaverEnabled;
     final palette = AppPalette.of(context);
     final accent = Theme.of(context).colorScheme.primary;
     final favorites = app.favoriteConnections.take(8).toList();
@@ -321,14 +332,14 @@ class _WelcomePanelState extends State<WelcomePanel> {
                     style: _wordmarkStyle(palette.text),
                   ),
                   // A terminal's cursor after the name, blinking.
-                  WordmarkCursor(style: _wordmarkStyle(accent), animate: WelcomePanel.animate),
+                  WordmarkCursor(style: _wordmarkStyle(accent), animate: animate),
                 ],
               ),
               const SizedBox(height: 14),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _PulseDot(color: accent),
+                  _PulseDot(color: accent, animate: animate),
                   const SizedBox(width: 10),
                   Flexible(
                     child: AnimatedSwitcher(
@@ -593,9 +604,10 @@ class _RecentRowState extends State<_RecentRow> {
 
 /// The small accent dot before the greeting, slowly fading in and out.
 class _PulseDot extends StatefulWidget {
-  const _PulseDot({required this.color});
+  const _PulseDot({required this.color, required this.animate});
 
   final Color color;
+  final bool animate;
 
   @override
   State<_PulseDot> createState() => _PulseDotState();
@@ -608,7 +620,18 @@ class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixi
   @override
   void initState() {
     super.initState();
-    if (WelcomePanel.animate) _controller.repeat(reverse: true);
+    if (widget.animate) _controller.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_PulseDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate == widget.animate) return;
+    if (widget.animate) {
+      _controller.repeat(reverse: true);
+    } else {
+      _controller.value = 1;
+    }
   }
 
   @override

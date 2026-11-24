@@ -143,6 +143,8 @@ void main() {
 
     testWidgets('the line changes while the panel stays up', (tester) async {
       final app = await show(tester);
+      await app.setBatterySaverEnabled(false);
+      await tester.pump();
       String line() => tester
           .widget<Text>(find.descendant(of: find.byType(AnimatedSwitcher), matching: find.byType(Text)).last)
           .data!;
@@ -150,6 +152,32 @@ void main() {
       await tester.pump(WelcomePanel.rotateEvery);
       await tester.pump(const Duration(milliseconds: 400));
       expect(line(), isNot(first));
+      await closeAll(tester, app);
+    });
+
+    testWidgets('battery saver stops idle frames and greeting rotation until turned off', (tester) async {
+      final oldAnimate = WelcomePanel.animate;
+      WelcomePanel.animate = true;
+      addTearDown(() => WelcomePanel.animate = oldAnimate);
+      final app = await show(tester);
+      String line() => tester
+          .widget<Text>(find.descendant(of: find.byType(AnimatedSwitcher), matching: find.byType(Text)).last)
+          .data!;
+      final first = line();
+      await tester.pump(WelcomePanel.rotateEvery);
+      expect(line(), first);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      await app.setBatterySaverEnabled(false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+
+      await app.setBatterySaverEnabled(true);
+      await tester.pump();
+      await tester.pump(WelcomePanel.rotateEvery);
+      expect(line(), first);
+      expect(tester.binding.hasScheduledFrame, isFalse);
       await closeAll(tester, app);
     });
 

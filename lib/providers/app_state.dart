@@ -343,12 +343,16 @@ class AppState extends ChangeNotifier {
   /// install included.
   ReleaseChannel updateChannel = ReleaseChannel.stable;
 
+  bool _batterySaverEnabled = true;
+  bool get batterySaverEnabled => _batterySaverEnabled;
+
   /// Saved once the user picks a theme in Settings. Until then the default
   /// above applies, so changing that default changes what a fresh install
   /// (or anyone who never chose) sees.
   static const _kThemeMode = 'commands.themeMode';
   static const _kUpdateChannel = 'commands.update.channel';
   static const _kLanguage = 'commands.language';
+  static const _kBatterySaver = 'commands.batterySaver';
   static const _kFolderOrder = 'commands.folderOrder';
   static const _kConnectionOrder = 'commands.connectionOrder';
   static const _kRecentConnections = 'commands.recentConnections';
@@ -485,6 +489,7 @@ class AppState extends ChangeNotifier {
     }
     final prefs = await SharedPreferences.getInstance();
     folderOrder = prefs.getStringList(_kFolderOrder) ?? [];
+    _batterySaverEnabled = prefs.getBool(_kBatterySaver) ?? true;
     try {
       final saved = jsonDecode(prefs.getString(_kCommandHotkeys) ?? '{}') as Map<String, dynamic>;
       for (final command in AppCommand.all) {
@@ -812,6 +817,14 @@ class AppState extends ChangeNotifier {
     WidgetsBinding.instance.addPostFrameCallback((_) => rebuildAllWidgets());
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLanguage, value.name);
+  }
+
+  Future<void> setBatterySaverEnabled(bool value) async {
+    if (_batterySaverEnabled == value) return;
+    _batterySaverEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kBatterySaver, value);
   }
 
   Future<void> setUpdateChannel(ReleaseChannel channel) async {

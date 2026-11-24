@@ -23,6 +23,17 @@ class _WordmarkCursorState extends State<WordmarkCursor> with SingleTickerProvid
   }
 
   @override
+  void didUpdateWidget(WordmarkCursor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate == widget.animate) return;
+    if (widget.animate) {
+      _blink.repeat();
+    } else {
+      _blink.reset();
+    }
+  }
+
+  @override
   void dispose() {
     _blink.dispose();
     super.dispose();
