@@ -327,6 +327,9 @@ class UpdateNote extends StatelessWidget {
 
   final Widget otherwise;
 
+  /// Shared with the New button so the two controls align in the sidebar.
+  static const double actionHeight = 24;
+
   /// The note's padding, icon and the gap after it, around its text.
   static const double _chrome = 8 + 13 + 5 + 8 + 1;
 
@@ -371,8 +374,9 @@ class UpdateNote extends StatelessWidget {
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
                   onTap: () => showUpdateDialog(context, info),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Container(
+                    height: actionHeight,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

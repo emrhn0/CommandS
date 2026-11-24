@@ -162,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             // The panel's name, or in its place the update
                             // on offer, once a newer release has been found.
                             Expanded(child: UpdateNote(otherwise: _SidebarCaption(tr('Connections')))),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 8),
                             // A small button: the list below is what the panel is for.
                             Tooltip(
                               message: tr('New Connection'),
@@ -170,8 +170,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 key: const Key('sidebar-new-connection'),
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 9),
-                                  minimumSize: const Size(0, 24),
-                                  fixedSize: const Size.fromHeight(24),
+                                  minimumSize: const Size(0, UpdateNote.actionHeight),
+                                  fixedSize: const Size.fromHeight(UpdateNote.actionHeight),
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                 ),
