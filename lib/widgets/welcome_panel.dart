@@ -370,7 +370,7 @@ class _WelcomePanelState extends State<WelcomePanel> {
               _searchBox(palette, results.length, results),
               const SizedBox(height: 14),
               if (searching) _results(palette, accent, results),
-              if (!searching && app.tabs.isNotEmpty) ...[
+              if (!searching && _liveTabs(app).isNotEmpty) ...[
                 _OpenSessions(app: app, palette: palette, accent: accent),
                 const SizedBox(height: 14),
               ],
@@ -658,7 +658,7 @@ class _Stats extends StatelessWidget {
             ),
           ),
         );
-    final open = app.tabs.length;
+    final open = _liveTabs(app).length;
     return Row(
       key: const Key('welcome-stats'),
       children: [
@@ -674,6 +674,14 @@ class _Stats extends StatelessWidget {
     );
   }
 }
+
+/// The indexes of the tabs whose session is connected or still connecting.
+/// A tab that could not connect, or whose session ended, stays in the tab bar
+/// but is not an open session.
+List<int> _liveTabs(AppState app) => [
+      for (var i = 0; i < app.tabs.length; i++)
+        if (app.tabs[i].controller.status case SessionStatus.running || SessionStatus.starting) i,
+    ];
 
 /// The sessions still open behind the welcome screen (shown from the home
 /// button): a click goes back to one.
@@ -700,11 +708,11 @@ class _OpenSessions extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(left: 6, bottom: 6),
             child: Text(
-              tr('Open sessions · {n}', {'n': app.tabs.length}).toUpperCase(),
+              tr('Open sessions · {n}', {'n': _liveTabs(app).length}).toUpperCase(),
               style: TextStyle(fontSize: 11, letterSpacing: 0.8, color: palette.textDim, fontWeight: FontWeight.w500),
             ),
           ),
-          for (var i = 0; i < app.tabs.length; i++) _openRow(context, i),
+          for (final i in _liveTabs(app)) _openRow(context, i),
         ],
       ),
     );
@@ -714,11 +722,7 @@ class _OpenSessions extends StatelessWidget {
     final tab = app.tabs[i];
     final c = tab.controller;
     final title = c.tabTitle ?? c.host;
-    final color = switch (c.status) {
-      SessionStatus.running => const Color(0xFF2EB85C),
-      SessionStatus.starting => const Color(0xFFE0A526),
-      SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
-    };
+    final color = c.status == SessionStatus.running ? const Color(0xFF2EB85C) : const Color(0xFFE0A526);
     return InkWell(
       key: ValueKey('welcome-open-${tab.id}'),
       borderRadius: BorderRadius.circular(8),

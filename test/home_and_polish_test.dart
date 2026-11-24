@@ -100,6 +100,44 @@ void main() {
       }
     });
 
+    testWidgets('a session that could not connect or has ended is not counted or listed as open', (tester) async {
+      final app = AppState();
+      await app.ready;
+      final a = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10');
+      final b = SavedConnection(name: 'DEVICE-02', host: '192.0.2.11');
+      final c = SavedConnection(name: 'DEVICE-03', host: '192.0.2.12');
+      app.connections.addAll([a, b, c]);
+      final sessions = _openSessions(app, [a, b, c]);
+      sessions[0].debugSetStatus(SessionStatus.running);
+      sessions[1].debugSetStatus(SessionStatus.error);
+      sessions[2].debugSetStatus(SessionStatus.closed);
+      await _pumpTabs(tester, app);
+      app.showHome();
+      await tester.pump();
+      Text openCount() => tester.widget<Text>(find
+          .descendant(of: find.byKey(const ValueKey('welcome-stat-open')), matching: find.byType(Text))
+          .first);
+      expect(app.tabs, hasLength(3), reason: 'the tabs stay, to read why or reconnect');
+      expect(openCount().data, '1');
+      expect(find.text('OPEN SESSIONS · 1'), findsOneWidget);
+      expect(find.byKey(const ValueKey('welcome-open-tab-DEVICE-01')), findsOneWidget);
+      expect(find.byKey(const ValueKey('welcome-open-tab-DEVICE-02')), findsNothing);
+      expect(find.byKey(const ValueKey('welcome-open-tab-DEVICE-03')), findsNothing);
+
+      // With none connected, the list goes and the count is zero.
+      sessions[0].debugSetStatus(SessionStatus.error);
+      app.setActiveTab(0);
+      app.showHome();
+      await tester.pump();
+      expect(openCount().data, '0');
+      expect(find.byKey(const Key('welcome-open-sessions')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      for (final s in sessions) {
+        s.dispose();
+      }
+    });
+
     test('home needs an open session, and closing the last one leaves it', () async {
       final app = AppState();
       await app.ready;
