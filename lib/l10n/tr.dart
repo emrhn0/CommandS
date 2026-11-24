@@ -362,6 +362,7 @@ const turkish = <String, String>{
   'Theme': 'Tema',
   'Theme & colors': 'Tema ve Renkler',
   'Opened by an AI agent over MCP': 'MCP üzerinden bir yapay zeka ajanı açtı',
+  'Same as computer': 'Bilgisayarla aynı',
   'App theme': 'Uygulama teması',
   'Color': 'Renk',
   'Light': 'Açık',

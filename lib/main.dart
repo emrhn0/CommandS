@@ -18,6 +18,7 @@ import 'widgets/launch_splash.dart';
 import 'widgets/mcp_approval_dialog.dart';
 import 'theme/app_theme.dart';
 import 'widgets/sftp_window.dart';
+import 'widgets/system_brightness_watcher.dart';
 import 'widgets/update_dialog.dart';
 
 void main() async {
@@ -117,26 +118,29 @@ class CommandSApp extends StatelessWidget {
           unawaited(gateway.load().then((_) => server.restore()));
           return server;
         },
-        child: Consumer<AppState>(
-          builder: (context, app, _) => MaterialApp(
-            title: appName,
-            navigatorKey: _navigatorKey,
-            debugShowCheckedModeBanner: false,
-            // A catalogue theme is one look, light or dark; otherwise the
-            // classic pair, switched by themeMode.
-            themeMode: app.themeMode,
-            theme: app.activeTheme != null && !app.activeTheme!.dark
-                ? AppTheme.fromPreset(app.activeTheme!)
-                : AppTheme.light(),
-            darkTheme: app.activeTheme != null && app.activeTheme!.dark
-                ? AppTheme.fromPreset(app.activeTheme!)
-                : AppTheme.dark(),
-            // Embedded RDP sessions are windows of their own, drawn above the
-            // app; this tells them to step aside while a dialog is open. See
-            // [RdpModalObserver].
-            navigatorObservers: [_rdpModalObserver],
-            // Asks, once a launch, whether to install a newer release.
-            home: const LaunchSplash(child: UpdateGate(child: HomeScreen())),
+        child: SystemBrightnessWatcher(
+          app: app,
+          child: Consumer<AppState>(
+            builder: (context, app, _) => MaterialApp(
+              title: appName,
+              navigatorKey: _navigatorKey,
+              debugShowCheckedModeBanner: false,
+              // A catalogue theme is one look, light or dark; otherwise the
+              // classic pair, switched by themeMode.
+              themeMode: app.themeMode,
+              theme: app.activeTheme != null && !app.activeTheme!.dark
+                  ? AppTheme.fromPreset(app.activeTheme!)
+                  : AppTheme.light(),
+              darkTheme: app.activeTheme != null && app.activeTheme!.dark
+                  ? AppTheme.fromPreset(app.activeTheme!)
+                  : AppTheme.dark(),
+              // Embedded RDP sessions are windows of their own, drawn above the
+              // app; this tells them to step aside while a dialog is open. See
+              // [RdpModalObserver].
+              navigatorObservers: [_rdpModalObserver],
+              // Asks, once a launch, whether to install a newer release.
+              home: const LaunchSplash(child: UpdateGate(child: HomeScreen())),
+            ),
           ),
         ),
       ),

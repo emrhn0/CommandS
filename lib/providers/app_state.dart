@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
@@ -403,6 +404,7 @@ class AppState extends ChangeNotifier {
   List<Color>? terminalAnsi;
 
   static const _kThemeId = 'commands.themeId';
+  static const _kThemeFollowsSystem = 'commands.themeFollowsSystem';
   static const _kImportedThemes = 'commands.importedThemes';
   static const _kKeepTerminalColors = 'commands.keepTerminalColors';
   static const _kTerminalAnsi = 'commands.terminalAnsi';
@@ -421,6 +423,17 @@ class AppState extends ChangeNotifier {
   /// to CommandS Light or CommandS Dark.
   String? themeId;
   List<ThemePreset> importedThemes = [];
+
+  /// "Same as the computer": CommandS Dark while the system is dark,
+  /// CommandS Light while it is light. Off unless picked; any other theme
+  /// stays as chosen whatever the system does.
+  bool themeFollowsSystem = false;
+
+  /// The system's light or dark mode, kept current by the app's root widget.
+  Brightness platformBrightness = ui.PlatformDispatcher.instance.platformBrightness;
+
+  /// The CommandS theme that matches the system's mode.
+  String get systemThemeId => platformBrightness == Brightness.dark ? defaultThemeId : lightThemeId;
 
   /// When on, choosing a theme leaves the SSH terminal's colours alone.
   bool keepTerminalColors = false;
@@ -510,6 +523,7 @@ class AppState extends ChangeNotifier {
     ];
     themeId = prefs.getString(_kThemeId);
     if (activeTheme == null) themeId = null;
+    themeFollowsSystem = prefs.getBool(_kThemeFollowsSystem) ?? false;
     final font = prefs.getString(_kTerminalFont);
     if (font != null && font.trim().isNotEmpty) terminalFontFamily = font;
     terminalFontSize = prefs.getDouble(_kTerminalFontSize) ?? defaultTerminalFontSize;
@@ -553,6 +567,11 @@ class AppState extends ChangeNotifier {
       } else {
         await prefs.setString(_kThemeId, themeId!);
       }
+    }
+    // The system may have changed mode while the app was closed.
+    if (themeFollowsSystem && themeId != systemThemeId) {
+      final theme = _theme(systemThemeId);
+      if (theme != null) await _applyTheme(theme);
     }
     notifyListeners();
   }
@@ -612,11 +631,47 @@ class AppState extends ChangeNotifier {
   /// come with it unless [keepTerminalColors] is on; either way they can be
   /// changed by hand afterwards.
   Future<void> selectTheme(String id) async {
-    ThemePreset? theme;
-    for (final t in allThemes) {
-      if (t.id == id) theme = t;
-    }
+    final theme = _theme(id);
     if (theme == null) return;
+    if (themeFollowsSystem) {
+      themeFollowsSystem = false;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kThemeFollowsSystem, false);
+    }
+    await _applyTheme(theme);
+  }
+
+  /// Picks "Same as the computer" and switches to the matching CommandS
+  /// theme now.
+  Future<void> followSystemTheme() async {
+    themeFollowsSystem = true;
+    final theme = _theme(systemThemeId);
+    if (theme != null && theme.id != themeId) {
+      await _applyTheme(theme);
+    } else {
+      notifyListeners();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kThemeFollowsSystem, true);
+  }
+
+  /// The system switched between light and dark. Only "Same as the
+  /// computer" follows it.
+  Future<void> setPlatformBrightness(Brightness brightness) async {
+    platformBrightness = brightness;
+    if (!themeFollowsSystem || themeId == systemThemeId) return;
+    final theme = _theme(systemThemeId);
+    if (theme != null) await _applyTheme(theme);
+  }
+
+  ThemePreset? _theme(String id) {
+    for (final t in allThemes) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
+  Future<void> _applyTheme(ThemePreset theme) async {
     themeId = theme.id;
     themeMode = theme.dark ? ThemeMode.dark : ThemeMode.light;
     if (!keepTerminalColors) {

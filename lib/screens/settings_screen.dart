@@ -812,9 +812,32 @@ class _ThemePicker extends StatelessWidget {
         ),
         accent: t.accent,
         terminal: t.ansi,
-        selected: app.themeId == t.id,
+        selected: !app.themeFollowsSystem && app.themeId == t.id,
         onTap: () => app.selectTheme(t.id),
         onRemove: t.imported ? () => app.removeImportedTheme(t.id) : null,
+      );
+
+  static AppPalette _palette(ThemePreset t) => AppPalette(
+        bg: t.background,
+        panel: t.panel,
+        panelAlt: t.panelAlt,
+        border: t.border,
+        text: t.text,
+        textDim: t.textDim,
+      );
+
+  /// CommandS Dark while the computer is in dark mode, CommandS Light while
+  /// it is in light mode: the preview shows both.
+  Widget _systemCard(AppState app, ThemePreset dark, ThemePreset light) => _ThemeCard(
+        key: const ValueKey('theme-system'),
+        label: 'Same as computer',
+        compact: true,
+        palette: _palette(dark),
+        accent: dark.accent,
+        terminal: dark.ansi,
+        split: (palette: _palette(light), accent: light.accent, terminal: light.ansi),
+        selected: app.themeFollowsSystem,
+        onTap: app.followSystemTheme,
       );
 
   @override
@@ -835,13 +858,14 @@ class _ThemePicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // CommandS Dark and Light first -- Dark is what a fresh install
-        // starts on -- then the rest of the catalogue and any imported
+        // Same as computer, then CommandS Dark and Light -- Dark is what a
+        // fresh install starts on -- then the rest of the catalogue and any imported
         // themes, all the same size.
         Wrap(
           spacing: 12,
           runSpacing: 14,
           children: [
+            if (own.length == 2) _systemCard(app, own.first, own.last),
             for (final t in own) _catalogueCard(app, t),
             for (final t in rest) _catalogueCard(app, t),
           ],
@@ -908,6 +932,7 @@ class _ThemeCard extends StatelessWidget {
     this.compact = false,
     this.translate = true,
     this.onRemove,
+    this.split,
   });
 
   final String label;
@@ -922,27 +947,16 @@ class _ThemeCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onRemove;
 
+  /// A second look, drawn over the lower right half of the preview: the
+  /// "Same as the computer" card shows its dark and its light theme.
+  final ({AppPalette palette, Color accent, List<Color> terminal})? split;
+
   @override
   Widget build(BuildContext context) {
     final selectedColor = Theme.of(context).colorScheme.primary;
     final width = compact ? 160.0 : 220.0;
     final height = compact ? 96.0 : 132.0;
-    final line = palette.border;
-
-    Widget bar(double w) => Container(
-      width: w,
-      height: compact ? 4 : 5,
-      margin: EdgeInsets.only(bottom: compact ? 5 : 6),
-      decoration: BoxDecoration(color: line, borderRadius: BorderRadius.circular(2)),
-    );
-
-    final colours = terminal;
-    Widget tint(Color c, double w) => Container(
-      width: w,
-      height: compact ? 4 : 5,
-      margin: EdgeInsets.only(bottom: compact ? 5 : 6),
-      decoration: BoxDecoration(color: c.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(2)),
-    );
+    final second = split;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -965,55 +979,21 @@ class _ThemeCard extends StatelessWidget {
                   ),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    Container(height: compact ? 10 : 14, color: palette.panelAlt),
-                    Expanded(
-                      child: Row(
+                child: second == null
+                    ? _preview(palette, accent, terminal)
+                    : Stack(
+                        fit: StackFit.expand,
                         children: [
-                          Container(
-                            width: compact ? 46 : 66,
-                            color: palette.panel,
-                            padding: EdgeInsets.fromLTRB(compact ? 6 : 8, compact ? 8 : 10, compact ? 6 : 8, 0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [bar(compact ? 30 : 44), bar(compact ? 24 : 36), bar(compact ? 32 : 48)],
-                            ),
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.all(compact ? 8 : 12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    width: compact ? 44 : 60,
-                                    height: compact ? 5 : 7,
-                                    margin: EdgeInsets.only(bottom: compact ? 7 : 9),
-                                    decoration: BoxDecoration(
-                                      color: accent ?? palette.text,
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
-                                  // A catalogue theme shows its own terminal
-                                  // colours, so the cards tell apart at a glance.
-                                  if (colours != null) ...[
-                                    tint(colours[2], compact ? 64 : 92),
-                                    tint(colours[4], compact ? 48 : 70),
-                                    tint(colours[3], compact ? 56 : 80),
-                                  ] else ...[
-                                    bar(compact ? 70 : 100),
-                                    bar(compact ? 56 : 84),
-                                  ],
-                                ],
-                              ),
+                          _preview(palette, accent, terminal),
+                          ClipPath(
+                            clipper: const _LowerRightHalf(),
+                            child: ColoredBox(
+                              color: second.palette.bg,
+                              child: _preview(second.palette, second.accent, second.terminal),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
               ),
               const SizedBox(height: 8),
               Row(
@@ -1049,6 +1029,92 @@ class _ThemeCard extends StatelessWidget {
       ),
     );
   }
+
+  /// A small picture of a window in [palette]: title bar, side panel, and the
+  /// accent and terminal colours in the content.
+  Widget _preview(AppPalette palette, Color? accent, List<Color>? terminal) {
+    final line = palette.border;
+
+    Widget bar(double w) => Container(
+      width: w,
+      height: compact ? 4 : 5,
+      margin: EdgeInsets.only(bottom: compact ? 5 : 6),
+      decoration: BoxDecoration(color: line, borderRadius: BorderRadius.circular(2)),
+    );
+
+    final colours = terminal;
+    Widget tint(Color c, double w) => Container(
+      width: w,
+      height: compact ? 4 : 5,
+      margin: EdgeInsets.only(bottom: compact ? 5 : 6),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(2)),
+    );
+    return Column(
+      children: [
+        Container(height: compact ? 10 : 14, color: palette.panelAlt),
+        Expanded(
+          child: Row(
+            children: [
+              Container(
+                width: compact ? 46 : 66,
+                color: palette.panel,
+                padding: EdgeInsets.fromLTRB(compact ? 6 : 8, compact ? 8 : 10, compact ? 6 : 8, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [bar(compact ? 30 : 44), bar(compact ? 24 : 36), bar(compact ? 32 : 48)],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.all(compact ? 8 : 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: compact ? 44 : 60,
+                        height: compact ? 5 : 7,
+                        margin: EdgeInsets.only(bottom: compact ? 7 : 9),
+                        decoration: BoxDecoration(
+                          color: accent ?? palette.text,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      // A catalogue theme shows its own terminal
+                      // colours, so the cards tell apart at a glance.
+                      if (colours != null) ...[
+                        tint(colours[2], compact ? 64 : 92),
+                        tint(colours[4], compact ? 48 : 70),
+                        tint(colours[3], compact ? 56 : 80),
+                      ] else ...[
+                        bar(compact ? 70 : 100),
+                        bar(compact ? 56 : 84),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The part of a rectangle below the diagonal from its top right corner to
+/// its bottom left one.
+class _LowerRightHalf extends CustomClipper<Path> {
+  const _LowerRightHalf();
+
+  @override
+  Path getClip(Size size) => Path()
+    ..moveTo(size.width, 0)
+    ..lineTo(size.width, size.height)
+    ..lineTo(0, size.height)
+    ..close();
+
+  @override
+  bool shouldReclip(_LowerRightHalf oldClipper) => false;
 }
 
 // ---------------------------------------------------------------------------

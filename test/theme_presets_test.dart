@@ -6,6 +6,7 @@ import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/settings_screen.dart';
 import 'package:commands/theme/app_theme.dart';
 import 'package:commands/theme/theme_presets.dart';
+import 'package:commands/widgets/system_brightness_watcher.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,7 +42,7 @@ void main() {
   group('catalogue', () {
     test('has the requested themes, each complete', () {
       final names = builtInThemes.map((t) => t.name).toSet();
-      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora', 'CommandS Dark', 'CommandS Light']));
+      expect(names, containsAll(['Tokyo Night', 'Dracula', 'One Dark', 'Monokai', 'Aurora', 'Sakura', 'CommandS Dark', 'CommandS Light']));
       expect(builtInThemes.map((t) => t.id).toSet().length, builtInThemes.length, reason: 'unique ids');
       for (final t in builtInThemes) {
         expect(t.ansi, hasLength(16), reason: t.name);
@@ -258,6 +259,97 @@ void main() {
       expect(app.importedThemes.map((t) => t.name), ['Example Ocean']);
       expect(app.themeId, AppState.defaultThemeId, reason: 'an unknown theme falls back to CommandS');
     });
+  });
+
+  group('same as computer', () {
+    test('follows the computer between CommandS Dark and Light, and is remembered', () async {
+      final app = await _loadedState();
+      await app.setPlatformBrightness(Brightness.dark);
+      await app.followSystemTheme();
+      expect(app.themeFollowsSystem, isTrue);
+      expect(app.themeId, AppState.defaultThemeId);
+      expect(app.themeMode, ThemeMode.dark);
+
+      await app.setPlatformBrightness(Brightness.light);
+      expect(app.themeId, AppState.lightThemeId);
+      expect(app.themeMode, ThemeMode.light);
+      final light = builtInThemes.firstWhere((t) => t.id == AppState.lightThemeId);
+      expect(app.terminalBackground, light.terminalBackground, reason: 'the terminal follows too');
+
+      final again = await _loadedState();
+      expect(again.themeFollowsSystem, isTrue);
+    });
+
+    test('any other theme stays as chosen whatever the computer does', () async {
+      final app = await _loadedState();
+      await app.setPlatformBrightness(Brightness.dark);
+      await app.followSystemTheme();
+      await app.selectTheme('builtin:tokyo-night');
+      expect(app.themeFollowsSystem, isFalse);
+      await app.setPlatformBrightness(Brightness.light);
+      expect(app.themeId, 'builtin:tokyo-night');
+
+      // Picking CommandS Light by hand does not follow either.
+      await app.selectTheme(AppState.lightThemeId);
+      await app.setPlatformBrightness(Brightness.dark);
+      expect(app.themeId, AppState.lightThemeId);
+
+      final again = await _loadedState();
+      expect(again.themeFollowsSystem, isFalse);
+      expect(again.themeId, AppState.lightThemeId);
+    });
+
+    test('off on a fresh install', () async {
+      final app = await _loadedState();
+      expect(app.themeFollowsSystem, isFalse);
+      expect(app.themeId, AppState.defaultThemeId);
+    });
+  });
+
+  testWidgets('Same as computer is the first card and follows a change of mode', (tester) async {
+    tester.view.physicalSize = const Size(1280, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    late AppState app;
+    await tester.pumpWidget(ChangeNotifierProvider(
+      create: (_) => app = AppState(),
+      child: Builder(
+        builder: (context) => SystemBrightnessWatcher(
+          app: context.read<AppState>(),
+          child: const MaterialApp(home: SettingsScreen(initialPage: SettingsPage.theme)),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final system = find.byKey(const ValueKey('theme-system'));
+    expect(system, findsOneWidget);
+    expect(find.text('Same as computer'), findsOneWidget);
+    expect(tester.getTopLeft(system).dx, lessThan(tester.getTopLeft(find.byKey(const ValueKey('theme-builtin:commands'))).dx));
+
+    await tester.tap(system);
+    await tester.pumpAndSettle();
+    expect(app.themeFollowsSystem, isTrue);
+    expect(app.themeId, AppState.defaultThemeId);
+
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+    await tester.pumpAndSettle();
+    expect(app.themeId, AppState.lightThemeId);
+
+    // Only one card is ticked: the CommandS Light in use is not picked by hand.
+    Icon radio(String key) => tester.widget<Icon>(
+        find.descendant(of: find.byKey(ValueKey(key)), matching: find.byType(Icon)).first);
+    expect(radio('theme-system').icon, Icons.radio_button_checked);
+    expect(radio('theme-builtin:commands-light').icon, Icons.radio_button_unchecked);
+
+    await tester.tap(find.byKey(const ValueKey('theme-builtin:nord')));
+    await tester.pumpAndSettle();
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    await tester.pumpAndSettle();
+    expect(app.themeId, 'builtin:nord');
+    expect(radio('theme-system').icon, Icons.radio_button_unchecked);
   });
 
   testWidgets('the catalogue on the Settings page applies a theme', (tester) async {

@@ -494,4 +494,24 @@ final List<ThemePreset> builtInThemes = List.unmodifiable([
       0x3A3550, 0xFF8299, 0x8CFFC2, 0xFFDD8C, 0x8CC2FF, 0xDDB3FF, 0x8CEBFF, 0xEDEDF5,
     ]),
   ),
+  // CommandS's own as well: a light theme after cherry blossom, petal white
+  // with a deep blossom pink, its terminal colours dark enough to read on it.
+  ThemePreset(
+    id: 'builtin:sakura',
+    name: 'Sakura',
+    dark: false,
+    background: const Color(0xFFFFF9FA),
+    panel: const Color(0xFFFCF0F3),
+    panelAlt: const Color(0xFFF7E4EA),
+    border: const Color(0xFFEDD3DB),
+    text: const Color(0xFF3A2430),
+    textDim: const Color(0xFF8A6874),
+    accent: const Color(0xFFD6457A),
+    terminalBackground: const Color(0xFFFFF9FA),
+    terminalForeground: const Color(0xFF3A2430),
+    ansi: _c([
+      0x3A2430, 0xC8364E, 0x3F8F5A, 0xB07A1E, 0x3F6FB5, 0xB0479A, 0x2A8A8C, 0x9A8088,
+      0x6E5560, 0xE0566E, 0x52A86F, 0xC98F2A, 0x5687CC, 0xC963B2, 0x3EA3A5, 0x4A3440,
+    ]),
+  ),
 ]);
