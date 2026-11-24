@@ -1,5 +1,6 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/services/mac_rdp_session.dart';
+import 'package:commands/services/session_controller.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -82,6 +83,18 @@ void main() {
     expect(args, contains('/cert:tofu'));
     expect(args, isNot(contains('/cert:ignore')));
     expect(args, contains('/v:192.0.2.10:3389'));
+    controller.dispose();
+  });
+
+  test('under test, a build without the engine starts no outside RDP client', () async {
+    expect(MacRdpSessionController.launchExternalClients, isFalse);
+    final controller = MacRdpSessionController(_rdp());
+    final end = DateTime.now().add(const Duration(seconds: 5));
+    while (controller.status == SessionStatus.starting && DateTime.now().isBefore(end)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(controller.status, SessionStatus.error);
+    expect(controller.backend, isNull, reason: 'neither FreeRDP nor Windows App was opened');
     controller.dispose();
   });
 }

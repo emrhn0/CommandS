@@ -54,6 +54,11 @@ class MacRdpSessionController with ChangeNotifier implements SessionController {
     tabTitle = conn.name;
   }
 
+  /// Off under `flutter test`: a test that opens an RDP connection on a Mac
+  /// without the engine must not start FreeRDP or Windows App for real (it
+  /// did, and Windows App kept trying to reach the test address).
+  static bool launchExternalClients = !Platform.environment.containsKey('FLUTTER_TEST');
+
   final SavedConnection conn;
   @override
   final String host;
@@ -323,6 +328,11 @@ class MacRdpSessionController with ChangeNotifier implements SessionController {
   // ---- launching ----
 
   Future<void> _start() async {
+    if (!launchExternalClients) {
+      lastError = 'External RDP clients are not started under test.';
+      _setStatus(SessionStatus.error);
+      return;
+    }
     try {
       final freerdp = _findFreeRdp();
       if (freerdp != null) {
