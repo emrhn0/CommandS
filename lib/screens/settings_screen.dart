@@ -830,7 +830,7 @@ class _ThemePicker extends StatelessWidget {
   /// it is in light mode: the preview shows both.
   Widget _systemCard(AppState app, ThemePreset dark, ThemePreset light) => _ThemeCard(
         key: const ValueKey('theme-system'),
-        label: 'Same as computer',
+        label: 'Same as system',
         compact: true,
         palette: _palette(dark),
         accent: dark.accent,
@@ -858,7 +858,7 @@ class _ThemePicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Same as computer, then CommandS Dark and Light -- Dark is what a
+        // Same as system, then CommandS Dark and Light -- Dark is what a
         // fresh install starts on -- then the rest of the catalogue and any imported
         // themes, all the same size.
         Wrap(

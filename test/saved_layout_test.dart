@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
+import 'package:commands/services/mac_rdp_session.dart';
 import 'package:commands/services/pane_layout.dart';
 import 'package:commands/services/rdp_session.dart';
 import 'package:commands/services/session_controller.dart';
@@ -97,7 +100,7 @@ void main() {
     expect(ids[1], open.id, reason: 'the already-open SSH tab is reused, not opened twice');
     final rdpTab = app.tabs.firstWhere((t) => t.id == ids[0]);
     expect(rdpTab.connectionId, rdp.id);
-    expect(rdpTab.controller, isA<RdpSessionController>());
+    expect(rdpTab.controller, Platform.isMacOS ? isA<MacRdpSessionController>() : isA<RdpSessionController>());
     expect(app.tabs.where((t) => t.connectionId == ssh1.id).length, 1);
     rdpTab.controller.dispose();
   });
@@ -125,6 +128,15 @@ void main() {
         parsedLayouts: parsed.layouts);
     expect(other.layouts.single.connectionIds, [ssh1.id, null]);
     expect(other.layouts.single.folderId, folder.id);
+  });
+
+  test('a custom layout keeps its shape through JSON and XML export', () async {
+    final shape = <String, Object?>{'split': 'row', 'children': <Object?>[]};
+    app.layouts.add(SavedLayout(name: 'Drawn', folderId: folder.id, preset: 'custom',
+        connectionIds: [ssh1.id, ssh2.id], shape: shape));
+    final storage = StorageService();
+    expect(storage.parseJson(app.exportAll()).layouts.single.shape, shape);
+    expect(storage.parseXml(app.exportAllXml()).layouts.single.shape, shape);
   });
 
   test('deleting a folder moves its layouts to the top level', () async {

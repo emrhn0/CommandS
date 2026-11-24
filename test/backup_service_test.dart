@@ -161,4 +161,23 @@ void main() {
     app.dispose();
     await target.delete(recursive: true);
   });
+
+  test('deleting a saved layout takes a backup first', () async {
+    final layout = SavedLayout(name: 'LAYOUT-1', preset: 'sideBySide', connectionIds: ['c1']);
+    SharedPreferences.setMockInitialValues({
+      'commands.connections': _connections(['DEVICE-01']),
+      'commands.layouts': jsonEncode([layout.toJson()]),
+    });
+    final app = AppState();
+    await app.ready;
+    await app.dailyBackup;
+    final target = BackupService.defaultDirectory();
+    final before = await target.exists() ? (await app.backups.list()).length : 0;
+    await app.deleteLayout(layout.id);
+    final after = await app.backups.list();
+    expect(after.length, before + 1);
+    expect(after.first.reason, BackupReason.beforeDelete);
+    app.dispose();
+    await target.delete(recursive: true);
+  });
 }

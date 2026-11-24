@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commands/widgets/custom_title_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -33,7 +35,8 @@ void main() {
     await tester.pump();
     final name = tester.getRect(find.byKey(const ValueKey('title-bar-name')));
     final middle = tester.getCenter(find.byKey(const Key('middle')));
-    expect(name.left, lessThan(24));
+    // On a Mac the name starts after the window buttons.
+    expect(name.left, lessThan((Platform.isMacOS ? 78 : 0) + 24));
     expect((middle.dx - 640).abs(), lessThan(1));
     final word = tester.widget<Text>(find.descendant(of: find.byKey(const ValueKey('title-bar-name')), matching: find.byType(Text)).first);
     expect(word.data, 'CommandS');

@@ -300,6 +300,8 @@ class UpdateService {
           await response.drain<void>();
           if (location == null) return (status: response.statusCode, body: null);
           target = target.resolve(location);
+          // Never let a redirect take a request off HTTPS.
+          if (target.scheme != 'https') return (status: null, body: null);
           continue;
         }
         if (response.statusCode != 200) {
@@ -360,6 +362,14 @@ class UpdateService {
     }
   }
 
+  /// Fetches the release's `SHA256SUMS.txt`. Replaced in tests.
+  @visibleForTesting
+  static Future<List<int>?> Function(String url) fetchChecksums = (url) => _fetch(url);
+
+  /// [_verify], for tests.
+  @visibleForTesting
+  static Future<String?> verifyDownload(UpdateInfo info, File file) => _verify(info, file);
+
   /// Null if [file] is the build the release published.
   static Future<String?> _verify(UpdateInfo info, File file) async {
     final size = await file.length();
@@ -375,13 +385,15 @@ class UpdateService {
     // published with the release is worth the extra request: size alone would
     // not notice a substituted file of the same length. Releases predating
     // SHA256SUMS.txt have none to check against and are accepted on size
-    // alone, rather than being made impossible to update to.
+    // alone, rather than being made impossible to update to. A release that
+    // has the file is never accepted without it: a file that cannot be read,
+    // or does not list this build, stops the update.
+    if (info.checksumsUrl == null) return null;
     final expected = await _expectedChecksum(info);
-    if (expected != null) {
-      final actual = sha256.convert(await file.readAsBytes()).toString();
-      if (actual.toLowerCase() != expected.toLowerCase()) {
-        return 'The download failed its checksum and was not run.';
-      }
+    if (expected == null) return 'The checksum of the download could not be checked, so it was not run.';
+    final actual = sha256.convert(await file.readAsBytes()).toString();
+    if (actual.toLowerCase() != expected.toLowerCase()) {
+      return 'The download failed its checksum and was not run.';
     }
     return null;
   }
@@ -630,6 +642,8 @@ rm -rf "$WORK"
           await response.drain<void>();
           if (location == null) return false;
           uri = uri.resolve(location);
+          // Never let a redirect take the download off HTTPS.
+          if (uri.scheme != 'https') return false;
           continue;
         }
         if (response.statusCode != 200) {
@@ -683,9 +697,9 @@ rm -rf "$WORK"
     final url = info.checksumsUrl;
     final name = info.assetName;
     if (url == null || name == null) return null;
-    final bytes = await _fetch(url);
+    final bytes = await fetchChecksums(url);
     if (bytes == null) return null;
-    for (final line in const LineSplitter().convert(utf8.decode(bytes))) {
+    for (final line in const LineSplitter().convert(utf8.decode(bytes, allowMalformed: true))) {
       // `sha256sum` format: the hash, whitespace, an optional binary marker,
       // then the file name.
       final parts = line.trim().split(RegExp(r'\s+'));

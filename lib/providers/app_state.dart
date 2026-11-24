@@ -471,10 +471,13 @@ class AppState extends ChangeNotifier {
     // Only a store that was read is worth a copy. It is not waited for: a
     // backup never holds up the start.
     if (!_storage.loadFailed) dailyBackup = backups.dailyIfDue();
-    final changed = _dedupeExisting();
+    final deduped = _dedupeExisting();
+    final rescued = _rescueUnreachable();
+    final changed = deduped || rescued;
     if (changed) {
       await _storage.saveFolders(folders);
     }
+    if (rescued) await _storage.saveLayouts(layouts);
     // Also what moves passwords saved in plain text by an older version into
     // encrypted form, on the first start after updating.
     if (changed || _storage.needsPasswordMigration) {
@@ -889,9 +892,12 @@ class AppState extends ChangeNotifier {
     for (final l in layouts) {
       if (l.folderId == id) l.folderId = null;
     }
+    folderOrder = folderOrder.where((e) => e != id).toList();
     await _storage.saveFolders(folders);
     await _storage.saveConnections(connections);
     await _storage.saveLayouts(layouts);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kFolderOrder, folderOrder);
     notifyListeners();
   }
 
@@ -1141,6 +1147,48 @@ class AppState extends ChangeNotifier {
     return all.length;
   }
 
+  /// Brings back to the top level whatever the tree cannot reach: a folder,
+  /// connection or layout whose folder does not exist, and folders inside
+  /// one another in a loop (an edited or damaged import file), where the
+  /// first folder of the loop is moved out. The tree is walked from the top,
+  /// so these were stored but never shown. True if anything moved.
+  bool _rescueUnreachable() {
+    var changed = false;
+    final ids = {for (final f in folders) f.id};
+    for (final f in folders) {
+      if (f.parentId != null && !ids.contains(f.parentId)) {
+        f.parentId = null;
+        changed = true;
+      }
+    }
+    final byId = {for (final f in folders) f.id: f};
+    for (final f in folders) {
+      final seen = <String>{};
+      var cursor = f.parentId;
+      while (cursor != null && seen.add(cursor)) {
+        if (cursor == f.id) {
+          f.parentId = null;
+          changed = true;
+          break;
+        }
+        cursor = byId[cursor]?.parentId;
+      }
+    }
+    for (final c in connections) {
+      if (c.folderId != null && !ids.contains(c.folderId)) {
+        c.folderId = null;
+        changed = true;
+      }
+    }
+    for (final l in layouts) {
+      if (l.folderId != null && !ids.contains(l.folderId)) {
+        l.folderId = null;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   /// [folderId] and every folder inside it, at any depth.
   Set<String> folderTree(String folderId) {
     final out = {folderId};
@@ -1319,13 +1367,21 @@ class AppState extends ChangeNotifier {
 
   /// A copy of [c] without its secrets, unless [passwordIds] includes it.
   /// Null [passwordIds] keeps everything (a backup of one's own data).
-  static SavedConnection _forExport(SavedConnection c, Set<String>? passwordIds) {
-    if (passwordIds == null || passwordIds.contains(c.id)) return c;
-    final copy = SavedConnection.fromJson(c.toJson());
-    copy.password = '';
-    copy.rememberPassword = false;
-    copy.enablePassword = '';
-    copy.credentialProfileId = null;
+  /// [c] as the file holds it. Credential profiles are not exported, so a
+  /// connection using one takes its user name (and, with passwords, its
+  /// password) as its own: another computer has no such profile to look up.
+  SavedConnection _forExport(SavedConnection c, Set<String>? passwordIds) {
+    final withPassword = passwordIds == null || passwordIds.contains(c.id);
+    final copy = SavedConnection.fromJson(resolved(c).toJson())
+      ..password = resolved(c).password
+      ..credentialProfileId = null;
+    if (!withPassword) {
+      copy.password = '';
+      copy.rememberPassword = false;
+      copy.enablePassword = '';
+    } else if (!copy.rememberPassword) {
+      copy.password = '';
+    }
     return copy;
   }
 
@@ -1340,13 +1396,13 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  String exportAll({Set<String>? connectionIds, Set<String>? passwordIds}) {
-    final subset = _exportSubset(connectionIds, passwordIds);
+  /// The saved layouts that go along with [subset]: those whose every
+  /// connection is exported. One whose folder is not part of the export
+  /// lands at the top level.
+  List<SavedLayout> _exportLayouts(({List<ConnectionFolder> folders, List<SavedConnection> connections}) subset) {
     final exported = {for (final c in subset.connections) c.id};
     final folderIds = {for (final f in subset.folders) f.id};
-    // A layout goes along when every connection it opens is exported; one
-    // whose folder is not part of the export lands at the top level.
-    final outLayouts = [
+    return [
       for (final l in layouts)
         if (l.connectionIds.any((id) => id != null) &&
             l.connectionIds.every((id) => id == null || exported.contains(id)))
@@ -1356,14 +1412,21 @@ class AppState extends ChangeNotifier {
             preset: l.preset,
             connectionIds: l.connectionIds,
             folderId: folderIds.contains(l.folderId) ? l.folderId : null,
+            shape: l.shape,
           ),
     ];
-    return _storage.exportJson(folders: subset.folders, connections: subset.connections, layouts: outLayouts);
+  }
+
+  String exportAll({Set<String>? connectionIds, Set<String>? passwordIds}) {
+    final subset = _exportSubset(connectionIds, passwordIds);
+    return _storage.exportJson(
+        folders: subset.folders, connections: subset.connections, layouts: _exportLayouts(subset));
   }
 
   String exportAllXml({Set<String>? connectionIds, Set<String>? passwordIds}) {
     final subset = _exportSubset(connectionIds, passwordIds);
-    return _storage.exportXml(folders: subset.folders, connections: subset.connections);
+    return _storage.exportXml(
+        folders: subset.folders, connections: subset.connections, layouts: _exportLayouts(subset));
   }
 
   String exportAllCsv({Set<String>? connectionIds, Set<String>? passwordIds}) {
@@ -1395,6 +1458,7 @@ class AppState extends ChangeNotifier {
       if (i == -1) {
         connections.add(c);
       } else {
+        _keepLocalLogin(connections[i], c);
         connections[i] = c;
       }
     }
@@ -1408,10 +1472,34 @@ class AppState extends ChangeNotifier {
       layouts.removeWhere((e) => e.id == l.id);
       layouts.add(l);
     }
+    _rescueUnreachable();
     await _storage.saveFolders(folders);
     await _storage.saveConnections(connections);
     await _storage.saveLayouts(layouts);
     notifyListeners();
+  }
+
+  /// A file imported without passwords would otherwise wipe the ones this
+  /// computer remembers for the same entry. What the file leaves empty is
+  /// taken from [existing], but only while the entry still goes to the same
+  /// place: a file that points a known entry at another host or user must
+  /// not take the saved login along.
+  void _keepLocalLogin(SavedConnection existing, SavedConnection incoming) {
+    final login = resolved(existing);
+    final samePlace = existing.host == incoming.host &&
+        existing.port == incoming.port &&
+        existing.protocol == incoming.protocol &&
+        (incoming.username.isEmpty || login.username == incoming.username);
+    if (!samePlace) return;
+    final bringsLogin = incoming.password.isNotEmpty || incoming.credentialProfileId != null;
+    if (!bringsLogin) {
+      if (incoming.username.isEmpty) incoming.username = existing.username;
+      incoming
+        ..password = existing.password
+        ..rememberPassword = existing.rememberPassword
+        ..credentialProfileId = existing.credentialProfileId;
+    }
+    if (incoming.enablePassword.isEmpty) incoming.enablePassword = existing.enablePassword;
   }
 
   /// Ids in [result] come from the RDM export itself (see rdm_import.dart),
@@ -1449,8 +1537,10 @@ class AppState extends ChangeNotifier {
         connections[i] = c;
       }
     }
+    final rescued = _rescueUnreachable();
     await _storage.saveFolders(folders);
     await _storage.saveConnections(connections);
+    if (rescued) await _storage.saveLayouts(layouts);
     notifyListeners();
   }
 
@@ -1689,11 +1779,17 @@ class AppState extends ChangeNotifier {
     connections = await _storage.loadConnections();
     layouts = await _storage.loadLayouts();
     credentialProfiles = await _storage.loadProfiles();
+    if (_rescueUnreachable()) {
+      await _storage.saveFolders(folders);
+      await _storage.saveConnections(connections);
+      await _storage.saveLayouts(layouts);
+    }
     notifyListeners();
     return !_storage.loadFailed;
   }
 
   Future<void> deleteLayout(String id) async {
+    await backups.backUp(BackupReason.beforeDelete);
     layouts.removeWhere((l) => l.id == id);
     await _storage.saveLayouts(layouts);
     notifyListeners();

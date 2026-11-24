@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commands/app_version.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/settings_screen.dart';
@@ -235,10 +237,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Serial'), findsOneWidget);
-    expect(find.text('COM'), findsOneWidget, reason: 'shown before anything is typed');
-    // Only digits (and a :speed) go into the box; COM is not part of the text.
-    await tester.enterText(find.byType(TextField), 'COM3x');
-    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '3');
+    // "COM" on Windows, "/dev/" on a Mac.
+    final prefix = Platform.isWindows ? 'COM' : '/dev/';
+    expect(find.text(prefix), findsOneWidget, reason: 'shown before anything is typed');
+    // On Windows only digits (and a :speed) go into the box; COM is not part
+    // of the text. A Mac takes a device name after /dev/.
+    if (Platform.isWindows) {
+      await tester.enterText(find.byType(TextField), 'COM3x');
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '3');
+    }
 
     // All three are offered, the current one ticked.
     await tester.tap(find.text('Serial'));
@@ -251,7 +258,7 @@ void main() {
     await tester.tap(find.text('SSH'));
     await tester.pumpAndSettle();
     expect(find.text('SSH'), findsOneWidget);
-    expect(find.text('COM'), findsNothing);
+    expect(find.text(prefix), findsNothing);
     expect(find.text('Host or IP'), findsOneWidget);
     expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '', reason: 'a port is not a host');
     await tester.enterText(find.byType(TextField), '192.0.2.1');
@@ -262,12 +269,12 @@ void main() {
     await tester.tap(find.text('RDP'));
     await tester.pumpAndSettle();
     expect(find.text('RDP'), findsOneWidget);
-    expect(find.text('COM'), findsNothing);
+    expect(find.text(prefix), findsNothing);
 
     await tester.tap(find.text('RDP'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Serial'));
     await tester.pumpAndSettle();
-    expect(find.text('COM'), findsOneWidget);
+    expect(find.text(prefix), findsOneWidget);
   });
 }

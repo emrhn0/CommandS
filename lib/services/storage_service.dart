@@ -279,6 +279,7 @@ class StorageService {
   String exportXml({
     required List<ConnectionFolder> folders,
     required List<SavedConnection> connections,
+    List<SavedLayout> layouts = const [],
   }) {
     final builder = XmlBuilder();
     builder.processing('xml', 'version="1.0" encoding="UTF-8"');
@@ -289,6 +290,7 @@ class StorageService {
             'id': f.id,
             'name': f.name,
             if (f.parentId != null) 'parentId': f.parentId!,
+            if (f.color != null) 'color': '${f.color}',
           });
         }
       });
@@ -308,9 +310,28 @@ class StorageService {
             'rdpClipboard': '${c.rdpClipboard}',
             'rdpWallpaper': '${c.rdpWallpaper}',
             'recordSessionByDefault': '${c.recordSessionByDefault}',
+            if (c.device != null) 'device': c.device!.name,
+            if (c.deviceManual) 'deviceManual': 'true',
+            if (c.credentialProfileId != null) 'credentialProfileId': c.credentialProfileId!,
+            if (c.answerLoginQuestionYes) 'answerLoginQuestionYes': 'true',
           });
         }
       });
+      if (layouts.isNotEmpty) {
+        builder.element('Layouts', nest: () {
+          for (final l in layouts) {
+            builder.element('Layout', attributes: {
+              'id': l.id,
+              'name': l.name,
+              if (l.folderId != null) 'folderId': l.folderId!,
+              'preset': l.preset,
+              // A pane can be empty (null), so the list goes as JSON.
+              'connectionIds': jsonEncode(l.connectionIds),
+              if (l.shape != null) 'shape': jsonEncode(l.shape),
+            });
+          }
+        });
+      }
     });
     return builder.buildDocument().toXmlString(pretty: true, indent: '  ');
   }
@@ -322,6 +343,7 @@ class StorageService {
         id: e.getAttribute('id'),
         name: e.getAttribute('name') ?? 'Unnamed',
         parentId: e.getAttribute('parentId'),
+        color: int.tryParse(e.getAttribute('color') ?? ''),
       );
     }).toList();
     final connections = doc.findAllElements('Connection').map((e) {
@@ -340,9 +362,28 @@ class StorageService {
         rdpClipboard: e.getAttribute('rdpClipboard') != 'false',
         rdpWallpaper: e.getAttribute('rdpWallpaper') == 'true',
         recordSessionByDefault: e.getAttribute('recordSessionByDefault') == 'true',
+        device: DeviceKind.byName(e.getAttribute('device')),
+        deviceManual: e.getAttribute('deviceManual') == 'true',
+        credentialProfileId: e.getAttribute('credentialProfileId'),
+        answerLoginQuestionYes: e.getAttribute('answerLoginQuestionYes') == 'true',
       );
     }).toList();
-    return ParsedImport(folders: folders, connections: connections);
+    final layouts = <SavedLayout>[];
+    for (final e in doc.findAllElements('Layout')) {
+      // A layout that cannot be read is left out; the connections still come.
+      try {
+        final shape = e.getAttribute('shape');
+        layouts.add(SavedLayout.fromJson({
+          'id': e.getAttribute('id'),
+          'name': e.getAttribute('name'),
+          'folderId': e.getAttribute('folderId'),
+          'preset': e.getAttribute('preset'),
+          'connectionIds': jsonDecode(e.getAttribute('connectionIds') ?? '[]'),
+          if (shape != null) 'shape': jsonDecode(shape),
+        }));
+      } catch (_) {}
+    }
+    return ParsedImport(folders: folders, connections: connections, layouts: layouts);
   }
 
   // ---- CSV export/import ----

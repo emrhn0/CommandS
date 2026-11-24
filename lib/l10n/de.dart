@@ -364,7 +364,7 @@ const german = <String, String>{
   'Theme': 'Design',
   'Theme & colors': 'Design & Farben',
   'Opened by an AI agent over MCP': 'Von einem KI-Agenten über MCP geöffnet',
-  'Same as computer': 'Wie der Computer',
+  'Same as system': 'Wie das System',
   'App theme': 'App-Design',
   'Color': 'Farbe',
   'Light': 'Hell',

@@ -120,7 +120,7 @@ Future<void> showImportDialog(BuildContext context) async {
         );
       }
       if (!context.mounted) return;
-      await _confirmAndImportParsed(context, app, parsed.folders, parsed.connections);
+      await _confirmAndImportParsed(context, app, parsed.folders, parsed.connections, layouts: parsed.layouts);
       return;
     }
 

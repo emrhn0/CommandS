@@ -261,7 +261,7 @@ void main() {
     });
   });
 
-  group('same as computer', () {
+  group('same as system', () {
     test('follows the computer between CommandS Dark and Light, and is remembered', () async {
       final app = await _loadedState();
       await app.setPlatformBrightness(Brightness.dark);
@@ -306,7 +306,7 @@ void main() {
     });
   });
 
-  testWidgets('Same as computer is the first card and follows a change of mode', (tester) async {
+  testWidgets('Same as system is the first card and follows a change of mode', (tester) async {
     tester.view.physicalSize = const Size(1280, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -326,7 +326,7 @@ void main() {
 
     final system = find.byKey(const ValueKey('theme-system'));
     expect(system, findsOneWidget);
-    expect(find.text('Same as computer'), findsOneWidget);
+    expect(find.text('Same as system'), findsOneWidget);
     expect(tester.getTopLeft(system).dx, lessThan(tester.getTopLeft(find.byKey(const ValueKey('theme-builtin:commands'))).dx));
 
     await tester.tap(system);

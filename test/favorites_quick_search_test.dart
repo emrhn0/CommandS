@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/home_screen.dart';
@@ -260,8 +262,9 @@ void main() {
     final box = tester.getCenter(find.byKey(const Key('quick-search-button')));
     expect((box.dx - 500).abs(), lessThan(1));
     expect(box.dy, lessThan(32));
-    expect(tester.getTopLeft(find.byKey(const ValueKey('title-bar-name'))).dx, lessThan(24),
-        reason: 'the name starts the bar');
+    expect(tester.getTopLeft(find.byKey(const ValueKey('title-bar-name'))).dx,
+        lessThan((Platform.isMacOS ? 78 : 0) + 24),
+        reason: 'the name starts the bar, after the window buttons on a Mac');
     expect(find.byKey(const Key('welcome-search')), findsOneWidget);
     // Ctrl+K outside a terminal (inside one it belongs to the session).
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);

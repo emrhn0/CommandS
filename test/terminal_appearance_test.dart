@@ -120,6 +120,9 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('terminal-font')));
       await tester.pumpAndSettle();
+      // A machine with many fonts installed (a Mac) pushes it below the fold.
+      await tester.ensureVisible(find.widgetWithText(MenuItemButton, 'Other font by name…'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(MenuItemButton, 'Other font by name…'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextField, 'Font name, as installed (e.g. JetBrains Mono)'), findsOneWidget);
