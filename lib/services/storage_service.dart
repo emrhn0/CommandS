@@ -76,7 +76,9 @@ class StorageService {
   Future<void> saveFolders(List<ConnectionFolder> folders) async {
     if (loadFailed) return;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kFolders, jsonEncode(folders.map((f) => f.toJson()).toList()));
+    if (!await prefs.setString(_kFolders, jsonEncode(folders.map((f) => f.toJson()).toList()))) {
+      throw StateError('Could not save folders.');
+    }
   }
 
   static const _kPasswordEnc = 'passwordEnc';
@@ -203,17 +205,27 @@ class StorageService {
     return connections;
   }
 
-  Future<void> saveConnections(List<SavedConnection> connections) async {
+  Future<void> _connectionWrite = Future<void>.value();
+
+  Future<void> saveConnections(List<SavedConnection> connections) {
+    // Encryption can yield. Keep saves in order and snapshot before encoding.
+    final write = _connectionWrite.then((_) => _saveConnections(connections));
+    _connectionWrite = write.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return write;
+  }
+
+  Future<void> _saveConnections(List<SavedConnection> connections) async {
     if (loadFailed) return;
+    final entries = [for (final connection in connections) connection.toJson()];
     final prefs = await SharedPreferences.getInstance();
     final encoded = <Map<String, dynamic>>[];
     var migrated = true;
-    for (final c in connections) {
-      final json = c.toJson();
+    for (final json in entries) {
+      final id = json['id'] as String;
       final password = json['password'] as String? ?? '';
       if (password.isNotEmpty) {
         try {
-          json[_kPasswordEnc] = await _vault.encrypt(password, c.id);
+          json[_kPasswordEnc] = await _vault.encrypt(password, id);
           json['password'] = '';
         } catch (error) {
           // Losing the password would be worse than keeping it as it was:
@@ -221,24 +233,26 @@ class StorageService {
           debugPrint('A password could not be encrypted: ${error.runtimeType}');
           migrated = false;
         }
-      } else if (c.rememberPassword && _unopened.containsKey(c.id)) {
-        json[_kPasswordEnc] = _unopened[c.id];
+      } else if (json['rememberPassword'] == true && _unopened.containsKey(id)) {
+        json[_kPasswordEnc] = _unopened[id];
       }
       final enablePassword = json['enablePassword'] as String? ?? '';
       if (enablePassword.isNotEmpty) {
         try {
-          json[_kEnablePasswordEnc] = await _vault.encrypt(enablePassword, '${c.id}:enable');
+          json[_kEnablePasswordEnc] = await _vault.encrypt(enablePassword, '$id:enable');
           json.remove('enablePassword');
         } catch (error) {
           debugPrint('An enable password could not be encrypted: ${error.runtimeType}');
           migrated = false;
         }
-      } else if (_unopenedEnable.containsKey(c.id)) {
-        json[_kEnablePasswordEnc] = _unopenedEnable[c.id];
+      } else if (_unopenedEnable.containsKey(id)) {
+        json[_kEnablePasswordEnc] = _unopenedEnable[id];
       }
       encoded.add(json);
     }
-    await prefs.setString(_kConnections, jsonEncode(encoded));
+    if (!await prefs.setString(_kConnections, jsonEncode(encoded))) {
+      throw StateError('Could not save connections.');
+    }
     needsPasswordMigration = !migrated;
   }
 

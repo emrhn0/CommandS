@@ -409,6 +409,9 @@ const german = <String, String>{
   'Close SFTP files': 'SFTP-Dateien schließen',
   'Close SFTP': 'SFTP schließen',
   'Run this command?': 'Diesen Befehl ausführen?',
+  'Create this folder?': 'Diesen Ordner erstellen?',
+  'Save these connections?': 'Diese Verbindungen speichern?',
+  'Requested by the connected MCP agent.': 'Vom verbundenen MCP-Agenten angefordert.',
   'The connected agent wants to run this on {name} (shown to it as {alias}).':
       'Der verbundene Agent möchte dies auf {name} ausführen (für ihn als {alias} sichtbar).',
   'Its output will be sent to the agent.': 'Die Ausgabe wird an den Agenten gesendet.',

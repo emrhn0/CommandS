@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/models/models.dart';
 import 'package:commands/screens/settings_screen.dart';
+import 'package:commands/services/mcp_catalog.dart';
+import 'package:commands/services/storage_service.dart';
 import 'package:commands/services/pty_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +25,12 @@ class _ClosingGateway extends _FakeGateway {
 
 class _FakeGateway implements McpGateway {
   String? sent;
+
+  @override
+  Future<Map<String, Object>> createFolder(Map<String, dynamic> args) => throw UnimplementedError();
+
+  @override
+  Future<Map<String, Object>> createConnections(Map<String, dynamic> args) => throw UnimplementedError();
 
   @override
   List<Map<String, Object>> listConnections() => [
@@ -84,6 +93,119 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test('MCP creates a subfolder and saves a batch with approval, without opening sessions', () async {
+    final app = AppState();
+    await app.ready;
+    await app.addFolder('CUSTOMER-A');
+    await app.upsertConnection(SavedConnection(
+      name: 'EXISTING', host: '192.0.2.10', folderId: app.folders.single.id,
+      rememberPassword: true, password: 'example-password',
+    ));
+    final approvals = <McpCatalogApproval>[];
+    final gateway = AppMcpGateway(app, approveCatalog: (request) async {
+      approvals.add(request);
+      return true;
+    });
+    final server = McpServer(gateway, port: 0);
+    addTearDown(app.dispose);
+    addTearDown(gateway.dispose);
+    addTearDown(server.dispose);
+    await server.start(testToken: 'a' * 32);
+
+    Future<Map<String, dynamic>> call(String tool, Map<String, Object> args) async {
+      final (status, body) = await _request(server.url!, {
+        'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+        'params': {'name': tool, 'arguments': args},
+      });
+      expect(status, 200);
+      return body!['result'] as Map<String, dynamic>;
+    }
+
+    Object? result(Map<String, dynamic> response) {
+      expect(response['isError'], isNull, reason: '$response');
+      return jsonDecode(response['content'][0]['text'] as String);
+    }
+
+    const path = ['CUSTOMER-A', 'Switch'];
+    const request = {
+      'folder_path': path,
+      'connections': [
+        {'name': 'DEVICE-01', 'host': '192.0.2.11', 'device_type': 'aruba'},
+        {'name': 'DEVICE-02', 'host': '192.0.2.12', 'protocol': 'rdp'},
+        {'name': 'DEVICE-01 again', 'host': '192.0.2.11'},
+        {'name': 'A different name', 'host': '192.0.2.10'},
+      ],
+    };
+    expect((await call('create_connections', request))['isError'], isTrue);
+    expect(approvals, isEmpty);
+    expect(result(await call('create_folder', {'path': path, 'kind': 'network'})), {'created': true});
+    expect(result(await call('create_folder', {'path': ['customer-a', 'switch']})), {'created': false});
+    expect(result(await call('create_connections', request)), {'created': 2, 'skipped': 2});
+    expect(result(await call('create_connections', request)), {'created': 0, 'skipped': 4});
+    expect(approvals, hasLength(2));
+    expect(approvals.last.path, path);
+    expect(approvals.last.connections, hasLength(2));
+    expect(approvals.last.connections.first, contains('192.0.2.11'));
+
+    final folders = await StorageService().loadFolders();
+    final child = folders.singleWhere((f) => f.name == 'Switch');
+    expect(child.parentId, folders.first.id);
+    expect(child.kind, FolderKind.network);
+    final saved = await StorageService().loadConnections();
+    expect(saved.map((c) => c.name), ['EXISTING', 'DEVICE-01', 'DEVICE-02']);
+    expect(saved.first.password, 'example-password');
+    expect(saved.skip(1).map((c) => c.folderId), [child.id, child.id]);
+    expect(saved[1].device, DeviceKind.aruba);
+    expect(saved[1].deviceManual, isTrue);
+    expect(saved[2].port, 3389);
+    expect(app.tabs, isEmpty);
+    expect(gateway.listConnections(), isEmpty);
+  });
+
+  test('catalog validates every row and requires permission for both writes', () async {
+    final app = AppState();
+    var approvals = 0;
+    final catalog = McpCatalog(app, (_) async {
+      approvals++;
+      return false;
+    });
+    addTearDown(app.dispose);
+    const row = {'name': 'DEVICE-01', 'host': '192.0.2.11'};
+    await expectLater(catalog.createConnections({
+      'folder_path': [],
+      'connections': [row, {...row, 'password': 'example-password'}],
+    }), throwsArgumentError);
+    expect(approvals, 0);
+    await expectLater(catalog.createFolder({'path': ['CUSTOMER-A']}), throwsStateError);
+    await expectLater(catalog.createConnections({
+      'folder_path': [],
+      'connections': [row],
+    }), throwsStateError);
+    expect(approvals, 2);
+    expect(app.folders, isEmpty);
+    expect(app.connections, isEmpty);
+  });
+
+  test('revoking MCP access invalidates a pending catalog approval', () async {
+    final app = AppState();
+    final asked = Completer<void>();
+    final answer = Completer<bool>();
+    final gateway = AppMcpGateway(app, approveCatalog: (_) {
+      asked.complete();
+      return answer.future;
+    });
+    addTearDown(app.dispose);
+    addTearDown(gateway.dispose);
+    final pending = gateway.createFolder({'path': ['CUSTOMER-A']});
+    await asked.future;
+    final failure = expectLater(pending, throwsStateError);
+    gateway.close();
+    answer.complete(true);
+    await failure;
+    expect(app.folders, isEmpty);
+    expect(await StorageService().loadFolders(), isEmpty);
+  });
+
   test('MCP handshake, tools, command and output over local HTTP', () async {
     final gateway = _FakeGateway();
     final server = McpServer(gateway, port: 0);
@@ -119,6 +241,8 @@ void main() {
       tools.map((t) => t['name']),
       containsAll([
         'list_connections',
+        'create_folder',
+        'create_connections',
         'open_connection',
         'send_command',
         'read_output',

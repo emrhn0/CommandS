@@ -407,6 +407,9 @@ const turkish = <String, String>{
   'Close SFTP files': "SFTP dosyalarını kapat",
   'Close SFTP': "SFTP'yi kapat",
   'Run this command?': 'Bu komut çalıştırılsın mı?',
+  'Create this folder?': 'Bu klasör oluşturulsun mu?',
+  'Save these connections?': 'Bu bağlantılar kaydedilsin mi?',
+  'Requested by the connected MCP agent.': 'Bağlı MCP aracısı bu işlemi istedi.',
   'The connected agent wants to run this on {name} (shown to it as {alias}).':
       'Bağlı ajan bunu {name} üzerinde çalıştırmak istiyor (ona {alias} olarak görünüyor).',
   'Its output will be sent to the agent.': 'Çıktısı ajana gönderilecek.',

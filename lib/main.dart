@@ -119,6 +119,7 @@ class CommandSApp extends StatelessWidget {
           final gateway = AppMcpGateway(
             context.read<AppState>(),
             approve: (approval) => askMcpApproval(_navigatorKey, approval),
+            approveCatalog: (approval) => askMcpCatalogApproval(_navigatorKey, approval),
           );
           final server = McpServer(gateway);
           unawaited(gateway.load().then((_) => server.restore()));
