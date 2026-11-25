@@ -43,7 +43,9 @@ void main() {
   testWidgets('the view menu sorts the whole list after asking, with nothing selected', (tester) async {
     await pumpTree(tester);
     await openMenu(tester);
-    expect(find.text('Sort the whole list'), findsOneWidget);
+    // Select comes first, right under the button; the orders after it.
+    expect(top(tester, 'Select'), lessThan(top(tester, 'Name (A–Z)')));
+    expect(top(tester, 'Name (A–Z)'), lessThan(top(tester, 'Collapse all folders')));
     await tester.tap(find.text('Name (Z–A)'));
     await tester.pumpAndSettle();
     expect(find.text('Sort the whole list?'), findsOneWidget);

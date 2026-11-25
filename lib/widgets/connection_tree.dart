@@ -612,17 +612,20 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     final box = anchor.findRenderObject() as RenderBox?;
     if (box == null || !box.attached) return;
     final empty = app.connections.isEmpty && app.folders.isEmpty;
+    // Select first: it is the one reached for most, right under the button.
+    final sorts = empty ? const <MenuAction>[] : treeSortActions(names: true, connections: app.connections.length > 1);
     final actions = <MenuAction>[
-      if (!empty) ...treeSortActions(names: true, connections: app.connections.length > 1),
-      MenuAction('collapseAll', 'Collapse all folders', Icons.unfold_less_rounded, separatorBefore: !empty),
+      MenuAction('select', 'Select', Icons.checklist_rounded, checked: _selectMode),
+      for (final (i, a) in sorts.indexed)
+        i == 0 ? MenuAction(a.key, a.label, a.icon, separatorBefore: true, checked: a.checked) : a,
+      const MenuAction('collapseAll', 'Collapse all folders', Icons.unfold_less_rounded, separatorBefore: true),
       const MenuAction('expandAll', 'Expand all folders', Icons.unfold_more_rounded),
-      MenuAction('select', 'Select', Icons.checklist_rounded, separatorBefore: true, checked: _selectMode),
     ];
     final key = await showContextMenu(
       anchor,
       actions: actions,
       anchor: box.localToGlobal(Offset.zero) & box.size,
-      header: tr('Sort the whole list'),
+      header: tr('View'),
       minWidth: 210,
     );
     if (key == null || !mounted) return;
