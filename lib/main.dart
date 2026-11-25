@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import 'providers/app_state.dart';
 import 'app_version.dart';
 import 'screens/home_screen.dart';
+import 'services/app_activity.dart';
 import 'services/rdp_session.dart';
 import 'services/mcp_server.dart';
 import 'services/terminal_appearance.dart';
@@ -23,6 +24,8 @@ import 'widgets/update_dialog.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Decorative motion runs only while the window is in front.
+  AppActivity.listen();
   // The bundled terminal fonts' licences, read only if the list is shown.
   LicenseRegistry.addLicense(() async* {
     for (final entry in bundledFontLicences.entries) {

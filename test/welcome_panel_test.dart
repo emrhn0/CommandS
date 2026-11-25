@@ -1,6 +1,8 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
+import 'package:commands/services/app_activity.dart';
 import 'package:commands/services/pty_session.dart';
+import 'package:commands/theme/wordmark.dart';
 import 'package:commands/theme/app_mark.dart';
 import 'package:commands/widgets/launch_splash.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
@@ -139,6 +141,47 @@ void main() {
       expect(find.byKey(const Key('wordmark-cursor')), findsOneWidget, reason: 'a terminal cursor after the name');
       expect(find.byKey(const Key('welcome-pulse')), findsOneWidget);
       await closeAll(tester, app);
+    });
+
+    testWidgets('the cursor and dot draw only a few frames a second, and none with the window away', (tester) async {
+      final oldAnimate = WelcomePanel.animate;
+      WelcomePanel.animate = true;
+      addTearDown(() {
+        WelcomePanel.animate = oldAnimate;
+        AppActivity.foreground.value = true;
+      });
+      final shown = await show(tester);
+      double cursor() => tester
+          .widget<Opacity>(find.ancestor(of: find.byKey(const Key('wordmark-cursor')), matching: find.byType(Opacity)).first)
+          .opacity;
+      double dot() => tester
+          .widget<Opacity>(find.ancestor(of: find.byKey(const Key('welcome-pulse')), matching: find.byType(Opacity)).first)
+          .opacity;
+      await tester.pump();
+      // Between steps nothing asks for a frame: no animation runs each vsync.
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(cursor(), 1);
+      await tester.pump(WordmarkCursor.halfBeat);
+      expect(cursor(), 0, reason: 'the cursor blinks off after half a beat');
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      await tester.pump(const Duration(milliseconds: 470));
+      expect(dot(), lessThan(1), reason: 'the dot fades');
+
+      // In the background (another window in front, or minimized): still.
+      AppActivity.foreground.value = false;
+      await tester.pump();
+      expect(cursor(), 1, reason: 'resting lit');
+      expect(dot(), 1);
+      final before = cursor();
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(cursor(), before);
+
+      AppActivity.foreground.value = true;
+      await tester.pump();
+      await tester.pump(WordmarkCursor.halfBeat);
+      expect(cursor(), 0, reason: 'blinking again once in front');
+      await closeAll(tester, shown);
     });
 
     testWidgets('the line changes while the panel stays up', (tester) async {
