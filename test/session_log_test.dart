@@ -414,6 +414,9 @@ void main() {
     expect((optionsRect.left - buttonRect.left).abs(), lessThan(12));
     expect(startRect.top, greaterThanOrEqualTo(tickRect.bottom));
     expect(startRect.left, lessThan(tickRect.left + 12));
+    // The box is drawn as in the connection list: no room for a round
+    // hover halo around it, the line itself takes the click.
+    expect(tester.getSize(checkbox), const Size(22, 22));
     await tester.tap(find.byKey(const ValueKey('session-log-include-history')));
     await tester.pump();
     expect(tester.widget<Checkbox>(checkbox).value, isTrue);

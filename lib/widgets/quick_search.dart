@@ -100,19 +100,26 @@ List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40,
   return out;
 }
 
-/// Quick search over every connection and folder (Ctrl+K, or the magnifier
+/// Quick search over every connection and folder (Ctrl+K, or the search box
 /// in the title bar). Enter connects to a connection, or shows a folder in
 /// the connection list.
-Future<void> showQuickSearch(BuildContext context) {
+///
+/// With [anchor] (the title bar's search box, in global coordinates) the
+/// search opens in place: the box widens where it is and the results hang
+/// right under it, with nothing in the middle of the screen. It is still a
+/// route, so embedded Remote Desktop sessions step aside while it is open.
+Future<void> showQuickSearch(BuildContext context, {Rect? anchor}) {
   return showDialog<void>(
     context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.25),
-    builder: (_) => const _QuickSearchDialog(),
+    barrierColor: anchor != null ? Colors.transparent : Colors.black.withValues(alpha: 0.25),
+    builder: (_) => _QuickSearchDialog(anchor: anchor),
   );
 }
 
 class _QuickSearchDialog extends StatefulWidget {
-  const _QuickSearchDialog();
+  const _QuickSearchDialog({this.anchor});
+
+  final Rect? anchor;
 
   @override
   State<_QuickSearchDialog> createState() => _QuickSearchDialogState();
@@ -163,9 +170,8 @@ class _QuickSearchDialogState extends State<_QuickSearchDialog> {
     final accent = Theme.of(context).colorScheme.primary;
     final results = quickSearch(app, _field.text);
     if (_selected >= results.length) _selected = results.isEmpty ? 0 : results.length - 1;
-    return Align(
-      alignment: const Alignment(0, -0.55),
-      child: Material(
+    final anchor = widget.anchor;
+    final panel = Material(
         color: palette.panel,
         elevation: 12,
         shadowColor: Colors.black54,
@@ -263,7 +269,18 @@ class _QuickSearchDialogState extends State<_QuickSearchDialog> {
             ],
           ),
         ),
-      ),
+      );
+    if (anchor == null) return Align(alignment: const Alignment(0, -0.55), child: panel);
+    // In place: as wide as the panel, centred on the box, its top on the
+    // box's top, so the box seems to open downwards.
+    const width = 560.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final left = (anchor.center.dx - width / 2).clamp(8.0, (constraints.maxWidth - width - 8).clamp(8.0, double.infinity));
+        return Stack(children: [
+          Positioned(key: const Key('quick-search-anchored'), left: left, top: anchor.top, width: width, child: panel),
+        ]);
+      },
     );
   }
 }

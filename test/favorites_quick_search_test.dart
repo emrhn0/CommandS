@@ -272,6 +272,7 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsOneWidget);
+    expect(find.byKey(const Key('quick-search-anchored')), findsOneWidget, reason: 'Ctrl+K opens it in the title bar too');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsNothing);
@@ -284,6 +285,12 @@ void main() {
     await tester.tap(find.byKey(const Key('quick-search-button')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsOneWidget);
+    // It opens in place: the box widens where it is, the results under it,
+    // not a second search in the middle of the screen.
+    expect(find.byKey(const Key('quick-search-anchored')), findsOneWidget);
+    final panel = tester.getRect(find.byKey(const Key('quick-search')));
+    expect(panel.top, lessThan(8));
+    expect((panel.center.dx - box.dx).abs(), lessThan(1));
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsNothing);

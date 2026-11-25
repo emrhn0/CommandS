@@ -79,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final chosen = await showCommandPalette(context);
         if (chosen != null && mounted) await _runCommand(chosen);
       case AppCommandId.quickSearch:
-        await showQuickSearch(context);
+        await _TitleSearchBox.open(context);
       case AppCommandId.settings:
         await showSettings(context);
       case AppCommandId.copyName:
@@ -299,9 +299,19 @@ class _HeaderIcon extends StatelessWidget {
 }
 
 /// The search box in the middle of the title bar: a click (or Ctrl+K) opens
-/// quick search.
+/// quick search right there, the results under the box.
 class _TitleSearchBox extends StatefulWidget {
   const _TitleSearchBox();
+
+  static final _boxKey = GlobalKey();
+
+  /// Opens quick search in place, under the title bar's box; in the middle
+  /// of the screen only if the box is not on screen.
+  static Future<void> open(BuildContext context) {
+    final box = _boxKey.currentContext?.findRenderObject() as RenderBox?;
+    final anchor = box != null && box.attached ? box.localToGlobal(Offset.zero) & box.size : null;
+    return showQuickSearch(context, anchor: anchor);
+  }
 
   @override
   State<_TitleSearchBox> createState() => _TitleSearchBoxState();
@@ -320,8 +330,9 @@ class _TitleSearchBoxState extends State<_TitleSearchBox> {
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
         key: const Key('quick-search-button'),
-        onTap: () => showQuickSearch(context),
+        onTap: () => _TitleSearchBox.open(context),
         child: AnimatedContainer(
+          key: _TitleSearchBox._boxKey,
           duration: const Duration(milliseconds: 120),
           width: 300,
           height: 23,

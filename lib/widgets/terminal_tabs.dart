@@ -290,7 +290,7 @@ class _RecordOptionsEntry extends PopupMenuEntry<bool> {
   final double width;
 
   @override
-  double get height => 76;
+  double get height => 80;
 
   @override
   bool represents(bool? value) => false;
@@ -310,20 +310,34 @@ class _RecordOptionsEntryState extends State<_RecordOptionsEntry> {
         key: const ValueKey('session-log-options'),
         width: widget.width,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // The whole line takes the click and lights up as a row, as in
+          // the connection list's select mode; the box only shows the
+          // choice, so no round hover halo appears around it.
           InkWell(
             key: const ValueKey('session-log-include-history'),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(6),
             onTap: () => setState(() => _includeHistory = !_includeHistory),
-            child: Row(children: [
-              Checkbox(
-                value: _includeHistory,
-                visualDensity: VisualDensity.compact,
-                onChanged: (v) => setState(() => _includeHistory = v ?? false),
-              ),
-              Flexible(
-                child: Text(tr('Include history'), overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
-              ),
-            ]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Row(children: [
+                IgnorePointer(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: Checkbox(
+                      value: _includeHistory,
+                      onChanged: (_) {},
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(tr('Include history'), overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                ),
+              ]),
+            ),
           ),
           const SizedBox(height: 4),
           FilledButton(
