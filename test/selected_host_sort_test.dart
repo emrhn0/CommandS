@@ -10,8 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  Future<void> showTree(WidgetTester tester, AppState app) async {
-    await tester.binding.setSurfaceSize(const Size(420, 500));
+  Future<void> showTree(WidgetTester tester, AppState app, {Size size = const Size(420, 500)}) async {
+    await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
@@ -322,16 +322,22 @@ void main() {
     final two = SavedConnection(name: 'DEVICE-02', host: '192.0.2.2', folderId: folder.id);
     app.connections.addAll([ten, two]);
     app.connectionOrder = [ten.id, two.id];
-    await showTree(tester, app);
+    await showTree(tester, app, size: const Size(840, 500));
 
     await tester.tap(find.text('CUSTOMER-A'), buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Sort contents'));
     await tester.pumpAndSettle();
-    expect(find.text('Sort "CUSTOMER-A"'), findsOneWidget);
+    expect(find.text('Open all connections'), findsOneWidget);
+    final trigger = tester.getRect(find.byKey(const ValueKey('context-submenu-trigger-sort')));
+    final submenu = tester.getRect(find.byKey(const ValueKey('context-submenu-sort')));
+    expect(submenu.left, trigger.right);
+    expect(submenu.top, trigger.top);
     expect(find.text('Device type'), findsOneWidget);
     await tester.tap(find.text('IP address'));
     await tester.pumpAndSettle();
+    expect(find.text('Sort contents'), findsNothing);
+    expect(find.text('IP address'), findsNothing);
 
     expect(app.sortConnections([...app.connections]).map((c) => c.name).toList(), ['DEVICE-02', 'DEVICE-10']);
     await tester.pumpWidget(const SizedBox());

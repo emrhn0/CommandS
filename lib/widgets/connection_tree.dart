@@ -1532,14 +1532,23 @@ class _FolderRowState extends State<_FolderRow> {
       title: widget.folder.name,
       trailingCount: childCount == 0 ? null : childCount,
       bold: true,
-      menuItems: const [
-        MenuAction('openAll', 'Open all connections', Icons.play_arrow_outlined),
-        MenuAction('new', 'New connection here', Icons.add, separatorBefore: true),
-        MenuAction('newFolder', 'New folder here', Icons.create_new_folder_outlined),
-        MenuAction('rename', 'Rename', Icons.edit_outlined),
-        MenuAction('color', 'Color…', Icons.palette_outlined),
-        MenuAction('sort', 'Sort contents', Icons.sort_rounded, separatorBefore: true),
-        MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
+      menuItems: [
+        const MenuAction('openAll', 'Open all connections', Icons.play_arrow_outlined),
+        const MenuAction('new', 'New connection here', Icons.add, separatorBefore: true),
+        const MenuAction('newFolder', 'New folder here', Icons.create_new_folder_outlined),
+        const MenuAction('rename', 'Rename', Icons.edit_outlined),
+        const MenuAction('color', 'Color…', Icons.palette_outlined),
+        MenuAction(
+          'sort',
+          'Sort contents',
+          Icons.sort_rounded,
+          separatorBefore: true,
+          children: treeSortActions(
+            names: true,
+            connections: app.connections.where((c) => c.folderId == widget.folder.id).length > 1,
+          ),
+        ),
+        const MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
       onMenu: (key) async {
         if (key == 'openAll') {
@@ -1558,10 +1567,10 @@ class _FolderRowState extends State<_FolderRow> {
           if (name != null) app.renameFolder(widget.folder.id, name);
         } else if (key == 'color') {
           await _pickColor(context, app);
-        } else if (key == 'sort') {
-          await _sortContents(context, app);
         } else if (key == 'delete') {
           _confirmDeleteFolder(context, app);
+        } else if (TreeSort.values.asNameMap()[key] case final order?) {
+          await app.sortFolderContents(widget.folder.id, order);
         }
       },
     );
@@ -1581,21 +1590,6 @@ class _FolderRowState extends State<_FolderRow> {
     } else {
       await app.setFolderColor(folder.id, picked.color);
     }
-  }
-
-  /// Sorts what is directly inside this folder, from a menu that names each
-  /// order: no need to select the items first.
-  Future<void> _sortContents(BuildContext context, AppState app) async {
-    final id = widget.folder.id;
-    final order = await showTreeSortMenu(
-      context,
-      actions: treeSortActions(
-        names: true,
-        connections: app.connections.where((c) => c.folderId == id).length > 1,
-      ),
-      header: tr('Sort "{name}"', {'name': widget.folder.name}),
-    );
-    if (order != null) await app.sortFolderContents(id, order);
   }
 
   /// Opens every connection in this folder and the folders inside it. Many
