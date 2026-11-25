@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -205,12 +206,22 @@ class StorageService {
     return connections;
   }
 
-  Future<void> _connectionWrite = Future<void>.value();
+  Future<void>? _connectionWrite;
 
   Future<void> saveConnections(List<SavedConnection> connections) {
     // Encryption can yield. Keep saves in order and snapshot before encoding.
-    final write = _connectionWrite.then((_) => _saveConnections(connections));
-    _connectionWrite = write.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    final previous = _connectionWrite;
+    final write = previous == null
+        ? _saveConnections(connections)
+        : previous.then(
+            (_) => _saveConnections(connections),
+            onError: (Object _, StackTrace _) => _saveConnections(connections),
+          );
+    _connectionWrite = write;
+    void clear() {
+      if (identical(_connectionWrite, write)) _connectionWrite = null;
+    }
+    unawaited(write.then<void>((_) => clear(), onError: (Object _, StackTrace _) => clear()));
     return write;
   }
 
