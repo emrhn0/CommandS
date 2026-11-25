@@ -63,32 +63,60 @@ class _Choice extends StatelessWidget {
   }
 }
 
-/// The colour dialog of a folder: the three kinds, named, then the plain
-/// colours (unnamed) and a colour of one's own. Pops a [FolderStyleChoice],
-/// or null when closed without one.
-class FolderColorDialog extends StatelessWidget {
+/// The colour dialog of a folder: the three kinds, named, then "no colour",
+/// the plain colours (unnamed) and a colour of one's own. A click only
+/// picks; Save pops the [FolderStyleChoice], and closing pops null.
+class FolderColorDialog extends StatefulWidget {
   const FolderColorDialog({super.key, required this.name, this.current, this.currentKind});
 
   final String name;
   final int? current;
   final FolderKind? currentKind;
 
-  Future<void> _custom(BuildContext context) async {
-    final initial = current != null ? Color(current!) : const Color(0xFFB57CF0);
+  @override
+  State<FolderColorDialog> createState() => _FolderColorDialogState();
+}
+
+class _FolderColorDialogState extends State<FolderColorDialog> {
+  late FolderStyleChoice _choice = widget.currentKind != null
+      ? FolderStyleChoice.kind(widget.currentKind!)
+      : widget.current != null
+          ? FolderStyleChoice.color(widget.current!)
+          : const FolderStyleChoice.none();
+
+  /// A colour of one's own on show: the folder's, or one just picked.
+  late int? _own = widget.currentKind == null &&
+          widget.current != null &&
+          !AppState.folderColors.contains(widget.current)
+      ? widget.current
+      : null;
+
+  void _pick(FolderStyleChoice choice) => setState(() => _choice = choice);
+
+  Future<void> _custom() async {
+    final start = _choice.color ?? _own;
+    final initial = start != null ? Color(start) : const Color(0xFFB57CF0);
     final picked = await showColorPicker(context, initial: initial, title: 'Folder color');
-    if (picked == null || !context.mounted) return;
+    if (picked == null || !mounted) return;
     final argb = picked.withAlpha(255).toARGB32();
-    // A kind's own colour typed in makes the folder that kind.
+    // A kind's own colour typed in picks that kind.
     final kind = FolderKind.ofColor(argb);
-    Navigator.of(context).pop(kind != null ? FolderStyleChoice.kind(kind) : FolderStyleChoice.color(argb));
+    setState(() {
+      if (kind != null) {
+        _choice = FolderStyleChoice.kind(kind);
+      } else {
+        if (!AppState.folderColors.contains(argb)) _own = argb;
+        _choice = FolderStyleChoice.color(argb);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    final ownColor = current != null && currentKind == null && !AppState.folderColors.contains(current);
+    final noneChosen = _choice.kind == null && _choice.color == null;
     return AppDialog(
-      title: tr('Color for "{name}"', {'name': name}),
+      title: tr('Color for "{name}"', {'name': widget.name}),
       icon: Icons.palette_outlined,
       width: 420,
       body: Column(
@@ -109,9 +137,9 @@ class FolderColorDialog extends StatelessWidget {
               for (final kind in FolderKind.values)
                 _Choice(
                   key: ValueKey('folder-kind-${kind.name}'),
-                  selected: currentKind == kind,
+                  selected: _choice.kind == kind,
                   ring: Color(kind.color),
-                  onTap: () => Navigator.of(context).pop(FolderStyleChoice.kind(kind)),
+                  onTap: () => _pick(FolderStyleChoice.kind(kind)),
                   child: FolderKindLabel(kind: kind),
                 ),
             ],
@@ -124,23 +152,31 @@ class FolderColorDialog extends StatelessWidget {
             runSpacing: 10,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              Tooltip(
+                message: tr('No color'),
+                child: _NoColorSwatch(
+                  key: const Key('folder-color-none'),
+                  selected: noneChosen,
+                  onTap: () => _pick(const FolderStyleChoice.none()),
+                ),
+              ),
               for (final color in AppState.folderColors)
                 _Swatch(
                   key: ValueKey('folder-swatch-$color'),
                   color: Color(color),
-                  selected: currentKind == null && color == current,
-                  onTap: () => Navigator.of(context).pop(FolderStyleChoice.color(color)),
+                  selected: _choice.kind == null && _choice.color == color,
+                  onTap: () => _pick(FolderStyleChoice.color(color)),
                 ),
-              if (ownColor)
+              if (_own case final own?)
                 _Swatch(
                   key: const ValueKey('folder-swatch-own'),
-                  color: Color(current!),
-                  selected: true,
-                  onTap: () => Navigator.of(context).pop(FolderStyleChoice.color(current!)),
+                  color: Color(own),
+                  selected: _choice.kind == null && _choice.color == own,
+                  onTap: () => _pick(FolderStyleChoice.color(own)),
                 ),
               TextButton.icon(
                 key: const ValueKey('folder-color-custom'),
-                onPressed: () => _custom(context),
+                onPressed: _custom,
                 icon: const Icon(Icons.colorize_outlined, size: 16),
                 label: Text(tr('Custom…')),
               ),
@@ -149,15 +185,61 @@ class FolderColorDialog extends StatelessWidget {
         ],
       ),
       actions: [
-        TextButton(
-          key: const Key('folder-color-none'),
-          onPressed: () => Navigator.of(context).pop(const FolderStyleChoice.none()),
-          child: Text(tr('No color')),
-        ),
         TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Cancel'))),
+        ElevatedButton(
+          key: const Key('folder-color-save'),
+          onPressed: () => Navigator.of(context).pop(_choice),
+          child: Text(tr('Save')),
+        ),
       ],
     );
   }
+}
+
+/// "No color": an empty ring crossed by a line, like a see-through swatch.
+class _NoColorSwatch extends StatelessWidget {
+  const _NoColorSwatch({super.key, required this.selected, required this.onTap});
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: selected ? palette.text : palette.textDim, width: selected ? 2 : 1.5),
+        ),
+        child: CustomPaint(painter: _SlashPainter(selected ? palette.text : palette.textDim)),
+      ),
+    );
+  }
+}
+
+class _SlashPainter extends CustomPainter {
+  const _SlashPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final inset = size.width * 0.22;
+    canvas.drawLine(
+      Offset(size.width - inset, inset),
+      Offset(inset, size.height - inset),
+      Paint()
+        ..color = color
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SlashPainter old) => old.color != color;
 }
 
 class _Swatch extends StatelessWidget {
@@ -213,6 +295,20 @@ class _NewFolderDialogState extends State<_NewFolderDialog> {
     super.dispose();
   }
 
+  /// Picks [kind] and, while the name is empty or still the one filled in
+  /// for the previous kind, names the folder after it ("Firewall").
+  void _setKind(FolderKind? kind) {
+    final text = _name.text.trim();
+    final auto = text.isEmpty || FolderKind.values.any((k) => k.label == text);
+    setState(() {
+      _kind = kind;
+      if (auto) {
+        _name.text = kind?.label ?? '';
+        _name.selection = TextSelection(baseOffset: 0, extentOffset: _name.text.length);
+      }
+    });
+  }
+
   void _submit() {
     final name = _name.text.trim();
     if (name.isEmpty) return;
@@ -249,7 +345,7 @@ class _NewFolderDialogState extends State<_NewFolderDialog> {
               _Choice(
                 key: const ValueKey('new-folder-kind-none'),
                 selected: _kind == null,
-                onTap: () => setState(() => _kind = null),
+                onTap: () => _setKind(null),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -264,7 +360,7 @@ class _NewFolderDialogState extends State<_NewFolderDialog> {
                   key: ValueKey('new-folder-kind-${kind.name}'),
                   selected: _kind == kind,
                   ring: Color(kind.color),
-                  onTap: () => setState(() => _kind = kind),
+                  onTap: () => _setKind(kind),
                   child: FolderKindLabel(kind: kind),
                 ),
             ],

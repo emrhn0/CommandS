@@ -322,14 +322,14 @@ class _WelcomePanelState extends State<WelcomePanel> {
                     style: _wordmarkStyle(palette.text),
                   ),
                   // A terminal's cursor after the name, blinking.
-                  WordmarkCursor(style: _wordmarkStyle(accent), animate: WelcomePanel.animate),
+                  WordmarkCursor(style: _wordmarkStyle(accent), animate: WelcomePanel.animate && !app.powerSaver),
                 ],
               ),
               const SizedBox(height: 14),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _PulseDot(color: accent),
+                  _PulseDot(color: accent, animate: WelcomePanel.animate && !app.powerSaver),
                   const SizedBox(width: 10),
                   Flexible(
                     child: AnimatedSwitcher(
@@ -594,36 +594,24 @@ class _RecentRowState extends State<_RecentRow> {
 
 /// The small accent dot before the greeting, slowly fading in and out.
 ///
-/// Its fade is drawn ten times a second from a timer, not sixty from an
-/// animation: on a dot this small the steps do not show, and the idle
-/// welcome screen draws a sixth of the frames.
+/// It pulses only while the window is in front (`AppActivity`); behind
+/// another window, minimized, under power saver, or when the system asks for
+/// no animations it rests fully lit, and nothing is drawn for it.
 class _PulseDot extends StatefulWidget {
-  const _PulseDot({required this.color});
+  const _PulseDot({required this.color, required this.animate});
 
   final Color color;
 
-  /// How often the fade is drawn.
-  static const step = Duration(milliseconds: 100);
-
-  /// One way, lit to dim or back.
-  static const half = Duration(milliseconds: 1000);
-
-  /// The dot's opacity [elapsed] into the pulse: 1, easing down to 0.35 and
-  /// back up, a full beat every two [half]s.
-  static double opacityAt(Duration elapsed) {
-    final beat = elapsed.inMicroseconds / half.inMicroseconds;
-    final phase = beat % 2;
-    final t = phase < 1 ? phase : 2 - phase;
-    return 1 - 0.65 * Curves.easeInOut.transform(t);
-  }
+  /// False under power saver (and in tests): the dot rests, lit.
+  final bool animate;
 
   @override
   State<_PulseDot> createState() => _PulseDotState();
 }
 
-class _PulseDotState extends State<_PulseDot> {
-  Timer? _timer;
-  final _clock = Stopwatch();
+class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1000), value: 1);
   bool _systemStill = false;
 
   @override
@@ -639,40 +627,38 @@ class _PulseDotState extends State<_PulseDot> {
     _sync();
   }
 
-  /// Runs while the panel animates and the window is in front; otherwise
-  /// the dot rests fully lit and nothing is drawn.
+  @override
+  void didUpdateWidget(_PulseDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
   void _sync() {
-    final run = WelcomePanel.animate && !_systemStill && AppActivity.foreground.value;
+    final run = widget.animate && !_systemStill && AppActivity.foreground.value;
     if (run) {
-      _clock.start();
-      _timer ??= Timer.periodic(_PulseDot.step, (_) => setState(() {}));
-    } else {
-      _timer?.cancel();
-      _timer = null;
-      _clock
+      if (!_controller.isAnimating) _controller.repeat(reverse: true);
+    } else if (_controller.isAnimating || _controller.value != 1) {
+      _controller
         ..stop()
-        ..reset();
-      if (mounted) setState(() {});
+        ..value = 1;
     }
   }
 
   @override
   void dispose() {
     AppActivity.foreground.removeListener(_sync);
-    _timer?.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => RepaintBoundary(
-        child: Opacity(
-          opacity: _PulseDot.opacityAt(_clock.elapsed),
-          child: Container(
-            key: const Key('welcome-pulse'),
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
-          ),
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: Tween(begin: 0.35, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut)),
+        child: Container(
+          key: const Key('welcome-pulse'),
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
         ),
       );
 }

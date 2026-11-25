@@ -74,7 +74,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<Widget> _content(SettingsPage page, bool hasMcpServer) {
     switch (page) {
       case SettingsPage.general:
-        return const [_Section(children: [_LanguagePicker()])];
+        return const [
+          _Section(children: [_LanguagePicker()]),
+          SizedBox(height: 18),
+          _Section(children: [_PowerSaverSetting()]),
+        ];
       case SettingsPage.theme:
         return const [
           _Section(title: 'App theme', children: [_ThemePicker()]),
@@ -727,6 +731,26 @@ class _Section extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// The app's own wording only: what remote machines print is never touched.
+/// Power saver: the welcome screen's animations stay still.
+class _PowerSaverSetting extends StatelessWidget {
+  const _PowerSaverSetting();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: SwitchListTile(
+        key: const ValueKey('power-saver'),
+        contentPadding: EdgeInsets.zero,
+        value: context.select((AppState app) => app.powerSaver),
+        onChanged: context.read<AppState>().setPowerSaver,
+        title: Text(tr('Power saver')),
+        subtitle: Text(tr('On the welcome screen, the blinking cursor and the pulsing dot stay still, to use less CPU and graphics power.')),
+      ),
+    );
+  }
+}
+
 class _LanguagePicker extends StatelessWidget {
   const _LanguagePicker();
 

@@ -294,16 +294,21 @@ void main() {
       expect(ConnectionFolder.fromJson({'id': 'f', 'name': 'B', 'kind': 'unknown'}).kind, isNull);
     });
 
-    testWidgets('the colour dialog names the kinds and pops the choice', (tester) async {
+    testWidgets('the colour dialog names the kinds; a click picks and Save applies', (tester) async {
       FolderStyleChoice? picked;
+      var closed = false;
       await tester.pumpWidget(MaterialApp(
         theme: AppTheme.dark(),
         home: Builder(
           builder: (context) => TextButton(
-            onPressed: () async => picked = await showDialog<FolderStyleChoice>(
-              context: context,
-              builder: (_) => const FolderColorDialog(name: 'FOLDER-A'),
-            ),
+            onPressed: () async {
+              closed = false;
+              picked = await showDialog<FolderStyleChoice>(
+                context: context,
+                builder: (_) => const FolderColorDialog(name: 'FOLDER-A', current: 0xFFB57CF0),
+              );
+              closed = true;
+            },
             child: const Text('open'),
           ),
         ),
@@ -314,27 +319,46 @@ void main() {
         expect(find.descendant(of: find.byKey(ValueKey('folder-kind-${k.name}')), matching: find.text(k.label)),
             findsOneWidget);
       }
+      // A click only picks: the dialog stays until Save.
       await tester.tap(find.byKey(const ValueKey('folder-kind-firewall')));
       await tester.pumpAndSettle();
-      expect(picked?.kind, FolderKind.firewall);
-
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      expect(closed, isFalse);
+      expect(find.byType(FolderColorDialog), findsOneWidget);
       await tester.tap(find.byKey(ValueKey('folder-swatch-${AppState.folderColors[2]}')));
       await tester.pumpAndSettle();
+      expect(closed, isFalse);
+      await tester.tap(find.byKey(const Key('folder-color-save')));
+      await tester.pumpAndSettle();
+      expect(closed, isTrue);
       expect(picked?.color, AppState.folderColors[2]);
       expect(picked?.kind, isNull);
 
+      // "No color" is the first round swatch under the other colours.
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('folder-color-none')));
+      final none = find.byKey(const Key('folder-color-none'));
+      final first = find.byKey(ValueKey('folder-swatch-${AppState.folderColors.first}'));
+      expect(tester.getCenter(none).dx, lessThan(tester.getCenter(first).dx));
+      expect(tester.getCenter(none).dy, tester.getCenter(first).dy);
+      await tester.tap(none);
+      await tester.pumpAndSettle();
+      expect(closed, isFalse);
+      await tester.tap(find.byKey(const Key('folder-color-save')));
       await tester.pumpAndSettle();
       expect(picked, isNotNull);
       expect(picked!.kind, isNull);
       expect(picked!.color, isNull);
+
+      // Cancel changes nothing.
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('folder-kind-system')));
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(picked, isNull);
     });
 
-    testWidgets('the new folder dialog asks for the kind', (tester) async {
+    testWidgets('the new folder dialog asks for the kind and names the folder after it', (tester) async {
       NewFolder? made;
       await tester.pumpWidget(MaterialApp(
         theme: AppTheme.dark(),
@@ -345,18 +369,42 @@ void main() {
           ),
         ),
       ));
+      String name() => tester.widget<TextField>(find.byKey(const ValueKey('new-folder-name'))).controller!.text;
+
+      // An empty name takes the kind's, and follows a change of kind.
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('new-folder-kind-system')));
+      await tester.pump();
+      expect(name(), 'System');
+      await tester.tap(find.byKey(const ValueKey('new-folder-kind-firewall')));
+      await tester.pump();
+      expect(name(), 'Firewall');
+      await tester.tap(find.byKey(const ValueKey('new-folder-create')));
+      await tester.pumpAndSettle();
+      expect(made?.name, 'Firewall');
+      expect(made?.kind, FolderKind.firewall);
+
+      // A name typed by hand is kept.
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const ValueKey('new-folder-name')), 'FOLDER-A');
       await tester.tap(find.byKey(const ValueKey('new-folder-kind-network')));
       await tester.pump();
+      expect(name(), 'FOLDER-A');
       await tester.tap(find.byKey(const ValueKey('new-folder-create')));
       await tester.pumpAndSettle();
       expect(made?.name, 'FOLDER-A');
       expect(made?.kind, FolderKind.network);
 
+      // Back to Normal, the filled-in name goes again.
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('new-folder-kind-network')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('new-folder-kind-none')));
+      await tester.pump();
+      expect(name(), isEmpty);
       await tester.enterText(find.byKey(const ValueKey('new-folder-name')), 'FOLDER-B');
       await tester.tap(find.byKey(const ValueKey('new-folder-create')));
       await tester.pumpAndSettle();

@@ -96,6 +96,9 @@ const german = <String, String>{
   'Home': 'Startseite',
   'Import from another app': 'Aus einer anderen App importieren',
   'Folder type': 'Ordnertyp',
+  'Power saver': 'Energiesparen',
+  'On the welcome screen, the blinking cursor and the pulsing dot stay still, to use less CPU and graphics power.':
+      'Der blinkende Cursor und der pulsierende Punkt auf dem Startbildschirm bleiben still, damit CPU und Grafik weniger arbeiten.',
   'Other colors': 'Weitere Farben',
   'Custom…': 'Eigene…',
   'Normal': 'Normal',

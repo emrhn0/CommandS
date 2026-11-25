@@ -60,6 +60,12 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   bool _selectMode = false;
   String? _lastClickedId;
 
+  /// What a press on an already selected row will do once the button comes
+  /// up without a drag: as in Explorer, pressing one of several selected
+  /// rows keeps them all, so they can be dragged together.
+  VoidCallback? _onRelease;
+  bool _draggedSincePress = false;
+
   final _scroll = ScrollController();
 
   /// Rows in the tree as last built, and whether a drag is over the empty
@@ -92,7 +98,12 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   /// row is part of a multi-selection, otherwise just the row.
   TreeDragItems _dragItemsFor(_Row row, AppState app) {
     final id = _rowId(row)!;
-    final ids = _selected.length > 1 && _selected.contains(id) ? _selected.toSet() : {id};
+    var ids = _selected.length > 1 && _selected.contains(id) ? _selected.toSet() : {id};
+    if (ids.length > 1) {
+      // What sits inside a dragged folder goes along with it, not on its own.
+      final top = _topSelected(app);
+      ids = {...top.folders, ...top.connections, ...top.layouts};
+    }
     return TreeDragItems(
       folderIds: ids.where((i) => app.folders.any((f) => f.id == i)).toList(),
       connectionIds: ids.where((i) => app.connections.any((c) => c.id == i)).toList(),
@@ -320,6 +331,7 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
         data: _dragItemsFor(row, app),
         dragAnchorStrategy: pointerDragAnchorStrategy,
         onDragStarted: () {
+          _draggedSincePress = true;
           _handleRowSecondary(row); // the dragged row joins (or is) the selection
           _dragging = true;
           setState(() => _draggingIds.add(id));
@@ -461,15 +473,57 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
   // opens. Ctrl and Shift extend the selection.
   String? _rowId(_Row r) => r.folder?.id ?? r.connection?.id ?? r.layout?.id;
 
+  /// Runs [action] when the press that is down now ends without a drag.
+  void _deferToRelease(VoidCallback action) {
+    _onRelease = action;
+    _draggedSincePress = false;
+    void route(PointerEvent e) {
+      if (e is! PointerUpEvent && e is! PointerCancelEvent) return;
+      GestureBinding.instance.pointerRouter.removeGlobalRoute(route);
+      final pending = _onRelease;
+      _onRelease = null;
+      if (pending != null && e is PointerUpEvent && !_draggedSincePress && mounted) pending();
+    }
+
+    GestureBinding.instance.pointerRouter.addGlobalRoute(route);
+  }
+
   void _handleRowSelect(_Row row, List<_Row> rows) {
     final id = _rowId(row);
     if (id == null) return;
-    if (_selectMode) {
-      _toggleTick(id, context.read<AppState>());
-      return;
-    }
+    _onRelease = null;
     final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    // A press on one of several selected rows keeps the selection, so the
+    // whole of it can be dragged; a plain click still narrows it, and a
+    // Ctrl click or a box still drops the row, when the button comes up.
+    final held = _selected.length > 1 && _selected.contains(id) && !shift;
+
+    if (_selectMode) {
+      if (held) {
+        _deferToRelease(() => _toggleTick(id, context.read<AppState>()));
+      } else {
+        _toggleTick(id, context.read<AppState>());
+      }
+      return;
+    }
+
+    if (held) {
+      _deferToRelease(
+        ctrl
+            ? () => setState(() {
+                  _selected.remove(id);
+                  _lastClickedId = id;
+                })
+            : () => setState(() {
+                  _selected
+                    ..clear()
+                    ..add(id);
+                  _lastClickedId = id;
+                }),
+      );
+      return;
+    }
 
     if (ctrl) {
       setState(() {

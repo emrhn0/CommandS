@@ -349,6 +349,7 @@ class AppState extends ChangeNotifier {
   static const _kThemeMode = 'commands.themeMode';
   static const _kUpdateChannel = 'commands.update.channel';
   static const _kLanguage = 'commands.language';
+  static const _kPowerSaver = 'commands.powerSaver';
   static const _kFolderOrder = 'commands.folderOrder';
   static const _kConnectionOrder = 'commands.connectionOrder';
   static const _kRecentConnections = 'commands.recentConnections';
@@ -530,6 +531,7 @@ class AppState extends ChangeNotifier {
     final font = prefs.getString(_kTerminalFont);
     if (font != null && font.trim().isNotEmpty) terminalFontFamily = font;
     terminalFontSize = prefs.getDouble(_kTerminalFontSize) ?? defaultTerminalFontSize;
+    powerSaver = prefs.getBool(_kPowerSaver) ?? false;
     final language = AppLanguage.fromCode(prefs.getString(_kLanguage));
     if (language != currentLanguage) {
       currentLanguage = language;
@@ -812,6 +814,19 @@ class AppState extends ChangeNotifier {
     WidgetsBinding.instance.addPostFrameCallback((_) => rebuildAllWidgets());
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLanguage, value.name);
+  }
+
+  /// Power saver: the welcome screen's blinking cursor and pulsing dot stay
+  /// still, lit. Off by default. Either way they stop while the window is
+  /// not in front.
+  bool powerSaver = false;
+
+  Future<void> setPowerSaver(bool value) async {
+    if (powerSaver == value) return;
+    powerSaver = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kPowerSaver, value);
   }
 
   Future<void> setUpdateChannel(ReleaseChannel channel) async {

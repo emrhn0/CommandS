@@ -4,6 +4,7 @@ import 'package:commands/services/pty_session.dart';
 import 'package:commands/widgets/connection_tree.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -53,6 +54,72 @@ void main() {
     await tester.pumpAndSettle();
     await drag(tester, tester.getCenter(find.text('DEVICE-01')), tester.getCenter(find.text('BRAVO')));
     expect(app.connections.single.folderId, b.id);
+  });
+
+  group('several selected rows', () {
+    late SavedConnection one, two, three;
+
+    Future<void> pumpThree(WidgetTester tester) async {
+      await pumpTree(tester);
+      one = SavedConnection(name: 'DEVICE-02', host: '192.0.2.11');
+      two = SavedConnection(name: 'DEVICE-03', host: '192.0.2.12');
+      three = SavedConnection(name: 'DEVICE-04', host: '192.0.2.13');
+      for (final c in [one, two, three]) {
+        await app.upsertConnection(c);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    // Each press a few seconds after the last, as a hand does: with every
+    // stamp at zero, a second press on a row would read as a double click.
+    var clock = const Duration(seconds: 10);
+    Duration tick() => clock += const Duration(seconds: 2);
+
+    Future<void> click(WidgetTester tester, String name, {bool ctrl = false}) async {
+      if (ctrl) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      final g = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await g.down(tester.getCenter(find.text(name)), timeStamp: tick());
+      await tester.pump();
+      await g.up(timeStamp: clock + const Duration(milliseconds: 80));
+      if (ctrl) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      // The selection bar comes and goes with an animation: let it finish.
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> dragFrom(WidgetTester tester, String name, String onto) async {
+      final from = tester.getCenter(find.text(name));
+      final to = tester.getCenter(find.text(onto));
+      final g = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await g.down(from, timeStamp: tick());
+      await tester.pump(const Duration(milliseconds: 50));
+      for (var i = 1; i <= 10; i++) {
+        await g.moveTo(Offset.lerp(from, to, i / 10)!, timeStamp: clock + Duration(milliseconds: 50 + 16 * i));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up(timeStamp: clock + const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Ctrl-picked rows, dragged by one of them, all move', (tester) async {
+      await pumpThree(tester);
+      await click(tester, 'DEVICE-02', ctrl: true);
+      await click(tester, 'DEVICE-04', ctrl: true);
+      await dragFrom(tester, 'DEVICE-04', 'BRAVO');
+      expect(one.folderId, b.id);
+      expect(three.folderId, b.id);
+      expect(two.folderId, isNull, reason: 'not selected, so it stays');
+    });
+
+    testWidgets('a plain click on one of them, without a drag, still leaves only it selected', (tester) async {
+      await pumpThree(tester);
+      await click(tester, 'DEVICE-02', ctrl: true);
+      await click(tester, 'DEVICE-04', ctrl: true);
+      await click(tester, 'DEVICE-04');
+      // DEVICE-02 is no longer selected: pressing it picks it alone.
+      await dragFrom(tester, 'DEVICE-02', 'BRAVO');
+      expect(one.folderId, b.id);
+      expect(three.folderId, isNull);
+    });
   });
 
   testWidgets('a folder dropped on the middle of another goes inside it', (tester) async {

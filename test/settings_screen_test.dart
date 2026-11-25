@@ -75,6 +75,22 @@ void main() {
     }
   }
 
+  testWidgets('Power saver sits under General, starts off and is remembered', (tester) async {
+    await tester.pumpWidget(_app(const SettingsScreen(), dark: false));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('power-saver'));
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    final reloaded = AppState();
+    await reloaded.ready;
+    expect(reloaded.powerSaver, isTrue);
+    reloaded.dispose();
+  });
+
   testWidgets('connection cards and terminal size control align at desktop width', (tester) async {
     tester.view.physicalSize = const Size(900, 900);
     tester.view.devicePixelRatio = 1;

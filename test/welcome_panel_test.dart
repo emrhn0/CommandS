@@ -2,7 +2,6 @@ import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/services/app_activity.dart';
 import 'package:commands/services/pty_session.dart';
-import 'package:commands/theme/wordmark.dart';
 import 'package:commands/theme/app_mark.dart';
 import 'package:commands/widgets/launch_splash.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
@@ -143,7 +142,7 @@ void main() {
       await closeAll(tester, app);
     });
 
-    testWidgets('the cursor and dot draw only a few frames a second, and none with the window away', (tester) async {
+    testWidgets('the cursor and dot animate while the window is in front, and rest without frames behind it', (tester) async {
       final oldAnimate = WelcomePanel.animate;
       WelcomePanel.animate = true;
       addTearDown(() {
@@ -155,16 +154,13 @@ void main() {
           .widget<Opacity>(find.ancestor(of: find.byKey(const Key('wordmark-cursor')), matching: find.byType(Opacity)).first)
           .opacity;
       double dot() => tester
-          .widget<Opacity>(find.ancestor(of: find.byKey(const Key('welcome-pulse')), matching: find.byType(Opacity)).first)
-          .opacity;
+          .widget<FadeTransition>(find.ancestor(of: find.byKey(const Key('welcome-pulse')), matching: find.byType(FadeTransition)).first)
+          .opacity
+          .value;
       await tester.pump();
-      // Between steps nothing asks for a frame: no animation runs each vsync.
-      expect(tester.binding.hasScheduledFrame, isFalse);
-      expect(cursor(), 1);
-      await tester.pump(WordmarkCursor.halfBeat);
+      expect(tester.binding.hasScheduledFrame, isTrue, reason: 'smooth: drawn every frame while in front');
+      await tester.pump(const Duration(milliseconds: 600));
       expect(cursor(), 0, reason: 'the cursor blinks off after half a beat');
-      expect(tester.binding.hasScheduledFrame, isFalse);
-      await tester.pump(const Duration(milliseconds: 470));
       expect(dot(), lessThan(1), reason: 'the dot fades');
 
       // In the background (another window in front, or minimized): still.
@@ -172,15 +168,25 @@ void main() {
       await tester.pump();
       expect(cursor(), 1, reason: 'resting lit');
       expect(dot(), 1);
-      final before = cursor();
       await tester.pump(const Duration(seconds: 3));
       expect(tester.binding.hasScheduledFrame, isFalse);
-      expect(cursor(), before);
 
       AppActivity.foreground.value = true;
       await tester.pump();
-      await tester.pump(WordmarkCursor.halfBeat);
-      expect(cursor(), 0, reason: 'blinking again once in front');
+      expect(tester.binding.hasScheduledFrame, isTrue, reason: 'animating again once in front');
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(cursor(), 0);
+
+      // Power saver: still, lit, even in front.
+      await shown.setPowerSaver(true);
+      await tester.pump();
+      expect(cursor(), 1);
+      expect(dot(), 1);
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      await shown.setPowerSaver(false);
+      await tester.pump();
+      expect(tester.binding.hasScheduledFrame, isTrue, reason: 'moving again with power saver off');
       await closeAll(tester, shown);
     });
 

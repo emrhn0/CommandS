@@ -79,7 +79,8 @@ class _HomeScreenState extends State<HomeScreen> {
         final chosen = await showCommandPalette(context);
         if (chosen != null && mounted) await _runCommand(chosen);
       case AppCommandId.quickSearch:
-        await _TitleSearchBox.open(context);
+        // Where the mouse is, so the eye need not travel to the title bar.
+        await showQuickSearch(context, at: lastPointerPosition);
       case AppCommandId.settings:
         await showSettings(context);
       case AppCommandId.copyName:
@@ -126,12 +127,19 @@ class _HomeScreenState extends State<HomeScreen> {
     final width = context.select<AppState, double>((a) => a.sidebarWidth);
     final sidebarVisible = context.select<AppState, bool>((a) => a.sidebarVisible);
     return Scaffold(
-      body: Stack(
-        children: [
-          _buildLayout(context, width, sidebarVisible),
-          if (!sidebarVisible)
-            const Positioned(top: 0, bottom: 0, left: 0, child: _CollapsedSidebarRail()),
-        ],
+      // Remembers where the mouse is, for Ctrl+K to open there.
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerHover: (e) => lastPointerPosition = e.position,
+        onPointerMove: (e) => lastPointerPosition = e.position,
+        onPointerDown: (e) => lastPointerPosition = e.position,
+        child: Stack(
+          children: [
+            _buildLayout(context, width, sidebarVisible),
+            if (!sidebarVisible)
+              const Positioned(top: 0, bottom: 0, left: 0, child: _CollapsedSidebarRail()),
+          ],
+        ),
       ),
     );
   }
@@ -298,15 +306,15 @@ class _HeaderIcon extends StatelessWidget {
   }
 }
 
-/// The search box in the middle of the title bar: a click (or Ctrl+K) opens
-/// quick search right there, the results under the box.
+/// The search box in the middle of the title bar: a click turns it into the
+/// search field, the same size and place, with the results under it.
 class _TitleSearchBox extends StatefulWidget {
   const _TitleSearchBox();
 
   static final _boxKey = GlobalKey();
 
-  /// Opens quick search in place, under the title bar's box; in the middle
-  /// of the screen only if the box is not on screen.
+  /// Opens quick search in the title bar's box; in the middle of the screen
+  /// only if the box is not on screen.
   static Future<void> open(BuildContext context) {
     final box = _boxKey.currentContext?.findRenderObject() as RenderBox?;
     final anchor = box != null && box.attached ? box.localToGlobal(Offset.zero) & box.size : null;

@@ -9,6 +9,7 @@ import 'package:commands/services/pty_session.dart';
 import 'package:commands/widgets/connection_tree.dart';
 import 'package:commands/widgets/quick_search.dart';
 import 'package:commands/widgets/welcome_panel.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -266,13 +267,24 @@ void main() {
         lessThan((Platform.isMacOS ? 78 : 0) + 24),
         reason: 'the name starts the bar, after the window buttons on a Mac');
     expect(find.byKey(const Key('welcome-search')), findsOneWidget);
-    // Ctrl+K outside a terminal (inside one it belongs to the session).
+    // Ctrl+K outside a terminal (inside one it belongs to the session)
+    // opens where the mouse is, not in the title bar.
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(700, 90));
+    await mouse.moveTo(const Offset(700, 90));
+    await tester.pump();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsOneWidget);
-    expect(find.byKey(const Key('quick-search-anchored')), findsOneWidget, reason: 'Ctrl+K opens it in the title bar too');
+    expect(find.byKey(const Key('quick-search-anchored')), findsNothing);
+    expect(find.byKey(const Key('quick-search-at-pointer')), findsOneWidget);
+    final atMouse = tester.getRect(find.byKey(const Key('quick-search')));
+    expect(atMouse.top, greaterThan(90), reason: 'just under the mouse');
+    expect(atMouse.top, lessThan(110));
+    expect((atMouse.center.dx - 700).abs(), lessThan(1), reason: 'centred on it');
+    await mouse.removePointer();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsNothing);
@@ -285,12 +297,17 @@ void main() {
     await tester.tap(find.byKey(const Key('quick-search-button')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsOneWidget);
-    // It opens in place: the box widens where it is, the results under it,
-    // not a second search in the middle of the screen.
+    // The box itself becomes the field, the same size and place, and the
+    // results open under it.
     expect(find.byKey(const Key('quick-search-anchored')), findsOneWidget);
+    final boxRect = tester.getRect(find.byKey(const Key('quick-search-button')));
+    expect(tester.getRect(find.byKey(const Key('quick-search-box'))), boxRect);
     final panel = tester.getRect(find.byKey(const Key('quick-search')));
-    expect(panel.top, lessThan(8));
+    expect(panel.top, greaterThan(boxRect.bottom));
     expect((panel.center.dx - box.dx).abs(), lessThan(1));
+    await tester.enterText(find.byKey(const Key('quick-search-field')), 'DEVICE');
+    await tester.pump();
+    expect(tester.getRect(find.byKey(const Key('quick-search-box'))), boxRect, reason: 'typing keeps its size');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quick-search')), findsNothing);

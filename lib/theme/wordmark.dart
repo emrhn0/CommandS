@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../services/app_activity.dart';
@@ -7,26 +5,22 @@ import '../services/app_activity.dart';
 /// The text cursor after the wordmark on the welcome panel: an accent "_"
 /// that blinks like a terminal's, or stays lit when [animate] is off.
 ///
-/// A hard on/off blink needs a frame only when it flips, so it runs on a
-/// timer (two frames a second) instead of an animation drawing sixty. It
-/// stops, lit, while the window is not in front (`AppActivity`) or the
-/// system asks for no animations.
+/// It blinks only while the window is in front (`AppActivity`); behind
+/// another window, minimized, or when the system asks for no animations it
+/// rests lit, and nothing is drawn for it.
 class WordmarkCursor extends StatefulWidget {
   const WordmarkCursor({super.key, required this.style, this.animate = true});
 
   final TextStyle style;
   final bool animate;
 
-  /// Half a beat: as long on as off, the way a terminal blinks.
-  static const halfBeat = Duration(milliseconds: 530);
-
   @override
   State<WordmarkCursor> createState() => _WordmarkCursorState();
 }
 
-class _WordmarkCursorState extends State<WordmarkCursor> {
-  Timer? _timer;
-  bool _lit = true;
+class _WordmarkCursorState extends State<WordmarkCursor> with SingleTickerProviderStateMixin {
+  late final AnimationController _blink =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1060), value: 0);
   bool _systemStill = false;
 
   @override
@@ -51,26 +45,27 @@ class _WordmarkCursorState extends State<WordmarkCursor> {
   void _sync() {
     final run = widget.animate && !_systemStill && AppActivity.foreground.value;
     if (run) {
-      _timer ??= Timer.periodic(WordmarkCursor.halfBeat, (_) => setState(() => _lit = !_lit));
-    } else {
-      _timer?.cancel();
-      _timer = null;
-      if (!_lit && mounted) setState(() => _lit = true);
+      if (!_blink.isAnimating) _blink.repeat();
+    } else if (_blink.isAnimating || _blink.value != 0) {
+      _blink
+        ..stop()
+        ..value = 0;
     }
   }
 
   @override
   void dispose() {
     AppActivity.foreground.removeListener(_sync);
-    _timer?.cancel();
+    _blink.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => RepaintBoundary(
-        child: Opacity(
-          opacity: _lit ? 1 : 0,
-          child: Text('_', key: const Key('wordmark-cursor'), style: widget.style),
-        ),
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _blink,
+        // On for the first half of each beat, off for the second: a hard
+        // blink, as a terminal does, not a fade.
+        builder: (context, child) => Opacity(opacity: _blink.value < 0.5 ? 1 : 0, child: child),
+        child: Text('_', key: const Key('wordmark-cursor'), style: widget.style),
       );
 }

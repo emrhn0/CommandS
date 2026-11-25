@@ -97,6 +97,9 @@ const turkish = <String, String>{
   'Home': 'Ana ekran',
   'Import from another app': 'Başka bir uygulamadan içe aktar',
   'Folder type': 'Klasör türü',
+  'Power saver': 'Güç tasarrufu',
+  'On the welcome screen, the blinking cursor and the pulsing dot stay still, to use less CPU and graphics power.':
+      'Karşılama ekranındaki yanıp sönen imleç ve nokta sabit kalır; CPU ve ekran kartı daha az çalışır.',
   'Other colors': 'Diğer renkler',
   'Custom…': 'Özel…',
   'Normal': 'Normal',

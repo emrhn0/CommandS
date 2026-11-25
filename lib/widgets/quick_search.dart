@@ -100,26 +100,32 @@ List<QuickSearchResult> quickSearch(AppState app, String query, {int limit = 40,
   return out;
 }
 
+/// Where the mouse last was over the app window, in global coordinates, so
+/// Ctrl+K can open quick search there. The home screen keeps it up to date.
+Offset? lastPointerPosition;
+
 /// Quick search over every connection and folder (Ctrl+K, or the search box
 /// in the title bar). Enter connects to a connection, or shows a folder in
 /// the connection list.
 ///
-/// With [anchor] (the title bar's search box, in global coordinates) the
-/// search opens in place: the box widens where it is and the results hang
-/// right under it, with nothing in the middle of the screen. It is still a
-/// route, so embedded Remote Desktop sessions step aside while it is open.
-Future<void> showQuickSearch(BuildContext context, {Rect? anchor}) {
+/// With [anchor] (the title bar's search box, in global coordinates) the box
+/// itself becomes the field: same place, same size, and the results open
+/// right under it. With [at] (Ctrl+K: the mouse) the search opens there,
+/// kept on screen. Otherwise it sits high in the middle. It is a route either
+/// way, so embedded Remote Desktop sessions step aside while it is open.
+Future<void> showQuickSearch(BuildContext context, {Rect? anchor, Offset? at}) {
   return showDialog<void>(
     context: context,
-    barrierColor: anchor != null ? Colors.transparent : Colors.black.withValues(alpha: 0.25),
-    builder: (_) => _QuickSearchDialog(anchor: anchor),
+    barrierColor: anchor != null || at != null ? Colors.transparent : Colors.black.withValues(alpha: 0.25),
+    builder: (_) => _QuickSearchDialog(anchor: anchor, at: at),
   );
 }
 
 class _QuickSearchDialog extends StatefulWidget {
-  const _QuickSearchDialog({this.anchor});
+  const _QuickSearchDialog({this.anchor, this.at});
 
   final Rect? anchor;
+  final Offset? at;
 
   @override
   State<_QuickSearchDialog> createState() => _QuickSearchDialogState();
@@ -131,6 +137,14 @@ class _QuickSearchDialogState extends State<_QuickSearchDialog> {
   int _selected = 0;
 
   static const _rowHeight = 40.0;
+
+  /// The full panel's width, and its tallest: field, nine rows and the hint.
+  static const _panelWidth = 560.0;
+  static const _panelHeight = 48 + _rowHeight * 9 + 8 + 30;
+
+  /// Under the title bar's box the results are at least this wide, so a
+  /// name, an address and a folder still fit on a row.
+  static const _dropdownMinWidth = 460.0;
 
   @override
   void dispose() {
@@ -163,6 +177,94 @@ class _QuickSearchDialogState extends State<_QuickSearchDialog> {
     }
   }
 
+  /// The text field, with the arrow keys moving through [results].
+  Widget _input(List<QuickSearchResult> results, AppPalette palette, {required double fontSize}) {
+    return Focus(
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          _moveSelection(1, results.length);
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          _moveSelection(-1, results.length);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: TextField(
+        key: const Key('quick-search-field'),
+        controller: _field,
+        autofocus: true,
+        style: TextStyle(fontSize: fontSize, color: palette.text),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          filled: false,
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+          hintText: tr('Search connections and folders'),
+          hintStyle: TextStyle(fontSize: fontSize, color: palette.textDim),
+        ),
+        onChanged: (_) => setState(() => _selected = 0),
+        onSubmitted: (_) {
+          if (results.isNotEmpty) _go(results[_selected]);
+        },
+      ),
+    );
+  }
+
+  /// The results (or what to type), and the keys' hint under them.
+  List<Widget> _resultsAndHint(List<QuickSearchResult> results, AppPalette palette, Color accent) => [
+        if (results.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Text(
+              _field.text.trim().isEmpty
+                  ? tr('Type a name, an address or a folder.')
+                  : tr('Nothing found for "{query}".', {'query': _field.text.trim()}),
+              style: TextStyle(fontSize: 13, color: palette.textDim),
+            ),
+          )
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: _rowHeight * 9),
+            child: ListView.builder(
+              controller: _list,
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: results.length,
+              itemExtent: _rowHeight,
+              itemBuilder: (context, i) => QuickSearchRow(
+                result: results[i],
+                selected: i == _selected,
+                accent: accent,
+                palette: palette,
+                onTap: () => _go(results[i]),
+                onHover: () => setState(() => _selected = i),
+              ),
+            ),
+          ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: palette.border))),
+          child: Text(
+            tr('↑ ↓ to choose · Enter connects to a connection or shows a folder in the list'),
+            style: TextStyle(fontSize: 11, color: palette.textDim),
+          ),
+        ),
+      ];
+
+  Widget _card(AppPalette palette, {required Widget child, Key? key, double? width}) => Material(
+        color: palette.panel,
+        elevation: 12,
+        shadowColor: Colors.black54,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: palette.border)),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(key: key, width: width, child: child),
+      );
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -171,114 +273,94 @@ class _QuickSearchDialogState extends State<_QuickSearchDialog> {
     final results = quickSearch(app, _field.text);
     if (_selected >= results.length) _selected = results.isEmpty ? 0 : results.length - 1;
     final anchor = widget.anchor;
-    final panel = Material(
-        color: palette.panel,
-        elevation: 12,
-        shadowColor: Colors.black54,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: palette.border)),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          key: const Key('quick-search'),
-          width: 560,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+    if (anchor != null) return _inTitleBar(anchor, results, palette, accent);
+
+    final panel = _card(
+      palette,
+      key: const Key('quick-search'),
+      width: _panelWidth,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(
+              children: [
+                Icon(Icons.search, size: 18, color: palette.textDim),
+                const SizedBox(width: 10),
+                Expanded(child: _input(results, palette, fontSize: 15)),
+                Text('Esc', style: TextStyle(fontSize: 11, color: palette.textDim)),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: palette.border),
+          ..._resultsAndHint(results, palette, accent),
+        ],
+      ),
+    );
+    final at = widget.at;
+    if (at == null) return Align(alignment: const Alignment(0, -0.55), child: panel);
+    // At the mouse: centred on it, just below, and moved in so it all shows.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final left = (at.dx - _panelWidth / 2)
+            .clamp(8.0, (constraints.maxWidth - _panelWidth - 8).clamp(8.0, double.infinity));
+        final top = (at.dy + 8).clamp(8.0, (constraints.maxHeight - _panelHeight - 8).clamp(8.0, double.infinity));
+        return Stack(children: [
+          Positioned(key: const Key('quick-search-at-pointer'), left: left, top: top, child: panel),
+        ]);
+      },
+    );
+  }
+
+  /// The title bar's box turned into the field, where it was and as big as
+  /// it was, with the results opening under it.
+  Widget _inTitleBar(Rect anchor, List<QuickSearchResult> results, AppPalette palette, Color accent) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = anchor.width < _dropdownMinWidth ? _dropdownMinWidth : anchor.width;
+        final left = (anchor.center.dx - width / 2)
+            .clamp(8.0, (constraints.maxWidth - width - 8).clamp(8.0, double.infinity));
+        return Stack(children: [
+          Positioned.fromRect(
+            key: const Key('quick-search-anchored'),
+            rect: anchor,
+            child: Material(
+              type: MaterialType.transparency,
+              child: Container(
+                key: const Key('quick-search-box'),
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                decoration: BoxDecoration(
+                  color: palette.panelAlt,
+                  border: Border.all(color: accent.withValues(alpha: 0.7)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
                 child: Row(
                   children: [
-                    Icon(Icons.search, size: 18, color: palette.textDim),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Focus(
-                        onKeyEvent: (node, event) {
-                          if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
-                          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                            _moveSelection(1, results.length);
-                            return KeyEventResult.handled;
-                          }
-                          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                            _moveSelection(-1, results.length);
-                            return KeyEventResult.handled;
-                          }
-                          return KeyEventResult.ignored;
-                        },
-                        child: TextField(
-                          key: const Key('quick-search-field'),
-                          controller: _field,
-                          autofocus: true,
-                          style: TextStyle(fontSize: 15, color: palette.text),
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            filled: false,
-                            hintText: tr('Search connections and folders'),
-                            hintStyle: TextStyle(fontSize: 15, color: palette.textDim),
-                          ),
-                          onChanged: (_) => setState(() => _selected = 0),
-                          onSubmitted: (_) {
-                            if (results.isNotEmpty) _go(results[_selected]);
-                          },
-                        ),
-                      ),
-                    ),
-                    Text('Esc', style: TextStyle(fontSize: 11, color: palette.textDim)),
+                    Icon(Icons.search, size: 14, color: palette.textDim),
+                    const SizedBox(width: 7),
+                    Expanded(child: _input(results, palette, fontSize: 12)),
+                    Text('Esc', style: TextStyle(fontSize: 10.5, color: palette.textDim)),
                   ],
                 ),
               ),
-              Divider(height: 1, color: palette.border),
-              if (results.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Text(
-                    _field.text.trim().isEmpty
-                        ? tr('Type a name, an address or a folder.')
-                        : tr('Nothing found for "{query}".', {'query': _field.text.trim()}),
-                    style: TextStyle(fontSize: 13, color: palette.textDim),
-                  ),
-                )
-              else
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: _rowHeight * 9),
-                  child: ListView.builder(
-                    controller: _list,
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: results.length,
-                    itemExtent: _rowHeight,
-                    itemBuilder: (context, i) => QuickSearchRow(
-                      result: results[i],
-                      selected: i == _selected,
-                      accent: accent,
-                      palette: palette,
-                      onTap: () => _go(results[i]),
-                      onHover: () => setState(() => _selected = i),
-                    ),
-                  ),
-                ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                decoration: BoxDecoration(border: Border(top: BorderSide(color: palette.border))),
-                child: Text(
-                  tr('↑ ↓ to choose · Enter connects to a connection or shows a folder in the list'),
-                  style: TextStyle(fontSize: 11, color: palette.textDim),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      );
-    if (anchor == null) return Align(alignment: const Alignment(0, -0.55), child: panel);
-    // In place: as wide as the panel, centred on the box, its top on the
-    // box's top, so the box seems to open downwards.
-    const width = 560.0;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final left = (anchor.center.dx - width / 2).clamp(8.0, (constraints.maxWidth - width - 8).clamp(8.0, double.infinity));
-        return Stack(children: [
-          Positioned(key: const Key('quick-search-anchored'), left: left, top: anchor.top, width: width, child: panel),
+          Positioned(
+            left: left,
+            top: anchor.bottom + 6,
+            child: _card(
+              palette,
+              key: const Key('quick-search'),
+              width: width,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _resultsAndHint(results, palette, accent),
+              ),
+            ),
+          ),
         ]);
       },
     );
