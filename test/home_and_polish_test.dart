@@ -6,6 +6,7 @@ import 'package:commands/services/pty_session.dart';
 import 'package:commands/theme/app_theme.dart';
 import 'package:commands/widgets/command_palette.dart';
 import 'package:commands/widgets/connection_tree.dart';
+import 'package:commands/widgets/folder_style_dialogs.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -259,15 +260,49 @@ void main() {
       expect(app.folderColorOf(inner.id), isNull);
     });
 
-    testWidgets('the colour dialog pops the picked colour, or -1 for none', (tester) async {
-      int? picked;
+    test('a folder kind wears its own colour, which no plain colour can take', () async {
+      final app = AppState();
+      await app.ready;
+      await app.addFolder('FOLDER-A', kind: FolderKind.firewall);
+      final fw = app.folders.single;
+      await app.addFolder('SITE-1', parentId: fw.id);
+      final inner = app.folders.firstWhere((f) => f.name == 'SITE-1');
+      expect(app.folderColorOf(fw.id), Color(FolderKind.firewall.color));
+      expect(app.folderColorOf(inner.id), Color(FolderKind.firewall.color));
+      expect(app.folderKindOf(inner.id), FolderKind.firewall);
+
+      // The kinds' colours are not offered as plain ones.
+      for (final k in FolderKind.values) {
+        expect(AppState.folderColors, isNot(contains(k.color)));
+      }
+      // A kind's colour given as a plain colour makes the folder that kind.
+      await app.setFolderColor(inner.id, FolderKind.network.color);
+      expect(app.folders.firstWhere((f) => f.id == inner.id).kind, FolderKind.network);
+      expect(app.folders.firstWhere((f) => f.id == inner.id).color, isNull);
+
+      // A plain colour clears the kind; a kind clears the plain colour.
+      await app.setFolderColor(fw.id, AppState.folderColors.first);
+      expect(fw.kind, isNull);
+      expect(app.folderKindOf(fw.id), isNull);
+      await app.setFolderKind(fw.id, FolderKind.system);
+      expect(fw.color, isNull);
+      expect(app.folderColorOf(fw.id), Color(FolderKind.system.color));
+
+      final reloaded = AppState();
+      await reloaded.ready;
+      expect(reloaded.folders.firstWhere((f) => f.id == fw.id).kind, FolderKind.system);
+      expect(ConnectionFolder.fromJson({'id': 'f', 'name': 'B', 'kind': 'unknown'}).kind, isNull);
+    });
+
+    testWidgets('the colour dialog names the kinds and pops the choice', (tester) async {
+      FolderStyleChoice? picked;
       await tester.pumpWidget(MaterialApp(
         theme: AppTheme.dark(),
         home: Builder(
           builder: (context) => TextButton(
-            onPressed: () async => picked = await showDialog<int>(
+            onPressed: () async => picked = await showDialog<FolderStyleChoice>(
               context: context,
-              builder: (_) => const FolderColorDialog(name: 'CUSTOMER-A'),
+              builder: (_) => const FolderColorDialog(name: 'FOLDER-A'),
             ),
             child: const Text('open'),
           ),
@@ -275,15 +310,58 @@ void main() {
       ));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      for (final k in FolderKind.values) {
+        expect(find.descendant(of: find.byKey(ValueKey('folder-kind-${k.name}')), matching: find.text(k.label)),
+            findsOneWidget);
+      }
+      await tester.tap(find.byKey(const ValueKey('folder-kind-firewall')));
+      await tester.pumpAndSettle();
+      expect(picked?.kind, FolderKind.firewall);
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey('folder-swatch-${AppState.folderColors[2]}')));
       await tester.pumpAndSettle();
-      expect(picked, AppState.folderColors[2]);
+      expect(picked?.color, AppState.folderColors[2]);
+      expect(picked?.kind, isNull);
 
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('folder-color-none')));
       await tester.pumpAndSettle();
-      expect(picked, -1);
+      expect(picked, isNotNull);
+      expect(picked!.kind, isNull);
+      expect(picked!.color, isNull);
+    });
+
+    testWidgets('the new folder dialog asks for the kind', (tester) async {
+      NewFolder? made;
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.dark(),
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => made = await showNewFolderDialog(context),
+            child: const Text('open'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('new-folder-name')), 'FOLDER-A');
+      await tester.tap(find.byKey(const ValueKey('new-folder-kind-network')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('new-folder-create')));
+      await tester.pumpAndSettle();
+      expect(made?.name, 'FOLDER-A');
+      expect(made?.kind, FolderKind.network);
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('new-folder-name')), 'FOLDER-B');
+      await tester.tap(find.byKey(const ValueKey('new-folder-create')));
+      await tester.pumpAndSettle();
+      expect(made?.name, 'FOLDER-B');
+      expect(made?.kind, isNull);
     });
 
     testWidgets('a coloured folder\'s connection colours its tab icon', (tester) async {
@@ -300,11 +378,18 @@ void main() {
       // DEVICE-02's tab is not the one in use: its icon shows the folder's colour.
       final icon = tester.widget<Icon>(find.byKey(const ValueKey('tab-folder-color')));
       expect(icon.color, Color(AppState.folderColors[1]));
-      // In use, the tab is filled with the accent and its icon follows the text.
+      final underline = find.descendant(
+        of: find.byKey(const ValueKey('tab-pill-tab-DEVICE-02')),
+        matching: find.byKey(const ValueKey('tab-underline')),
+      );
+      expect(tester.widget<Container>(underline).color, Color(AppState.folderColors[1]));
+      // In use, the tab keeps its folder colour on the icon and the line,
+      // which only grows thicker: the accent no longer fills it.
       app.setActiveTab(1);
       await tester.pump();
-      final theme = Theme.of(tester.element(find.byKey(const ValueKey('tab-pill-tab-DEVICE-02'))));
-      expect(tester.widget<Icon>(find.byKey(const ValueKey('tab-folder-color'))).color, theme.colorScheme.onPrimary);
+      expect(tester.widget<Icon>(find.byKey(const ValueKey('tab-folder-color'))).color, Color(AppState.folderColors[1]));
+      expect(tester.widget<Container>(underline).color, Color(AppState.folderColors[1]));
+      expect(tester.getSize(underline).height, 3);
       await tester.pumpWidget(const SizedBox());
       for (final s in sessions) {
         s.dispose();

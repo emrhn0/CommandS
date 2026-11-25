@@ -14,6 +14,7 @@ import 'app_dialog.dart';
 import 'context_menu.dart';
 import 'device_icon.dart';
 import 'folder_picker.dart';
+import 'folder_style_dialogs.dart';
 import 'new_connection_dialog.dart';
 import 'threshold_draggable.dart';
 import 'tool_button.dart';
@@ -32,22 +33,6 @@ class _Row {
   final SavedConnection? connection;
   final SavedLayout? layout;
   final int depth;
-}
-
-Future<void> _promptName(
-  BuildContext context,
-  String title,
-  String initial,
-  ValueChanged<String> onSubmit,
-) async {
-  final result = await showTextInputDialog(
-    context,
-    title: title,
-    initial: initial,
-    okLabel: initial.isEmpty ? 'Create' : 'Rename',
-    icon: initial.isEmpty ? Icons.create_new_folder_outlined : Icons.edit_outlined,
-  );
-  if (result != null) onSubmit(result);
 }
 
 class ConnectionTree extends StatefulWidget {
@@ -822,7 +807,10 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
               ToolButton(
                 icon: Icons.create_new_folder_rounded,
                 tooltip: tr('New folder'),
-                onPressed: () => _promptName(context, 'New folder', '', (name) => app.addFolder(name)),
+                onPressed: () async {
+                  final made = await showNewFolderDialog(context);
+                  if (made != null) await app.addFolder(made.name, kind: made.kind);
+                },
               ),
             ],
           ),
@@ -1559,12 +1547,8 @@ class _FolderRowState extends State<_FolderRow> {
         } else if (key == 'new') {
           showNewConnectionDialog(context, folderId: widget.folder.id);
         } else if (key == 'newFolder') {
-          await _promptName(
-            context,
-            'New folder',
-            '',
-            (name) => app.addFolder(name, parentId: widget.folder.id),
-          );
+          final made = await showNewFolderDialog(context);
+          if (made != null) await app.addFolder(made.name, parentId: widget.folder.id, kind: made.kind);
         } else if (key == 'rename') {
           final name = await showTextInputDialog(
             context,
@@ -1586,12 +1570,17 @@ class _FolderRowState extends State<_FolderRow> {
   /// Gives the folder a colour, or takes it away.
   Future<void> _pickColor(BuildContext context, AppState app) async {
     final folder = widget.folder;
-    final picked = await showDialog<int>(
+    final picked = await showDialog<FolderStyleChoice>(
       context: context,
-      builder: (context) => FolderColorDialog(name: folder.name, current: folder.color),
+      builder: (context) => FolderColorDialog(name: folder.name, current: folder.color, currentKind: folder.kind),
     );
-    // -1 is "No color"; null is a dialog closed without a choice.
-    if (picked != null) await app.setFolderColor(folder.id, picked < 0 ? null : picked);
+    // Null is a dialog closed without a choice.
+    if (picked == null) return;
+    if (picked.kind != null) {
+      await app.setFolderKind(folder.id, picked.kind);
+    } else {
+      await app.setFolderColor(folder.id, picked.color);
+    }
   }
 
   /// Sorts what is directly inside this folder, from a menu that names each
@@ -2356,67 +2345,6 @@ class _FilterChips extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// The colours a folder can take, and "No color". Pops the picked ARGB value,
-/// or -1 for none.
-class FolderColorDialog extends StatelessWidget {
-  const FolderColorDialog({super.key, required this.name, this.current});
-
-  final String name;
-  final int? current;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = AppPalette.of(context);
-    return AlertDialog(
-      title: Text(tr('Color for "{name}"', {'name': name})),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            tr('Shown on the folder, the folders inside it and the tabs of its connections.'),
-            style: TextStyle(fontSize: 12, color: palette.textDim),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final color in AppState.folderColors)
-                InkWell(
-                  key: ValueKey('folder-swatch-$color'),
-                  customBorder: const CircleBorder(),
-                  onTap: () => Navigator.of(context).pop(color),
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: Color(color),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: color == current ? palette.text : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                    child: color == current ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          key: const Key('folder-color-none'),
-          onPressed: () => Navigator.of(context).pop(-1),
-          child: Text(tr('No color')),
-        ),
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Cancel'))),
-      ],
     );
   }
 }

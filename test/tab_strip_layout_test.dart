@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('tabs are pills inside the strip, the one in use filled with the accent', (tester) async {
+  testWidgets('tabs are pills inside the strip, the one in use raised and underlined with the accent', (tester) async {
     SharedPreferences.setMockInitialValues({});
     PtySessionController.checkReachability = false;
     addTearDown(() => PtySessionController.checkReachability = true);
@@ -35,9 +35,13 @@ void main() {
     expect(pill.height, 28);
     final theme = Theme.of(tester.element(chip));
     final box = tester.widget<Container>(chip).decoration as BoxDecoration;
-    expect(box.color, theme.colorScheme.primary);
+    // Not filled with the accent (it hid the folder colour): a step raised,
+    // with the accent as the line along its foot when it has no folder.
+    expect(box.color, isNot(theme.colorScheme.primary));
     expect(box.borderRadius, BorderRadius.circular(8));
-    expect(tester.widget<Text>(find.text('DEVICE-01')).style?.color, theme.colorScheme.onPrimary);
+    final line = find.descendant(of: chip, matching: find.byKey(const ValueKey('tab-underline')));
+    expect(tester.widget<Container>(line).color, theme.colorScheme.primary);
+    expect(tester.getRect(line).bottom, pill.bottom);
 
     await tester.pumpWidget(const SizedBox());
     controller.dispose();

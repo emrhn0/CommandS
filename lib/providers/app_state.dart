@@ -823,8 +823,8 @@ class AppState extends ChangeNotifier {
 
   // ---- Folders ----
 
-  Future<void> addFolder(String name, {String? parentId}) async {
-    folders.add(ConnectionFolder(name: name, parentId: parentId));
+  Future<void> addFolder(String name, {String? parentId, FolderKind? kind}) async {
+    folders.add(ConnectionFolder(name: name, parentId: parentId, kind: kind));
     await _storage.saveFolders(folders);
     notifyListeners();
   }
@@ -836,25 +836,54 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The colours a folder can be given, picked to stay readable on every
-  /// theme.
+  /// The colours an ordinary folder can be given, picked to stay readable on
+  /// every theme. The kinds' blue, orange and green are not among them.
   static const folderColors = <int>[
-    0xFF5B9CF5, // blue
     0xFFB57CF0, // purple
     0xFF2BB5A0, // teal
-    0xFF5FB85C, // green
     0xFFE0B03A, // yellow
-    0xFFF08A4B, // orange
     0xFFE5585D, // red
     0xFFE36BA8, // pink
+    0xFF8C8C96, // grey
   ];
 
+  /// Gives an ordinary folder [color], or none. A kind's colour is not taken
+  /// as a plain colour: picking one makes the folder that kind, so a blue
+  /// folder always means network gear.
   Future<void> setFolderColor(String id, int? color) async {
     final f = folders.where((e) => e.id == id).firstOrNull;
     if (f == null) return;
-    f.color = color;
+    final kind = FolderKind.ofColor(color);
+    f.kind = kind;
+    f.color = kind == null ? color : null;
     await _storage.saveFolders(folders);
     notifyListeners();
+  }
+
+  /// Makes a folder network, firewall or system ([kind]), or an ordinary one
+  /// with no colour (null).
+  Future<void> setFolderKind(String id, FolderKind? kind) async {
+    final f = folders.where((e) => e.id == id).firstOrNull;
+    if (f == null) return;
+    f.kind = kind;
+    f.color = null;
+    await _storage.saveFolders(folders);
+    notifyListeners();
+  }
+
+  /// The kind of folder [folderId], or of the nearest folder above it that
+  /// has one or a colour: a colour picked nearer wins, as it does on screen.
+  FolderKind? folderKindOf(String? folderId) {
+    final seen = <String>{};
+    var id = folderId;
+    while (id != null && seen.add(id)) {
+      final folder = folders.where((f) => f.id == id).firstOrNull;
+      if (folder == null) return null;
+      if (folder.kind != null) return folder.kind;
+      if (folder.color != null) return null;
+      id = folder.parentId;
+    }
+    return null;
   }
 
   /// The colour of folder [folderId], or of the nearest folder above it that
@@ -865,7 +894,7 @@ class AppState extends ChangeNotifier {
     while (id != null && seen.add(id)) {
       final folder = folders.where((f) => f.id == id).firstOrNull;
       if (folder == null) return null;
-      if (folder.color != null) return Color(folder.color!);
+      if (folder.shownColor case final c?) return Color(c);
       id = folder.parentId;
     }
     return null;

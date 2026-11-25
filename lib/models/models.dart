@@ -30,22 +30,51 @@ enum DeviceKind {
   }
 }
 
+/// What a folder holds, each with a colour of its own that no other folder
+/// can take: network gear blue, firewalls orange, systems green.
+enum FolderKind {
+  network('Network', 0xFF4C8DF6),
+  firewall('Firewall', 0xFFF2853A),
+  system('System', 0xFF3DB86A);
+
+  const FolderKind(this.label, this.color);
+
+  /// The English name, also the translation key. Brand-like, so shown as is
+  /// in every language too if no translation exists.
+  final String label;
+  final int color;
+
+  static FolderKind? fromName(Object? name) => FolderKind.values.where((k) => k.name == name).firstOrNull;
+
+  /// The kind whose colour is [color], if any.
+  static FolderKind? ofColor(int? color) => FolderKind.values.where((k) => k.color == color).firstOrNull;
+}
+
 class ConnectionFolder {
   String id;
   String name;
   String? parentId;
 
-  /// A colour picked for the folder (ARGB), shown on its icon, the folders
-  /// inside it and the tabs of its connections. Null for none.
+  /// Network, firewall or system: the folder then wears that kind's colour.
+  /// Null for an ordinary folder.
+  FolderKind? kind;
+
+  /// A colour picked for an ordinary folder (ARGB), shown on its icon, the
+  /// folders inside it and the tabs of its connections. Null for none. Never
+  /// one of the kinds' colours, and ignored while [kind] is set.
   int? color;
 
-  ConnectionFolder({String? id, required this.name, this.parentId, this.color})
+  ConnectionFolder({String? id, required this.name, this.parentId, this.color, this.kind})
       : id = id ?? _uuid.v4();
+
+  /// The colour the folder shows: its kind's, else its own.
+  int? get shownColor => kind?.color ?? color;
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
         'parentId': parentId,
+        if (kind != null) 'kind': kind!.name,
         if (color != null) 'color': color,
       };
 
@@ -53,6 +82,7 @@ class ConnectionFolder {
         id: json['id'] as String,
         name: json['name'] as String,
         parentId: json['parentId'] as String?,
+        kind: FolderKind.fromName(json['kind']),
         color: json['color'] is int ? json['color'] as int : null,
       );
 }

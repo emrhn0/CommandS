@@ -39,6 +39,7 @@ flutter run -d macos
 | `lib/services/backup_service.dart`, `lib/widgets/backups_panel.dart` | Backups of the saved connections: daily and before big changes, newest 30 daily and 20 others kept, restored from Settings > Connections. A store that cannot be read is never saved over (`StorageService.loadFailed`). |
 | `lib/models/models.dart` | `SavedConnection`, `ConnectionFolder`, `DeviceKind`, JSON. New fields need a default and must be optional in `fromJson` (old saves have to keep loading). |
 | `lib/widgets/credential_profiles.dart` | Credential profiles: a user name and password shared by connections (`SavedConnection.credentialProfileId`). `AppState.resolved` gives the login a connection uses; the saved connection keeps its own fields. |
+| `lib/widgets/folder_style_dialogs.dart` | New folder and folder colour dialogs. `FolderKind` (Network blue, Firewall orange, System green) owns its colour: no plain colour may take it, and `setFolderColor` with one turns the folder into that kind. |
 | `lib/widgets/terminal_search.dart` | Search in a terminal (magnifier, Ctrl+Shift+F), marking matches with xterm highlights. |
 | `lib/widgets/quick_search.dart` | Quick search over connections and folders (title bar, Ctrl+K outside a terminal, Ctrl+Shift+K inside one: Ctrl+K belongs to the session). |
 | `lib/services/host_keys.dart` | Forgets a changed SSH host key with `ssh-keygen -R`, after the user says so from the bar. |

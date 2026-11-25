@@ -964,21 +964,13 @@ class _TabChipState extends State<_TabChip> {
     final scheme = Theme.of(context).colorScheme;
     final palette = AppPalette.of(context);
     final active = widget.active;
-    // On the accent fill of the tab in use, its own text and icons.
-    final ink = active ? scheme.onPrimary : null;
-    // Rounded pills with a gap between them; the one in use is filled with
-    // the accent, so it stands out among many.
-    return Container(
-      key: ValueKey('tab-pill-${widget.tabIds.first}'),
-      constraints: const BoxConstraints(minWidth: 110, maxWidth: 200),
-      height: 28,
-      margin: const EdgeInsets.only(right: 4, top: 4, bottom: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: active ? scheme.primary : palette.panelAlt,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
+    final folder = widget.color;
+    // The tab in use is raised a step from the others instead of filled
+    // with the accent, so the folder colour stays readable on it too. The
+    // line along its foot is the folder's colour (thicker when in use), or
+    // the accent for a tab in use without one.
+    final line = folder ?? (active ? scheme.primary : null);
+    final row = Row(
         mainAxisSize: MainAxisSize.max,
         children: [
           // The session's current status, read directly. It used to come from
@@ -997,30 +989,56 @@ class _TabChipState extends State<_TabChip> {
                 SessionStatus.error || SessionStatus.closed => const Color(0xFFE5484D),
               },
               shape: BoxShape.circle,
-              // A ring keeps the colour readable on the accent fill.
-              border: active ? Border.all(color: scheme.onPrimary, width: 1.5) : null,
             ),
           ),
           const SizedBox(width: 6),
           Icon(
             widget.icon,
             size: 12,
-            color: ink ?? widget.color,
-            key: widget.color == null ? null : const ValueKey('tab-folder-color'),
+            color: folder,
+            key: folder == null ? null : const ValueKey('tab-folder-color'),
           ),
           const SizedBox(width: 5),
           Expanded(
             child: Text(
               widget.title,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: ink, fontWeight: active ? FontWeight.w600 : null),
+              style: TextStyle(
+                fontSize: 12,
+                color: active ? palette.text : null,
+                fontWeight: active ? FontWeight.w600 : null,
+              ),
             ),
           ),
           _AgentMark(tabIds: widget.tabIds),
           InkWell(
             onTap: widget.onClose,
-            child: Padding(padding: const EdgeInsets.all(2), child: Icon(Icons.close, size: 14, color: ink)),
+            child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 14)),
           ),
+        ],
+      );
+    return Container(
+      key: ValueKey('tab-pill-${widget.tabIds.first}'),
+      constraints: const BoxConstraints(minWidth: 110, maxWidth: 200),
+      height: 28,
+      margin: const EdgeInsets.only(right: 4, top: 4, bottom: 4),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: active ? Color.alphaBlend(palette.text.withAlpha(0x24), palette.panelAlt) : palette.panelAlt,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: row),
+          ),
+          if (line != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(key: const ValueKey('tab-underline'), height: active ? 3 : 2, color: line),
+            ),
         ],
       ),
     );
