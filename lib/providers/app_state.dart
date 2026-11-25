@@ -12,6 +12,7 @@ import '../app_version.dart';
 import '../l10n/collate.dart';
 import '../l10n/strings.dart';
 import '../models/models.dart';
+import '../services/system_power.dart';
 import '../services/pane_layout.dart';
 import '../services/mac_prefs_migration.dart';
 import '../services/mac_rdp_session.dart';
@@ -350,6 +351,7 @@ class AppState extends ChangeNotifier {
   static const _kUpdateChannel = 'commands.update.channel';
   static const _kLanguage = 'commands.language';
   static const _kPowerSaver = 'commands.powerSaver';
+  static const _kPowerSaverMode = 'commands.powerSaverMode';
   static const _kFolderOrder = 'commands.folderOrder';
   static const _kConnectionOrder = 'commands.connectionOrder';
   static const _kRecentConnections = 'commands.recentConnections';
@@ -531,7 +533,10 @@ class AppState extends ChangeNotifier {
     final font = prefs.getString(_kTerminalFont);
     if (font != null && font.trim().isNotEmpty) terminalFontFamily = font;
     terminalFontSize = prefs.getDouble(_kTerminalFontSize) ?? defaultTerminalFontSize;
-    powerSaver = prefs.getBool(_kPowerSaver) ?? false;
+    // beta.4 kept a plain switch: on stays on, anything else follows the
+    // system.
+    powerSaverMode = PowerSaverMode.fromName(prefs.getString(_kPowerSaverMode)) ??
+        (prefs.getBool(_kPowerSaver) == true ? PowerSaverMode.on : PowerSaverMode.system);
     final language = AppLanguage.fromCode(prefs.getString(_kLanguage));
     if (language != currentLanguage) {
       currentLanguage = language;
@@ -816,17 +821,35 @@ class AppState extends ChangeNotifier {
     await prefs.setString(_kLanguage, value.name);
   }
 
-  /// Power saver: the welcome screen's blinking cursor and pulsing dot stay
-  /// still, lit. Off by default. Either way they stop while the window is
-  /// not in front.
-  bool powerSaver = false;
+  /// Power saver: off, on, or the same as the computer's own energy saver
+  /// (the default). While it is in effect the welcome screen's blinking
+  /// cursor and pulsing dot stay still, lit. Either way they stop while the
+  /// window is not in front.
+  PowerSaverMode powerSaverMode = PowerSaverMode.system;
 
-  Future<void> setPowerSaver(bool value) async {
-    if (powerSaver == value) return;
-    powerSaver = value;
+  /// The computer's power state, as last read (`SystemPower`); null until
+  /// then, and on a system that does not say.
+  PowerState? systemPower;
+
+  /// Whether power saver is in effect now.
+  bool get powerSaver => switch (powerSaverMode) {
+        PowerSaverMode.off => false,
+        PowerSaverMode.on => true,
+        PowerSaverMode.system => systemPower?.energySaver ?? false,
+      };
+
+  Future<void> setPowerSaverMode(PowerSaverMode mode) async {
+    if (powerSaverMode == mode) return;
+    powerSaverMode = mode;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kPowerSaver, value);
+    await prefs.setString(_kPowerSaverMode, mode.name);
+  }
+
+  /// Told by `SystemPower` when the computer's power state changes.
+  void setSystemPower(PowerState state) {
+    systemPower = state;
+    notifyListeners();
   }
 
   Future<void> setUpdateChannel(ReleaseChannel channel) async {
@@ -871,6 +894,20 @@ class AppState extends ChangeNotifier {
     final kind = FolderKind.ofColor(color);
     f.kind = kind;
     f.color = kind == null ? color : null;
+    await _storage.saveFolders(folders);
+    notifyListeners();
+  }
+
+  /// Gives every folder in [ids] the same look in one go, saved once: a
+  /// [kind], else a plain [color] (a kind's colour still makes that kind),
+  /// else none.
+  Future<void> setFoldersStyle(Iterable<String> ids, {FolderKind? kind, int? color}) async {
+    final wanted = ids.toSet();
+    final k = kind ?? FolderKind.ofColor(color);
+    for (final f in folders.where((f) => wanted.contains(f.id))) {
+      f.kind = k;
+      f.color = k == null ? color : null;
+    }
     await _storage.saveFolders(folders);
     notifyListeners();
   }
@@ -2225,3 +2262,14 @@ class AppState extends ChangeNotifier {
 
 /// The orders the tree can put connections (and, by name, folders) in.
 enum TreeSort { nameAscending, nameDescending, ipAddress, deviceType }
+
+/// How power saver is chosen in Settings > General.
+enum PowerSaverMode {
+  off,
+  on,
+
+  /// Follows the computer's own energy saver.
+  system;
+
+  static PowerSaverMode? fromName(String? name) => PowerSaverMode.values.where((m) => m.name == name).firstOrNull;
+}

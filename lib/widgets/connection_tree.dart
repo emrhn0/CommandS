@@ -707,6 +707,18 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
     );
   }
 
+  /// The selected folders a right click on folder [id] acts on: all of them
+  /// when it is one of several selected, as in Explorer; else null.
+  ///
+  /// Only the outermost ones: a box ticks a folder's subfolders too, and
+  /// they take its colour anyway, so they are not counted or coloured on
+  /// their own.
+  List<String>? _folderGroupFor(String id, AppState app) {
+    if (!_selected.contains(id)) return null;
+    final ids = _topSelected(app).folders;
+    return ids.length > 1 && ids.contains(id) ? ids : null;
+  }
+
   Future<void> _deleteSelected(AppState app) async {
     final top = _topSelected(app);
     // Everything that goes, the contents of the folders included.
@@ -1020,6 +1032,8 @@ class _ConnectionTreeState extends State<ConnectionTree> with WidgetsBindingObse
         expanded: expanded,
         selected: _selected.contains(row.folder!.id),
         ticked: _selectMode ? _selected.contains(row.folder!.id) : null,
+        group: _folderGroupFor(row.folder!.id, context.read<AppState>()),
+        onDeleteGroup: () => _deleteSelected(context.read<AppState>()),
         onSelect: () => _handleRowSelect(row, rows),
         onSecondary: () => _handleRowSecondary(row),
         onOpen: _selectMode ? () {} : toggle,
@@ -1536,9 +1550,18 @@ class _FolderRow extends StatefulWidget {
     required this.onToggle,
     this.openStatus,
     this.ticked,
+    this.group,
+    this.onDeleteGroup,
   });
   final bool? ticked;
   final ConnectionFolder folder;
+
+  /// Every selected folder, when this one is among several selected: its
+  /// menu then acts on all of them.
+  final List<String>? group;
+
+  /// Deletes the whole selection, from the group menu.
+  final VoidCallback? onDeleteGroup;
   final int depth;
   final bool expanded;
   final bool selected;
@@ -1586,7 +1609,11 @@ class _FolderRowState extends State<_FolderRow> {
       title: widget.folder.name,
       trailingCount: childCount == 0 ? null : childCount,
       bold: true,
-      menuItems: [
+      menuHeader: switch (widget.group) {
+        final group? => trCount(group.length, '{n} folder selected', '{n} folders selected'),
+        null => null,
+      },
+      menuItems: widget.group != null ? _groupMenu(app, widget.group!) : [
         const MenuAction('openAll', 'Open all connections', Icons.play_arrow_outlined),
         const MenuAction('new', 'New connection here', Icons.add, separatorBefore: true),
         const MenuAction('newFolder', 'New folder here', Icons.create_new_folder_outlined),
@@ -1605,6 +1632,10 @@ class _FolderRowState extends State<_FolderRow> {
         const MenuAction('delete', 'Delete folder', Icons.delete_outline, destructive: true, separatorBefore: true),
       ],
       onMenu: (key) async {
+        if (widget.group case final group?) {
+          await _onGroupMenu(context, app, group, key);
+          return;
+        }
         if (key == 'openAll') {
           await _openAll(context, app);
         } else if (key == 'new') {
@@ -1628,6 +1659,54 @@ class _FolderRowState extends State<_FolderRow> {
         }
       },
     );
+  }
+
+  /// What a right click offers for several selected folders: what can be
+  /// done to all of them at once.
+  List<MenuAction> _groupMenu(AppState app, List<String> group) => [
+        const MenuAction('color', 'Color…', Icons.palette_outlined),
+        MenuAction(
+          'sort',
+          'Sort contents',
+          Icons.sort_rounded,
+          children: treeSortActions(
+            names: true,
+            connections: group.any((id) => app.connections.where((c) => c.folderId == id).length > 1),
+          ),
+        ),
+        const MenuAction('delete', 'Delete selected', Icons.delete_outline, destructive: true, separatorBefore: true),
+      ];
+
+  Future<void> _onGroupMenu(BuildContext context, AppState app, List<String> group, String key) async {
+    if (key == 'color') {
+      await _pickGroupColor(context, app, group);
+    } else if (key == 'delete') {
+      widget.onDeleteGroup?.call();
+    } else if (TreeSort.values.asNameMap()[key] case final order?) {
+      for (final id in group) {
+        await app.sortFolderContents(id, order);
+      }
+    }
+  }
+
+  /// One colour (or type) for every selected folder. Shown picked when they
+  /// already share one; otherwise nothing is picked until a click.
+  Future<void> _pickGroupColor(BuildContext context, AppState app, List<String> group) async {
+    final folders = [for (final f in app.folders) if (group.contains(f.id)) f];
+    final first = folders.first;
+    final same = folders.every((f) => f.kind == first.kind && f.color == first.color);
+    final picked = await showDialog<FolderStyleChoice>(
+      context: context,
+      builder: (context) => FolderColorDialog(
+        name: first.name,
+        title: tr('Color for {n} folders', {'n': folders.length}),
+        current: same ? first.color : null,
+        currentKind: same ? first.kind : null,
+        mixed: !same,
+      ),
+    );
+    if (picked == null) return;
+    await app.setFoldersStyle(group, kind: picked.kind, color: picked.color);
   }
 
   /// Gives the folder a colour, or takes it away.
@@ -1933,7 +2012,11 @@ class _TreeRow extends StatefulWidget {
     this.openStatus,
     this.bold = false,
     this.favorite = false,
+    this.menuHeader,
   });
+
+  /// The menu's heading instead of [title] ("3 folders selected").
+  final String? menuHeader;
 
   /// The folder, connection or layout this row shows.
   final String rowId;
@@ -2043,7 +2126,7 @@ class _TreeRowState extends State<_TreeRow> {
       actions: widget.menuItems,
       position: at,
       anchor: anchor,
-      header: widget.title,
+      header: widget.menuHeader ?? widget.title,
     );
     if (selected != null) widget.onMenu(selected);
   }

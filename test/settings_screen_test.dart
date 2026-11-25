@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:commands/app_version.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/screens/settings_screen.dart';
+import 'package:commands/services/system_power.dart';
 import 'package:commands/theme/app_theme.dart';
 import 'package:commands/widgets/quick_connect_bar.dart';
 import 'package:flutter/material.dart';
@@ -75,20 +76,46 @@ void main() {
     }
   }
 
-  testWidgets('Power saver sits under General, starts off and is remembered', (tester) async {
+  testWidgets('Power saver: three choices under General, Same as system by default, remembered', (tester) async {
     await tester.pumpWidget(_app(const SettingsScreen(), dark: false));
     await tester.pumpAndSettle();
-    final toggle = find.byKey(const ValueKey('power-saver'));
-    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
-    await tester.ensureVisible(toggle);
+    final app = Provider.of<AppState>(tester.element(find.byType(SettingsScreen)), listen: false);
+    expect(app.powerSaverMode, PowerSaverMode.system);
+    expect(find.text('Off'), findsOneWidget);
+    expect(find.text('On'), findsOneWidget);
+    expect(find.text('Same as system'), findsOneWidget);
+
+    // Following the system: the line under the buttons says what is in effect.
+    app.setSystemPower(const PowerState(energySaver: false, onMains: true));
+    await tester.pump();
+    expect(find.text('Plugged in, energy saver off: the welcome screen moves'), findsOneWidget);
+    expect(app.powerSaver, isFalse);
+    app.setSystemPower(const PowerState(energySaver: true, onMains: false));
+    await tester.pump();
+    expect(find.text('Energy saver is on in the system: the welcome screen stays still'), findsOneWidget);
+    expect(app.powerSaver, isTrue);
+
+    final on = find.byKey(const ValueKey('power-saver-on'));
+    await tester.ensureVisible(on);
     await tester.pumpAndSettle();
-    await tester.tap(toggle);
+    await tester.tap(on);
     await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    expect(app.powerSaverMode, PowerSaverMode.on);
+    await tester.tap(find.byKey(const ValueKey('power-saver-off')));
+    await tester.pumpAndSettle();
+    expect(app.powerSaver, isFalse, reason: 'Off wins over the system');
     final reloaded = AppState();
     await reloaded.ready;
-    expect(reloaded.powerSaver, isTrue);
+    expect(reloaded.powerSaverMode, PowerSaverMode.off);
     reloaded.dispose();
+  });
+
+  test('a beta.4 power saver switch left on stays on', () async {
+    SharedPreferences.setMockInitialValues({'commands.powerSaver': true});
+    final app = AppState();
+    await app.ready;
+    expect(app.powerSaverMode, PowerSaverMode.on);
+    app.dispose();
   });
 
   testWidgets('connection cards and terminal size control align at desktop width', (tester) async {

@@ -12,6 +12,7 @@ import 'providers/app_state.dart';
 import 'app_version.dart';
 import 'screens/home_screen.dart';
 import 'services/app_activity.dart';
+import 'services/system_power.dart';
 import 'services/rdp_session.dart';
 import 'services/mcp_server.dart';
 import 'services/terminal_appearance.dart';
@@ -78,6 +79,8 @@ void main() async {
       await windowManager.focus();
     },
   );
+  // Power saver can follow the computer's own energy saver.
+  SystemPower.watch(app.setSystemPower);
   runApp(CommandSApp(app: app));
   WidgetsBinding.instance.allowFirstFrame();
 }

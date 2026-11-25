@@ -122,6 +122,105 @@ void main() {
     });
   });
 
+  group('right click on several selected folders', () {
+    var clock = const Duration(seconds: 10);
+    Duration tick() => clock += const Duration(seconds: 2);
+
+    Future<void> click(WidgetTester tester, String name, {bool ctrl = false}) async {
+      if (ctrl) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      final g = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await g.down(tester.getCenter(find.text(name)), timeStamp: tick());
+      await tester.pump();
+      await g.up(timeStamp: clock + const Duration(milliseconds: 80));
+      if (ctrl) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> rightClick(WidgetTester tester, String name) async {
+      await tester.tap(find.text(name), buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the menu names the selection and Color applies to all of them', (tester) async {
+      await pumpTree(tester);
+      await click(tester, 'ALPHA', ctrl: true);
+      await click(tester, 'BRAVO', ctrl: true);
+      await click(tester, 'CHARLIE', ctrl: true);
+      await rightClick(tester, 'BRAVO');
+      expect(find.text('3 folders selected'), findsOneWidget);
+      expect(find.text('Rename'), findsNothing, reason: 'one-folder actions are left out');
+      await tester.tap(find.text('Color…'));
+      await tester.pumpAndSettle();
+      expect(find.text('Color for 3 folders'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('folder-kind-firewall')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('folder-color-save')));
+      await tester.pumpAndSettle();
+      for (final f in [a, b, c]) {
+        expect(f.kind, FolderKind.firewall, reason: f.name);
+      }
+      expect(inner.kind, isNull, reason: 'not selected');
+
+      // A plain colour for all, again in one go.
+      await rightClick(tester, 'ALPHA');
+      await tester.tap(find.text('Color…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('folder-swatch-${AppState.folderColors.first}')));
+      await tester.tap(find.byKey(const Key('folder-color-save')));
+      await tester.pumpAndSettle();
+      for (final f in [a, b, c]) {
+        expect(f.kind, isNull);
+        expect(f.color, AppState.folderColors.first);
+      }
+    });
+
+    testWidgets('folders that differ start with nothing picked, and Save alone changes nothing', (tester) async {
+      await pumpTree(tester);
+      await app.setFolderKind(a.id, FolderKind.network);
+      await tester.pumpAndSettle();
+      await click(tester, 'ALPHA', ctrl: true);
+      await click(tester, 'BRAVO', ctrl: true);
+      await rightClick(tester, 'ALPHA');
+      await tester.tap(find.text('Color…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('folder-color-save')));
+      await tester.pumpAndSettle();
+      expect(a.kind, FolderKind.network);
+      expect(b.kind, isNull);
+      expect(b.color, isNull);
+    });
+
+    testWidgets('a folder selected with one inside it counts once, and only the outer one is coloured', (
+      tester,
+    ) async {
+      await pumpTree(tester);
+      await tester.tap(find.byIcon(Icons.chevron_right).first); // open ALPHA
+      await tester.pumpAndSettle();
+      await click(tester, 'ALPHA', ctrl: true);
+      await click(tester, 'INNER', ctrl: true);
+      await click(tester, 'BRAVO', ctrl: true);
+      await rightClick(tester, 'BRAVO');
+      expect(find.text('2 folders selected'), findsOneWidget);
+      await tester.tap(find.text('Color…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('folder-kind-system')));
+      await tester.tap(find.byKey(const Key('folder-color-save')));
+      await tester.pumpAndSettle();
+      expect(a.kind, FolderKind.system);
+      expect(b.kind, FolderKind.system);
+      expect(inner.kind, isNull, reason: 'it shows the colour of ALPHA without one of its own');
+      expect(app.folderColorOf(inner.id), Color(FolderKind.system.color));
+    });
+
+    testWidgets('one selected folder keeps its own full menu', (tester) async {
+      await pumpTree(tester);
+      await click(tester, 'BRAVO');
+      await rightClick(tester, 'BRAVO');
+      expect(find.text('Rename'), findsOneWidget);
+      expect(find.text('3 folders selected'), findsNothing);
+    });
+  });
+
   testWidgets('a folder dropped on the middle of another goes inside it', (tester) async {
     await pumpTree(tester);
     await drag(tester, tester.getCenter(find.text('CHARLIE')), tester.getCenter(find.text('BRAVO')));

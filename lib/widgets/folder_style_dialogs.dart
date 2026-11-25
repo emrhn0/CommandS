@@ -67,22 +67,38 @@ class _Choice extends StatelessWidget {
 /// the plain colours (unnamed) and a colour of one's own. A click only
 /// picks; Save pops the [FolderStyleChoice], and closing pops null.
 class FolderColorDialog extends StatefulWidget {
-  const FolderColorDialog({super.key, required this.name, this.current, this.currentKind});
+  const FolderColorDialog({
+    super.key,
+    required this.name,
+    this.current,
+    this.currentKind,
+    this.title,
+    this.mixed = false,
+  });
 
   final String name;
   final int? current;
   final FolderKind? currentKind;
+
+  /// The heading, when it is not one folder's ("Color for 3 folders").
+  final String? title;
+
+  /// Several folders that do not all look the same: nothing is picked at
+  /// first, and Save with nothing picked changes nothing.
+  final bool mixed;
 
   @override
   State<FolderColorDialog> createState() => _FolderColorDialogState();
 }
 
 class _FolderColorDialogState extends State<FolderColorDialog> {
-  late FolderStyleChoice _choice = widget.currentKind != null
-      ? FolderStyleChoice.kind(widget.currentKind!)
-      : widget.current != null
-          ? FolderStyleChoice.color(widget.current!)
-          : const FolderStyleChoice.none();
+  late FolderStyleChoice? _choice = widget.mixed
+      ? null
+      : widget.currentKind != null
+          ? FolderStyleChoice.kind(widget.currentKind!)
+          : widget.current != null
+              ? FolderStyleChoice.color(widget.current!)
+              : const FolderStyleChoice.none();
 
   /// A colour of one's own on show: the folder's, or one just picked.
   late int? _own = widget.currentKind == null &&
@@ -94,7 +110,7 @@ class _FolderColorDialogState extends State<FolderColorDialog> {
   void _pick(FolderStyleChoice choice) => setState(() => _choice = choice);
 
   Future<void> _custom() async {
-    final start = _choice.color ?? _own;
+    final start = _choice?.color ?? _own;
     final initial = start != null ? Color(start) : const Color(0xFFB57CF0);
     final picked = await showColorPicker(context, initial: initial, title: 'Folder color');
     if (picked == null || !mounted) return;
@@ -114,9 +130,10 @@ class _FolderColorDialogState extends State<FolderColorDialog> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    final noneChosen = _choice.kind == null && _choice.color == null;
+    final choice = _choice;
+    final noneChosen = choice != null && choice.kind == null && choice.color == null;
     return AppDialog(
-      title: tr('Color for "{name}"', {'name': widget.name}),
+      title: widget.title ?? tr('Color for "{name}"', {'name': widget.name}),
       icon: Icons.palette_outlined,
       width: 420,
       body: Column(
@@ -137,7 +154,7 @@ class _FolderColorDialogState extends State<FolderColorDialog> {
               for (final kind in FolderKind.values)
                 _Choice(
                   key: ValueKey('folder-kind-${kind.name}'),
-                  selected: _choice.kind == kind,
+                  selected: choice?.kind == kind,
                   ring: Color(kind.color),
                   onTap: () => _pick(FolderStyleChoice.kind(kind)),
                   child: FolderKindLabel(kind: kind),
@@ -164,14 +181,14 @@ class _FolderColorDialogState extends State<FolderColorDialog> {
                 _Swatch(
                   key: ValueKey('folder-swatch-$color'),
                   color: Color(color),
-                  selected: _choice.kind == null && _choice.color == color,
+                  selected: choice != null && choice.kind == null && choice.color == color,
                   onTap: () => _pick(FolderStyleChoice.color(color)),
                 ),
               if (_own case final own?)
                 _Swatch(
                   key: const ValueKey('folder-swatch-own'),
                   color: Color(own),
-                  selected: _choice.kind == null && _choice.color == own,
+                  selected: choice != null && choice.kind == null && choice.color == own,
                   onTap: () => _pick(FolderStyleChoice.color(own)),
                 ),
               TextButton.icon(

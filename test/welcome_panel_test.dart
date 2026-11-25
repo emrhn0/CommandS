@@ -2,6 +2,7 @@ import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/services/app_activity.dart';
 import 'package:commands/services/pty_session.dart';
+import 'package:commands/services/system_power.dart';
 import 'package:commands/theme/app_mark.dart';
 import 'package:commands/widgets/launch_splash.dart';
 import 'package:commands/widgets/terminal_tabs.dart';
@@ -178,15 +179,27 @@ void main() {
       expect(cursor(), 0);
 
       // Power saver: still, lit, even in front.
-      await shown.setPowerSaver(true);
+      await shown.setPowerSaverMode(PowerSaverMode.on);
       await tester.pump();
       expect(cursor(), 1);
       expect(dot(), 1);
       await tester.pump(const Duration(seconds: 3));
       expect(tester.binding.hasScheduledFrame, isFalse);
-      await shown.setPowerSaver(false);
+      await shown.setPowerSaverMode(PowerSaverMode.off);
       await tester.pump();
       expect(tester.binding.hasScheduledFrame, isTrue, reason: 'moving again with power saver off');
+
+      // Same as system: still while the computer's energy saver is on, moving
+      // again once it is off (plugged in).
+      await shown.setPowerSaverMode(PowerSaverMode.system);
+      shown.setSystemPower(const PowerState(energySaver: true, onMains: false));
+      await tester.pump();
+      expect(cursor(), 1);
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      shown.setSystemPower(const PowerState(energySaver: false, onMains: true));
+      await tester.pump();
+      expect(tester.binding.hasScheduledFrame, isTrue);
       await closeAll(tester, shown);
     });
 

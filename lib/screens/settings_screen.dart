@@ -730,27 +730,127 @@ class _Section extends StatelessWidget {
 // Language
 // ---------------------------------------------------------------------------
 
-/// The app's own wording only: what remote machines print is never touched.
-/// Power saver: the welcome screen's animations stay still.
+/// Power saver: off, on, or the same as the computer's own energy saver,
+/// three buttons side by side, and under them what is in effect now.
 class _PowerSaverSetting extends StatelessWidget {
   const _PowerSaverSetting();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: SwitchListTile(
-        key: const ValueKey('power-saver'),
-        contentPadding: EdgeInsets.zero,
-        value: context.select((AppState app) => app.powerSaver),
-        onChanged: context.read<AppState>().setPowerSaver,
-        title: Text(tr('Power saver')),
-        subtitle: Text(tr('On the welcome screen, the blinking cursor and the pulsing dot stay still, to use less CPU and graphics power.')),
-      ),
+    final app = context.watch<AppState>();
+    final palette = AppPalette.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final mode = app.powerSaverMode;
+
+    Widget option(PowerSaverMode value, String label, {IconData? icon}) {
+      final on = mode == value;
+      return Expanded(
+        child: Material(
+          color: on ? scheme.primary : Colors.transparent,
+          child: InkWell(
+            key: ValueKey('power-saver-${value.name}'),
+            onTap: () => app.setPowerSaverMode(value),
+            child: Container(
+              height: 32,
+              alignment: Alignment.center,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 14, color: on ? scheme.onPrimary : palette.textDim),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      tr(label),
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: on ? scheme.onPrimary : palette.text,
+                        fontWeight: on ? FontWeight.w600 : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget divider() => Container(width: 1, height: 32, color: palette.border);
+
+    // What is in effect now, and why.
+    final power = app.systemPower;
+    final saving = app.powerSaver;
+    final (IconData icon, String status) = switch (mode) {
+      PowerSaverMode.off => (Icons.bolt_rounded, tr('Off: the welcome screen moves')),
+      PowerSaverMode.on => (Icons.eco_outlined, tr('On: the welcome screen stays still')),
+      PowerSaverMode.system when power == null =>
+        (Icons.help_outline_rounded, tr('The system does not say whether its energy saver is on')),
+      PowerSaverMode.system when power!.energySaver =>
+        (Icons.eco_outlined, tr('Energy saver is on in the system: the welcome screen stays still')),
+      PowerSaverMode.system when power!.onMains == false =>
+        (Icons.battery_5_bar_rounded, tr('On battery, energy saver off: the welcome screen moves')),
+      PowerSaverMode.system =>
+        (Icons.power_rounded, tr('Plugged in, energy saver off: the welcome screen moves')),
+    };
+
+    return Column(
+      key: const ValueKey('power-saver'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(tr('Power saver'), style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: palette.text)),
+        const SizedBox(height: 3),
+        Text(
+          tr('On the welcome screen, the blinking cursor and the pulsing dot stay still, to use less CPU and graphics power.'),
+          style: TextStyle(fontSize: 12, color: palette.textDim),
+        ),
+        const SizedBox(height: 12),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              border: Border.all(color: palette.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                option(PowerSaverMode.off, 'Off'),
+                divider(),
+                option(PowerSaverMode.on, 'On'),
+                divider(),
+                option(PowerSaverMode.system, 'Same as system', icon: Icons.computer_rounded),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          key: const ValueKey('power-saver-status'),
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: saving ? const Color(0xFFE0A526) : const Color(0xFF2EB85C),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(icon, size: 14, color: palette.textDim),
+            const SizedBox(width: 6),
+            Expanded(child: Text(status, style: TextStyle(fontSize: 12, color: palette.textDim))),
+          ],
+        ),
+      ],
     );
   }
 }
 
+/// The app's own wording only: what remote machines print is never touched.
 class _LanguagePicker extends StatelessWidget {
   const _LanguagePicker();
 
