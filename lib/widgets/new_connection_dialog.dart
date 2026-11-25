@@ -269,21 +269,48 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     Key? fieldKey,
   }) => LabeledField(
     label: label,
-    child: TextField(
-      key: fieldKey,
-      controller: controller,
-      obscureText: obscure,
-      decoration: InputDecoration(
-        hintText: tr(hint),
-        suffixIcon: IconButton(
-          icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 16),
-          tooltip: obscure ? tr('Show password') : tr('Hide password'),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 30, height: 30),
-          style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-          onPressed: onToggle,
-        ),
-      ),
+    child: ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final warnings = [
+          if (value.text.startsWith(' ')) tr('Password starts with a space.'),
+          if (value.text.endsWith(' ')) tr('Password ends with a space.'),
+        ];
+        final warningColor = Theme.of(context).colorScheme.error;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: fieldKey,
+              controller: controller,
+              obscureText: obscure,
+              decoration: InputDecoration(
+                hintText: tr(hint),
+                suffixIcon: IconButton(
+                  icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 16),
+                  tooltip: obscure ? tr('Show password') : tr('Hide password'),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+                  style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  onPressed: onToggle,
+                ),
+              ),
+            ),
+            for (final warning in warnings)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 14, color: warningColor),
+                    const SizedBox(width: 4),
+                    Expanded(child: Text(warning, style: TextStyle(fontSize: 11, color: warningColor))),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     ),
   );
 

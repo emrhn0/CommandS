@@ -1,6 +1,7 @@
 import 'package:commands/models/models.dart';
 import 'package:commands/providers/app_state.dart';
 import 'package:commands/theme/app_theme.dart';
+import 'package:commands/widgets/app_dialog.dart';
 import 'package:commands/widgets/new_connection_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,11 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  Finder secretField(String label) => find.descendant(
+    of: find.ancestor(of: find.text(label), matching: find.byType(LabeledField)),
+    matching: find.byType(TextField),
+  );
+
   testWidgets('editing a connection: switch to RDP, set options, save in place', (tester) async {
     tester.view.physicalSize = const Size(1000, 900);
     tester.view.devicePixelRatio = 1;
@@ -156,5 +162,78 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.connections.single.enablePassword, 'new-enable-secret');
     expect(app.connections.single.password, 'ssh-example-secret');
+  });
+
+  testWidgets('connection password warns about edge spaces as they are typed', (tester) async {
+    tester.view.physicalSize = const Size(1000, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState();
+    await tester.pump();
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(
+        theme: AppTheme.light(),
+        home: Builder(builder: (context) => Scaffold(
+          body: TextButton(onPressed: () => showNewConnectionDialog(context), child: const Text('open')),
+        )),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    final password = secretField('Password');
+    final enable = secretField('Enable password');
+    await tester.enterText(password, ' example ');
+    await tester.pump();
+    expect(find.text('Password starts with a space.'), findsOneWidget);
+    expect(find.text('Password ends with a space.'), findsOneWidget);
+
+    await tester.enterText(password, 'exam ple');
+    await tester.pump();
+    expect(find.text('Password starts with a space.'), findsNothing);
+    expect(find.text('Password ends with a space.'), findsNothing);
+
+    await tester.enterText(password, 'example ');
+    await tester.enterText(enable, ' enable');
+    await tester.pump();
+    expect(find.text('Password starts with a space.'), findsOneWidget);
+    expect(find.text('Password ends with a space.'), findsOneWidget);
+
+    await tester.tap(find.text('RDP'));
+    await tester.pumpAndSettle();
+    expect(find.text('Password starts with a space.'), findsNothing);
+    expect(find.text('Password ends with a space.'), findsOneWidget);
+  });
+
+  testWidgets('saving keeps a password with edge spaces unchanged', (tester) async {
+    tester.view.physicalSize = const Size(1000, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState();
+    await tester.pump();
+    final conn = SavedConnection(name: 'DEVICE-01', host: '192.0.2.10');
+    app.connections.add(conn);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(
+        theme: AppTheme.light(),
+        home: Builder(builder: (context) => Scaffold(
+          body: TextButton(onPressed: () => showEditConnectionDialog(context, conn), child: const Text('open')),
+        )),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(secretField('Password'), ' example ');
+    await tester.pump();
+    expect(find.text('Password starts with a space.'), findsOneWidget);
+    expect(find.text('Password ends with a space.'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(app.connections.single.password, ' example ');
   });
 }
