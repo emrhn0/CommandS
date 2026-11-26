@@ -29,7 +29,8 @@ class McpApproval {
 /// user's yes (see mcp_command_policy.dart).
 abstract class McpGateway {
   List<Map<String, Object>> listConnections();
-  Future<String> openConnection(String connectionId);
+  List<Map<String, Object>> listSessions();
+  Future<String> openConnection(String connectionId, {bool newSession = false});
   Future<int> sendCommand(String sessionId, String command);
   Map<String, Object?> readOutput(String sessionId, int cursor);
   void close();
@@ -123,14 +124,42 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
   /// Whether a tab was opened by the agent, for the mark on its tab.
   bool isAgentTab(String tabId) => _sessions.containsKey(tabId);
 
+  Iterable<MapEntry<String, _CapturedSession>> get _liveSessions sync* {
+    for (final tab in app.tabs) {
+      final session = _sessions[tab.id];
+      if (session != null &&
+          identical(tab.controller, session.controller) &&
+          session.isOpen) {
+        yield MapEntry(tab.id, session);
+      }
+    }
+  }
+
   @override
-  Future<String> openConnection(String connectionId) async {
+  List<Map<String, Object>> listSessions() {
+    final allowed = {for (final c in allowedConnections) c.id: c};
+    return [
+      for (final entry in _liveSessions)
+        if (allowed[entry.value.connectionId] case final connection?
+            when entry.value.matches(connection))
+          {
+            'session_id': entry.key,
+            'connection_id': aliasOf(connection.id)!,
+            'status': entry.value.controller.status.name,
+          },
+    ];
+  }
+
+  @override
+  Future<String> openConnection(String connectionId, {bool newSession = false}) async {
     final connection = _byAlias(connectionId);
-    final before = app.tabs.length;
-    final error = await app.openConnection(connection);
-    if (error != null) throw StateError(error);
-    if (app.tabs.length <= before) throw StateError('Session was not opened.');
-    final tab = app.tabs.last;
+    if (!newSession) {
+      for (final entry in _liveSessions) {
+        if (entry.value.matches(connection)) return entry.key;
+      }
+    }
+    // Open and register the tab before yielding to another MCP request.
+    final tab = app.openConnectionTab(connection);
     final controller = tab.controller;
     if (controller is! PtySessionController) {
       throw StateError('Not an SSH session.');
@@ -172,8 +201,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
       throw ArgumentError('Command must not contain control or invisible characters.');
     }
     final session = _session(sessionId);
-    if (session.controller.status == SessionStatus.closed ||
-        session.controller.status == SessionStatus.error) {
+    if (!session.isOpen) {
       throw StateError('Session is closed.');
     }
     final connection = app.connections.firstWhere((c) => c.id == session.connectionId);
@@ -231,6 +259,16 @@ class _CapturedSession {
   static const _page = 8192;
 
   int get end => _start + _output.length;
+
+  bool get isOpen =>
+      controller.status == SessionStatus.starting ||
+      controller.status == SessionStatus.running;
+
+  // Editing a saved address must not route new requests to the old device.
+  bool matches(SavedConnection connection) =>
+      connectionId == connection.id &&
+      controller.host == connection.host &&
+      controller.port == connection.port;
 
   void _append(String text) {
     _output += text;
@@ -473,10 +511,20 @@ class McpServer extends ChangeNotifier {
         case 'list_connections':
           value = {'connections': gateway.listConnections()};
           break;
+        case 'list_sessions':
+          value = {'sessions': gateway.listSessions()};
+          break;
         case 'open_connection':
+          final newSession = args.containsKey('new_session')
+              ? args['new_session']
+              : false;
+          if (newSession is! bool) {
+            throw ArgumentError('new_session must be a boolean.');
+          }
           value = {
             'session_id': await gateway.openConnection(
               _string(args, 'connection_id'),
+              newSession: newSession,
             ),
           };
           break;
@@ -540,12 +588,18 @@ class McpServer extends ChangeNotifier {
       'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
     },
     {
+      'name': 'list_sessions',
+      'description': 'List open SSH sessions created through MCP for still-allowed connections. Returns session_id, connection_id and terminal status. Use session_id to resume. A running terminal may still be waiting for login or MFA; check read_output before sending commands.',
+      'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
+    },
+    {
       'name': 'open_connection',
-      'description': 'Open a saved SSH connection in a CommandS tab and return its MCP session ID.',
+      'description': 'Return a usable MCP session ID for a saved SSH connection. Reuses an open MCP tab for that connection, including one waiting for login, or opens a tab if needed. Use list_sessions to select a specific tab or new_session to open a separate one.',
       'inputSchema': {
         'type': 'object',
         'properties': {
           'connection_id': {'type': 'string'},
+          'new_session': {'type': 'boolean', 'default': false},
         },
         'required': ['connection_id'],
       },
