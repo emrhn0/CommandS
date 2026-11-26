@@ -58,6 +58,54 @@ void main() {
     expect(app.connections, isEmpty);
   });
 
+  Future<void> cloneFromMenu(WidgetTester tester) async {
+    await tester.tap(find.text('switch-01'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clone'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit Connection'), findsOneWidget);
+  }
+
+  Finder fieldWithValue(String text) => find.byWidgetPredicate(
+    (widget) => widget is TextField && widget.controller?.text == text,
+  );
+
+  testWidgets('Clone opens a prefilled editor and saving changes only the copy', (tester) async {
+    await pumpTree(tester);
+    await cloneFromMenu(tester);
+    final copy = app.connections.singleWhere((c) => c.id != conn.id);
+    expect(copy.name, 'switch-01_clone');
+    expect(fieldWithValue(copy.name), findsOneWidget);
+    expect(fieldWithValue(conn.host), findsOneWidget);
+
+    await tester.enterText(fieldWithValue(copy.name), 'DEVICE-02');
+    await tester.enterText(fieldWithValue(conn.host), '192.0.2.12');
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Connection'), findsNothing);
+    expect(app.connections, hasLength(2));
+    final original = app.connections.singleWhere((c) => c.id == conn.id);
+    final edited = app.connections.singleWhere((c) => c.id == copy.id);
+    expect(original.name, 'switch-01');
+    expect(original.host, '192.0.2.11');
+    expect(edited.name, 'DEVICE-02');
+    expect(edited.host, '192.0.2.12');
+  });
+
+  testWidgets('Cancel closes the clone editor and keeps the created copy', (tester) async {
+    await pumpTree(tester);
+    await cloneFromMenu(tester);
+    final copy = app.connections.singleWhere((c) => c.id != conn.id);
+    await tester.enterText(fieldWithValue(copy.name), 'DEVICE-02');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Connection'), findsNothing);
+    expect(app.connections, hasLength(2));
+    expect(app.connections.singleWhere((c) => c.id == copy.id).name, 'switch-01_clone');
+  });
+
   testWidgets('New folder here creates a child of the clicked folder', (tester) async {
     await pumpTree(tester);
     final parent = ConnectionFolder(name: 'CUSTOMER-A');

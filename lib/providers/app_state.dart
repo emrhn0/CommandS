@@ -1393,7 +1393,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> cloneConnection(String id) async {
+  Future<SavedConnection> cloneConnection(String id) async {
     final source = connections.firstWhere((e) => e.id == id);
     final copy = SavedConnection(
       name: '${source.name}_clone',
@@ -1414,6 +1414,7 @@ class AppState extends ChangeNotifier {
     connections.add(copy);
     await _storage.saveConnections(connections);
     notifyListeners();
+    return copy;
   }
 
   // ---- Import / Export ----
