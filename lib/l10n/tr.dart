@@ -429,6 +429,12 @@ const turkish = <String, String>{
   'Lets a connected agent open saved SSH connections, send commands, and read terminal output.':
       'Bağlı bir ajanın kayıtlı SSH bağlantılarını açmasına, komut göndermesine ve terminal çıktısını okumasına izin verir.',
   'MCP server URL': 'MCP sunucu adresi',
+  'MCP server port': 'MCP sunucu portu',
+  'Change port': 'Portu değiştir',
+  'Enter a port from 1 to 65535.': '1 ile 65535 arasında bir port girin.',
+  'Could not use this port. It may already be in use.': 'Bu port kullanılamadı. Başka bir uygulama kullanıyor olabilir.',
+  'Could not save the MCP port.': 'MCP portu kaydedilemedi.',
+  'Update your MCP client or tunnel with the new URL after changing the port.': 'Portu değiştirdikten sonra MCP istemcinizdeki veya tünelinizdeki adresi güncelleyin.',
   'New address': 'Yeni adres',
   'Create a new address?': 'Yeni adres oluşturulsun mu?',
   'The current address stops working at once. Agents connected with it lose access until you give them the new one.':

@@ -237,6 +237,59 @@ void main() {
     server.dispose();
   });
 
+  test('MCP uses the saved port when enabled after a restart', () async {
+    final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = probe.port;
+    await probe.close();
+    final server = McpServer(_FakeGateway());
+    addTearDown(server.dispose);
+    expect(server.port, 8765);
+    for (final invalid in [0, 65536]) {
+      await expectLater(server.setPort(invalid), throwsArgumentError);
+    }
+    await server.setPort(port);
+    expect(server.enabled, isFalse);
+
+    final restored = McpServer(_FakeGateway());
+    addTearDown(restored.dispose);
+    await restored.restore();
+    expect(restored.port, port);
+    expect(restored.enabled, isFalse);
+    await restored.start();
+    expect(Uri.parse(restored.url!).port, port);
+  });
+
+  test('moving a running MCP server preserves sessions and replaces its URL', () async {
+    final occupied = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = occupied.port;
+    var released = false;
+    addTearDown(() async {
+      if (!released) await occupied.close();
+    });
+    final gateway = _ClosingGateway();
+    final server = McpServer(gateway, port: 0);
+    addTearDown(server.dispose);
+    await server.start();
+    final oldUrl = Uri.parse(server.url!);
+    const ping = {'jsonrpc': '2.0', 'id': 1, 'method': 'ping'};
+
+    await expectLater(server.setPort(port), throwsA(isA<SocketException>()));
+    expect(server.url, oldUrl.toString());
+    expect((await _request(server.url!, ping)).$1, 200);
+    expect((await SharedPreferences.getInstance()).containsKey('commands.mcp.port'), isFalse);
+
+    await occupied.close();
+    released = true;
+    await server.setPort(port);
+    final newUrl = Uri.parse(server.url!);
+    expect(newUrl.port, port);
+    expect(newUrl.path, isNot(oldUrl.path));
+    expect(gateway.closed, 0);
+    expect((await _request(newUrl.toString(), ping)).$1, 200);
+    expect((await _request(newUrl.replace(path: oldUrl.path).toString(), ping)).$1, 403);
+    await expectLater(_request(oldUrl.toString(), ping), throwsA(isA<SocketException>()));
+  });
+
   group('app gateway', () {
     late AppState app;
     late AppMcpGateway gateway;
@@ -425,8 +478,43 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('Allow MCP access'), findsOneWidget);
+    expect(find.text('MCP server port'), findsOneWidget);
     expect(find.byType(Switch), findsWidgets, reason: 'MCP access, and beta updates');
     expect(server.enabled, isFalse);
+
+    await tester.tap(find.text('Change port'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    final field = find.descendant(of: dialog, matching: find.byType(TextFormField));
+    await tester.enterText(field, '65536');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a port from 1 to 65535.'), findsOneWidget);
+    expect(server.port, 0);
+
+    final probe = (await tester.runAsync(
+      () => ServerSocket.bind(InternetAddress.loopbackIPv4, 0),
+    ))!;
+    addTearDown(probe.close);
+    final port = probe.port;
+    await tester.enterText(field, port.toString());
+    await tester.runAsync(() async {
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await server.stop();
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Could not use this port. It may already be in use.'), findsOneWidget);
+    expect(server.port, 0);
+
+    await tester.runAsync(() async {
+      await probe.close();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await server.start();
+    });
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
+    expect(find.text(port.toString()), findsOneWidget);
+    expect(find.text(server.url!), findsOneWidget);
   });
 
   testWidgets('Settings makes a new MCP address after asking', (tester) async {

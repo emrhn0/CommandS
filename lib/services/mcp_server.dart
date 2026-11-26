@@ -263,37 +263,68 @@ class _CapturedSession {
 /// A local, opt-in Streamable HTTP MCP endpoint. A random URL path is the
 /// bearer secret so a Secure MCP Tunnel can forward without custom headers.
 class McpServer extends ChangeNotifier {
-  McpServer(this.gateway, {this.port = 8765});
+  McpServer(this.gateway, {this._port = 8765});
 
   final McpGateway gateway;
-  final int port;
+  int _port;
   HttpServer? _server;
-  Future<void>? _starting;
+  Future<void>? _listenerChange;
   bool _disposed = false;
   String? _token;
   String? error;
   static const _enabledKey = 'commands.mcp.enabled';
   static const _tokenKey = 'commands.mcp.token';
+  static const _portKey = 'commands.mcp.port';
   static const _maxBody = 1024 * 1024;
 
+  int get port => _port;
   bool get enabled => _server != null;
   String? get url =>
       enabled ? 'http://127.0.0.1:${_server!.port}/mcp/$_token' : null;
 
-  Future<void> restore() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!_disposed && prefs.getBool(_enabledKey) == true) await start();
+  static bool isValidPort(int port) => port >= 1 && port <= 65535;
+
+  // Keep settings operations from binding or closing each other's listeners.
+  Future<void> _withListener(Future<void> Function() change) {
+    Future<void> run() async {
+      if (!_disposed) await change();
+    }
+
+    final next = _listenerChange?.then(
+      (_) => run(),
+      onError: (Object _, StackTrace _) => run(),
+    ) ?? run();
+    _listenerChange = next;
+    return next.whenComplete(() {
+      if (identical(_listenerChange, next)) _listenerChange = null;
+    });
   }
 
-  Future<void> start({String? testToken}) {
-    if (enabled || _disposed) return Future<void>.value();
-    return _starting ??= _start(testToken).whenComplete(() => _starting = null);
+  Future<void> restore() => _withListener(() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_disposed || enabled) return;
+    if (prefs.getBool(_enabledKey) == true) {
+      await _start(null);
+    } else {
+      _loadPort(prefs);
+      notifyListeners();
+    }
+  });
+
+  void _loadPort(SharedPreferences prefs) {
+    final saved = prefs.get(_portKey);
+    if (saved is int && isValidPort(saved)) _port = saved;
   }
+
+  Future<void> start({String? testToken}) => _withListener(() async {
+    if (!enabled) await _start(testToken);
+  });
 
   Future<void> _start(String? testToken) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (_disposed) return;
+      _loadPort(prefs);
       final saved = prefs.getString(_tokenKey);
       _token =
           testToken ??
@@ -328,8 +359,7 @@ class McpServer extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> stop() async {
-    await _starting;
+  Future<void> stop() => _withListener(() async {
     final server = _server;
     _server = null;
     await server?.close(force: true);
@@ -337,19 +367,71 @@ class McpServer extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_enabledKey, false);
     if (!_disposed) notifyListeners();
-  }
+  });
+
+  /// Check the new port before releasing the old listener. The terminal
+  /// sessions belong to the gateway and survive the switch.
+  Future<void> setPort(int port) => _withListener(() async {
+    if (!isValidPort(port)) throw ArgumentError.value(port, 'port');
+    if (_port == port) return;
+    final previous = _server;
+    HttpServer? replacement;
+    try {
+      final listener = replacement = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        port,
+      );
+      if (_disposed) return;
+      final prefs = await SharedPreferences.getInstance();
+      // A client using the old port might send its URL to the next listener
+      // there. Issue a fresh secret before publishing the new address.
+      final token = _newToken();
+      final oldToken = prefs.getString(_tokenKey);
+      final oldPort = prefs.get(_portKey);
+      try {
+        if (!await prefs.setString(_tokenKey, token) ||
+            !await prefs.setInt(_portKey, port)) {
+          throw StateError('Could not persist the MCP port.');
+        }
+      } catch (_) {
+        if (oldToken == null) {
+          await prefs.remove(_tokenKey);
+        } else {
+          await prefs.setString(_tokenKey, oldToken);
+        }
+        if (oldPort is int) {
+          await prefs.setInt(_portKey, oldPort);
+        } else {
+          await prefs.remove(_portKey);
+        }
+        rethrow;
+      }
+      if (_disposed) return;
+      _port = port;
+      _token = token;
+      error = null;
+      if (previous != null) {
+        _server = listener;
+        listener.listen(_handle);
+        replacement = null;
+        await previous.close(force: true);
+      }
+    } finally {
+      await replacement?.close(force: true);
+    }
+    if (!_disposed) notifyListeners();
+  });
 
   /// Gives the server a new secret path. The old address stops working at
   /// once and sessions opened through it are let go; the tabs stay open.
-  Future<void> regenerateUrl() async {
-    await _starting;
+  Future<void> regenerateUrl() => _withListener(() async {
     final prefs = await SharedPreferences.getInstance();
     if (_disposed) return;
     _token = _newToken();
     gateway.close();
     await prefs.setString(_tokenKey, _token!);
     if (!_disposed) notifyListeners();
-  }
+  });
 
   static String _newToken() {
     final random = Random.secure();
