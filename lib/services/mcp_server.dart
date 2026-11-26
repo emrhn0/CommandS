@@ -22,7 +22,7 @@ class McpApproval {
 }
 
 /// Only saved SSH connections the user allowed one by one are exposed, each
-/// with a stable id (`DEVICE-01`...), its name, host address, port and device
+/// with a stable id (`a1`...), its name, host address, port and device
 /// type and username, so the agent can tell which device is which and log in
 /// context is clear. The password is never in the tool results. On network devices,
 /// show and display commands run at once; every other command waits for the
@@ -50,6 +50,8 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
   /// the same device.
   final Map<String, int> _allowed = {};
   static const _allowedKey = 'commands.mcp.allowed';
+  static const _lastAliasKey = 'commands.mcp.lastAlias';
+  int _lastAlias = 0;
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -59,37 +61,57 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
       final decoded = jsonDecode(raw);
       if (decoded is Map) {
         decoded.forEach((k, v) {
-          if (k is String && v is int) _allowed[k] = v;
+          if (k is String && v is int && v > 0) _allowed[k] = v;
         });
       }
     }
+    // Older settings only have the map. Once an ID has been issued, keep
+    // the counter even if that connection's permission is later removed.
+    _lastAlias = _allowed.values.fold(prefs.getInt(_lastAliasKey) ?? 0, max);
     notifyListeners();
   }
 
   bool isAllowed(String connectionId) => _allowed.containsKey(connectionId);
 
-  /// The id (`DEVICE-01`...) an allowed connection is shown to the agent under.
+  /// The id (`a1`...) an allowed connection is shown to the agent under.
   String? aliasOf(String connectionId) {
     final n = _allowed[connectionId];
-    return n == null ? null : 'DEVICE-${n.toString().padLeft(2, '0')}';
+    return n == null ? null : _shortAlias(n);
   }
+
+  static String _shortAlias(int number) {
+    // Letter groups go a, b, ..., z, aa, ab, ...; the last digit is decimal.
+    var group = number ~/ 10 + 1;
+    var letters = '';
+    while (group > 0) {
+      group--;
+      letters = String.fromCharCode(0x61 + group % 26) + letters;
+      group ~/= 26;
+    }
+    return '$letters${number % 10}';
+  }
+
+  static String _legacyAlias(int number) => 'DEVICE-${number.toString().padLeft(2, '0')}';
 
   Future<void> setAllowed(String connectionId, bool allowed) => setAllowedAll([connectionId], allowed);
 
   /// Allows or removes several connections at once, as when a whole folder is
-  /// ticked in Settings; saved once. New ones get the next free numbers in
-  /// the order given.
+  /// ticked in Settings. New ones get the next unused numbers in the order given.
   Future<void> setAllowedAll(Iterable<String> connectionIds, bool allowed) async {
     for (final id in connectionIds) {
       if (allowed) {
-        final next = _allowed.values.fold(0, max) + 1;
-        _allowed.putIfAbsent(id, () => next);
+        _allowed.putIfAbsent(id, () => ++_lastAlias);
       } else {
         _allowed.remove(id);
       }
     }
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
+    // Persist the counter first. A failed second write may skip IDs, but a
+    // later grant cannot hand out the same number to another connection.
+    if (!await prefs.setInt(_lastAliasKey, _lastAlias)) {
+      throw StateError('Could not save the MCP connection ID counter.');
+    }
     await prefs.setString(_allowedKey, jsonEncode(_allowed));
   }
 
@@ -100,7 +122,8 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
 
   SavedConnection _byAlias(String alias) {
     for (final c in allowedConnections) {
-      if (aliasOf(c.id) == alias) return c;
+      final number = _allowed[c.id]!;
+      if (_shortAlias(number) == alias || _legacyAlias(number) == alias) return c;
     }
     throw ArgumentError('Connection not found, or not allowed for this agent.');
   }

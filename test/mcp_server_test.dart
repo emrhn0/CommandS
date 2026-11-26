@@ -280,7 +280,7 @@ void main() {
       final listed = gateway.listConnections();
       expect(listed, [
         {
-          'id': 'DEVICE-01',
+          'id': 'a1',
           'name': 'CUSTOMER-B FIREWALL',
           'host': '192.0.2.2',
           'port': 22,
@@ -301,6 +301,7 @@ void main() {
       expect(() => gateway.openConnection('c2'), throwsArgumentError);
       expect(() => gateway.openConnection('c1'), throwsArgumentError, reason: 'real ids are not names it knows');
       expect(() => gateway.openConnection('DEVICE-02'), throwsArgumentError);
+      expect(() => gateway.openConnection('a2'), throwsArgumentError);
     });
 
     test('a tab the agent opened is marked as such; the user tab is not', () async {
@@ -309,7 +310,7 @@ void main() {
       final own = app.tabs.last.id;
       var notified = 0;
       gateway.addListener(() => notified++);
-      final session = await gateway.openConnection('DEVICE-01');
+      final session = await gateway.openConnection('a1');
       expect(gateway.isAgentTab(session), isTrue);
       expect(gateway.isAgentTab(own), isFalse);
       expect(notified, greaterThan(0), reason: 'the tab bar redraws to show the mark');
@@ -326,7 +327,7 @@ void main() {
       await expectLater(gateway.sendCommand(session, 'reload'), throwsStateError);
       expect(sent, isEmpty);
       expect(asked.single.connectionName, 'CUSTOMER-A SWITCH', reason: 'the real name is shown to the user only');
-      expect(asked.single.alias, 'DEVICE-01');
+      expect(asked.single.alias, 'a1');
 
       answer = true;
       await gateway.sendCommand(session, 'show version');
@@ -373,10 +374,38 @@ void main() {
       await gateway.setAllowed('c1', true);
       await gateway.setAllowed('c2', true);
       await gateway.setAllowed('c1', false);
-      expect(gateway.aliasOf('c2'), 'DEVICE-02');
+      expect(gateway.aliasOf('c2'), 'a2');
       final reloaded = AppMcpGateway(app);
       await reloaded.load();
-      expect(reloaded.aliasOf('c2'), 'DEVICE-02');
+      expect(reloaded.aliasOf('c2'), 'a2');
+    });
+
+    test('existing permissions support both short and legacy IDs', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('commands.mcp.allowed', '{"c1":4,"c2":100}');
+      await gateway.load();
+
+      expect(gateway.listConnections().map((entry) => entry['id']), ['a4', 'k0']);
+      await gateway.openConnection('a4');
+      expect(app.tabs.last.connectionId, 'c1');
+      await gateway.openConnection('DEVICE-100');
+      expect(app.tabs.last.connectionId, 'c2');
+    });
+
+    test('a revoked ID is not reassigned after a restart', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('commands.mcp.allowed', '{"c1":4,"c2":100}');
+      await gateway.load();
+      await gateway.setAllowed('c2', false);
+
+      final reloaded = AppMcpGateway(app);
+      addTearDown(reloaded.dispose);
+      await reloaded.load();
+      app.connections.add(SavedConnection(id: 'c3', name: 'DEVICE-03', host: '192.0.2.3'));
+      await reloaded.setAllowed('c3', true);
+      expect(reloaded.aliasOf('c3'), 'k1');
+      await expectLater(reloaded.openConnection('k0'), throwsArgumentError);
+      await expectLater(reloaded.openConnection('DEVICE-100'), throwsArgumentError);
     });
   });
 
@@ -521,7 +550,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(gateway.allowedConnections.map((c) => c.name).toSet(), {'SWITCH-01', 'SWITCH-02', 'SWITCH-03'});
     expect(find.text('3 of 3 allowed'), findsOneWidget);
-    // The internal MCP id (DEVICE-01...) is not shown next to a connection:
+    // The internal MCP id is not shown next to a connection:
     // the checkbox already says it is allowed, and the agent is sent the
     // real name now, so the id would only confuse.
     expect(find.text(gateway.aliasOf(app.connections.first.id)!), findsNothing);
@@ -558,13 +587,28 @@ void main() {
     final gateway = AppMcpGateway(app);
     await gateway.setAllowed('a', true);
     await gateway.setAllowedAll(['b', 'a', 'c'], true);
-    expect(gateway.aliasOf('a'), 'DEVICE-01');
-    expect(gateway.aliasOf('b'), 'DEVICE-02');
-    expect(gateway.aliasOf('c'), 'DEVICE-03');
+    expect(gateway.aliasOf('a'), 'a1');
+    expect(gateway.aliasOf('b'), 'a2');
+    expect(gateway.aliasOf('c'), 'a3');
     await gateway.setAllowedAll(['a', 'c'], false);
     expect(gateway.isAllowed('a'), isFalse);
-    expect(gateway.aliasOf('b'), 'DEVICE-02');
+    expect(gateway.aliasOf('b'), 'a2');
     final saved = jsonDecode((await SharedPreferences.getInstance()).getString('commands.mcp.allowed')!);
     expect(saved, {'b': 2});
+  });
+
+  test('9,999 granted connections get distinct short IDs', () async {
+    final app = AppState();
+    await app.ready;
+    addTearDown(app.dispose);
+    final gateway = AppMcpGateway(app);
+    addTearDown(gateway.dispose);
+    final keys = List.generate(9999, (i) => 'connection-${i + 1}');
+    await gateway.setAllowedAll(keys, true);
+
+    final ids = keys.map((key) => gateway.aliasOf(key)!).toSet();
+    expect(ids, hasLength(9999));
+    expect(ids.every(RegExp(r'^[a-z]{1,3}[0-9]$').hasMatch), isTrue);
+    expect(gateway.aliasOf(keys.last), 'all9');
   });
 }

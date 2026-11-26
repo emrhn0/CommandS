@@ -538,10 +538,7 @@ class _McpConnectionPickerState extends State<_McpConnectionPicker> {
         ),
         icon: kind == null ? Icon(Icons.terminal, size: 15, color: palette.textDim) : DeviceIcon(kind, size: 15),
         label: c.name,
-        // The checkbox already says whether it is allowed; the internal MCP
-        // id (DEVICE-01...) is not shown here, since it means nothing to the
-        // user and once meant the agent saw no other name -- no longer true
-        // now that the agent is sent the real name, host and username.
+        // The checkbox shows access, and both sides see the connection name.
         onTap: () => gateway.setAllowed(c.id, !allowed),
       ));
     }

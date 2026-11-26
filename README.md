@@ -103,6 +103,9 @@ Cursor, or any app that supports MCP servers over HTTP.
 - Off by default, and reachable only from your own computer.
 - The agent sees each allowed connection's name, address, port and
   username, never its password.
+- Clients use the short ID returned by `list_connections` (such as `a4`)
+  to open a session. `open_connection` also accepts previously issued
+  `DEVICE-…` IDs for connections that are still allowed.
 - On network devices, `show` and `display` commands run at once. Every
   other command asks you first.
 - Terminal output is sent to the agent as it is.
