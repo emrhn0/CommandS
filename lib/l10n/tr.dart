@@ -16,6 +16,8 @@ const turkish = <String, String>{
   'Port': 'Port',
   'Username': 'Kullanıcı adı',
   'Password': 'Şifre',
+  'Password starts with a space.': 'Şifrenin başında boşluk var.',
+  'Password ends with a space.': 'Şifrenin sonunda boşluk var.',
   'Domain': 'Etki alanı',
   'Optional': 'İsteğe bağlı',
   'Connect': 'Bağlan',

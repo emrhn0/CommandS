@@ -15,6 +15,8 @@ const german = <String, String>{
   'Port': 'Port',
   'Username': 'Benutzername',
   'Password': 'Passwort',
+  'Password starts with a space.': 'Das Passwort beginnt mit einem Leerzeichen.',
+  'Password ends with a space.': 'Das Passwort endet mit einem Leerzeichen.',
   'Domain': 'Domäne',
   'Optional': 'Optional',
   'Connect': 'Verbinden',
