@@ -485,7 +485,7 @@ class _RecentRowState extends State<_RecentRow> {
     final conn = widget.conn;
     final palette = widget.palette;
     final accent = widget.accent;
-    final defaultPort = conn.protocol == ConnectionProtocol.rdp ? 3389 : 22;
+    final defaultPort = conn.protocol.defaultPort;
     final address = conn.port == defaultPort ? conn.host : '${conn.host}:${conn.port}';
     final host = conn.host.toLowerCase();
     final showAddress = widget.separateAddress || !conn.name.toLowerCase().contains(host);
@@ -533,7 +533,7 @@ class _RecentRowState extends State<_RecentRow> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
-                  conn.protocol == ConnectionProtocol.rdp ? 'RDP' : 'SSH',
+                  conn.protocol.label,
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w600,

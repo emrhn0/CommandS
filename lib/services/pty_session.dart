@@ -8,6 +8,7 @@ import 'package:xterm/xterm.dart';
 
 import '../models/models.dart';
 import '../app_version.dart';
+import '../l10n/strings.dart';
 import 'device_detect.dart';
 import 'enable_prompt_watcher.dart';
 import 'host_keys.dart';
@@ -30,8 +31,8 @@ class UnsafeTargetError implements Exception {
   String toString() => message;
 }
 
-/// One SSH session, run as a real client process inside a pseudo-terminal
-/// (ConPTY on Windows, forkpty elsewhere) and rendered in our own xterm view.
+/// One SSH or Telnet session, run by a real client and rendered in xterm.
+/// SSH uses a pseudo-terminal (ConPTY on Windows, forkpty elsewhere).
 ///
 /// The client is OpenSSH: the system `ssh` on macOS/Linux, and the one
 /// Windows ships (System32\OpenSSH) on Windows. Windows used to drive PuTTY's
@@ -51,6 +52,7 @@ class PtySessionController implements TerminalSessionController {
   PtySessionController({
     required this.host,
     required this.port,
+    this.protocol = ConnectionProtocol.ssh,
     String username = '',
     String password = '',
     String enablePassword = '',
@@ -76,6 +78,8 @@ class PtySessionController implements TerminalSessionController {
   @override
   final String host;
   final int port;
+  final ConnectionProtocol protocol;
+  bool get isSsh => protocol == ConnectionProtocol.ssh;
   final bool recordByDefault;
   @override
   String? tabTitle;
@@ -93,6 +97,7 @@ class PtySessionController implements TerminalSessionController {
     name: tabTitle ?? host,
     host: host,
     port: port,
+    protocol: protocol,
     username: _username,
     rememberPassword: _password.isNotEmpty,
     password: _password,
@@ -103,6 +108,7 @@ class PtySessionController implements TerminalSessionController {
   @override
   late final Terminal terminal;
   Pty? _pty;
+  Process? _telnetProcess;
   Directory? _scratchDir;
 
   /// Bumped on every start, so callbacks of a session that has been replaced
@@ -376,6 +382,8 @@ class PtySessionController implements TerminalSessionController {
     final override = writeOverride;
     if (override != null) {
       override(data);
+    } else if (_telnetProcess case final process?) {
+      process.stdin.add(utf8.encode(data));
     } else {
       _pty?.write(Uint8List.fromList(utf8.encode(data)));
     }
@@ -617,6 +625,10 @@ class PtySessionController implements TerminalSessionController {
       if (!_safeHost.hasMatch(host)) {
         throw UnsafeTargetError('Refusing to connect: "$host" is not a valid host name or address.');
       }
+      if (protocol == ConnectionProtocol.telnet) {
+        await _startTelnet(generation);
+        return;
+      }
       final ssh = Platform.isWindows ? findWindowsSsh() : _sshExecutable;
       if (ssh != null) {
         // Reach the server first, as PuTTY does before it asks anything: an
@@ -651,10 +663,82 @@ class PtySessionController implements TerminalSessionController {
         await _startPlink(generation);
       }
     } on UnsafeTargetError catch (e) {
-      _fail(e.message);
+      if (generation == _generation) _fail(e.message);
     } catch (e) {
-      _fail(e.toString());
+      if (generation == _generation) _fail(e.toString());
     }
+  }
+
+  Future<void> _startTelnet(int generation) async {
+    final address = host.startsWith('[') && host.endsWith(']')
+        ? host.substring(1, host.length - 1)
+        : host;
+    // A target passed as an argument cannot contain an option or an invalid port.
+    if (address.isEmpty || address.startsWith('-') || port < 1 || port > 65535) {
+      _fail(tr('Enter a valid Telnet host and port.'));
+      return;
+    }
+    final windows = Platform.isWindows;
+    final executable = windows ? findPlink() : _findUnixTelnet();
+    if (executable == null) {
+      _fail(windows
+          ? tr('Telnet client not found. Install PuTTY or use the packaged Windows build.')
+          : tr('Telnet client not found. Install a telnet command-line client.'));
+      return;
+    }
+    // No SSH probe or saved credentials. The remote Telnet prompt owns login.
+    terminal.write('${tr('Telnet is not encrypted.')}\r\n');
+    if (windows) {
+      // Plink reads console key events through ConPTY and drops navigation
+      // keys. Pipes keep the terminal's escape sequences intact.
+      final process = await Process.start(executable, ['-telnet', '-P', '$port', address]);
+      if (generation != _generation) {
+        process.kill();
+        return;
+      }
+      _telnetProcess = process;
+      // The exit status reports a broken connection. Handle a pending pipe
+      // write becoming invalid before that status comes in.
+      unawaited(process.stdin.done.then<void>((_) {}, onError: (Object _) {}));
+      final stderrDone = process.stderr.transform(const Utf8Decoder(allowMalformed: true)).forEach((text) {
+        if (generation == _generation) _queueOutput(text);
+      });
+      _sniffStart();
+      _attachClient(
+        generation,
+        process.stdout,
+        process.exitCode.then((code) async {
+          await stderrDone;
+          return code;
+        }),
+        cleanUpEarly: false,
+        waitForOutput: true,
+      );
+      return;
+    }
+    _sniffStart();
+    _pty = Pty.start(
+      executable,
+      arguments: [address, '$port'],
+      environment: Map<String, String>.from(Platform.environment),
+      columns: terminal.viewWidth,
+      rows: terminal.viewHeight,
+    );
+    _attachPty(generation, cleanUpEarly: false);
+  }
+
+  static String? _findUnixTelnet() {
+    // A GUI launched from Finder need not inherit the shell's PATH.
+    final dirs = [
+      '/usr/bin', '/opt/homebrew/bin', '/usr/local/bin',
+      ...(Platform.environment['PATH'] ?? '').split(':'),
+    ];
+    for (final dir in dirs) {
+      if (dir.isEmpty || !dir.startsWith('/')) continue;
+      final path = '$dir/telnet';
+      if (File(path).existsSync()) return path;
+    }
+    return null;
   }
 
   static const _reachTimeout = Duration(seconds: 10);
@@ -1064,6 +1148,7 @@ class PtySessionController implements TerminalSessionController {
     }
     if (!_outputController.isClosed) _outputController.add(text);
     _sniffAdd(text);
+    if (!isSsh) return;
     _watchLogin(text);
     _watchSudo(text);
     _watchEnable(text);
@@ -1076,17 +1161,33 @@ class PtySessionController implements TerminalSessionController {
     _flush();
   }
 
-  void _attachPty(int generation, {required bool cleanUpEarly}) {
+  void _queueOutput(String text) {
+    _pending.write(text);
+    _flushTimer ??= Timer(_flushEvery, _flush);
+  }
+
+  void _attachPty(int generation, {required bool cleanUpEarly}) =>
+      _attachClient(generation, _pty!.output, _pty!.exitCode, cleanUpEarly: cleanUpEarly);
+
+  void _attachClient(
+    int generation,
+    Stream<List<int>> output,
+    Future<int> exitCode, {
+    required bool cleanUpEarly,
+    bool waitForOutput = false,
+  }) {
     // Decoded as one stream: a UTF-8 character split across two reads (any
     // Turkish letter can be) used to come out as two replacement marks.
     final decoder = const Utf8Decoder(allowMalformed: true)
         .startChunkedConversion(StringConversionSink.fromStringSink(_pending));
-    _pty!.output.listen(
+    final outputDone = waitForOutput ? Completer<void>() : null;
+    output.listen(
       (data) {
         if (generation != _generation) return;
         decoder.add(data);
         _flushTimer ??= Timer(_flushEvery, _flush);
       },
+      onDone: outputDone?.complete,
       onError: (Object e) {
         if (generation != _generation) return;
         lastError = e.toString();
@@ -1097,8 +1198,10 @@ class PtySessionController implements TerminalSessionController {
     );
 
     unawaited(
-      _pty!.exitCode.then((code) {
+      exitCode.then((code) async {
+        if (outputDone != null) await outputDone.future;
         if (generation != _generation) return;
+        _telnetProcess = null;
         decoder.close();
         _flushTimer?.cancel();
         _flush();
@@ -1133,8 +1236,10 @@ class PtySessionController implements TerminalSessionController {
     dismissEnablePrompt();
     try {
       _pty?.kill();
+      _telnetProcess?.kill();
     } catch (_) {}
     _pty = null;
+    _telnetProcess = null;
     _cleanUpScratch();
   }
 

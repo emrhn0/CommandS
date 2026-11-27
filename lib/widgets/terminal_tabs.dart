@@ -761,7 +761,7 @@ Future<void> _showTabMenu(BuildContext context, AppState app, OpenTab tab, Offse
       if (tab.controller is PtySessionController)
         const MenuAction('duplicate', 'Duplicate', Icons.copy_all_outlined),
       if (canSendCtrlAltDel(tab)) const MenuAction('ctrlaltdel', 'Send Ctrl+Alt+Del', Icons.keyboard),
-      if (tab.controller case final PtySessionController ssh)
+      if (tab.controller case final PtySessionController ssh when ssh.isSsh)
         ssh.sftpOpen.value
             ? const MenuAction('sftp', 'Close SFTP files', Icons.folder_off_rounded)
             : const MenuAction('sftp', 'SFTP files', Icons.folder_rounded),
@@ -1939,7 +1939,7 @@ class _TerminalPaneState extends State<_TerminalPane> {
       ),
     ]);
     final session = widget.controller;
-    if (session is! PtySessionController) return searchable;
+    if (session is! PtySessionController || !session.isSsh) return searchable;
     final terminalWithOffer = Stack(children: [
       Positioned.fill(child: searchable),
       Positioned(

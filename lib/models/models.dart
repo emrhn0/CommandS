@@ -2,7 +2,18 @@ import 'package:uuid/uuid.dart';
 
 const _uuid = Uuid();
 
-enum ConnectionProtocol { ssh, rdp }
+enum ConnectionProtocol {
+  ssh('SSH', 22),
+  rdp('RDP', 3389),
+  telnet('Telnet', 23);
+
+  const ConnectionProtocol(this.label, this.defaultPort);
+  final String label;
+  final int defaultPort;
+
+  static ConnectionProtocol fromName(String? name) =>
+      values.firstWhere((protocol) => protocol.name == name, orElse: () => ssh);
+}
 
 /// What is at the other end of a connection, shown as its maker's logo in
 /// the connection list. Learnt from what the device prints when a session
@@ -126,7 +137,7 @@ class SavedConnection {
     String? id,
     required this.name,
     required this.host,
-    this.port = 22,
+    int? port,
     this.username = '',
     this.rememberPassword = false,
     this.password = '',
@@ -142,7 +153,8 @@ class SavedConnection {
     this.autoNamePending = false,
     this.credentialProfileId,
     this.answerLoginQuestionYes = false,
-  }) : id = id ?? _uuid.v4();
+  }) : id = id ?? _uuid.v4(),
+       port = port ?? protocol.defaultPort;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -170,16 +182,13 @@ class SavedConnection {
         id: json['id'] as String,
         name: json['name'] as String,
         host: json['host'] as String,
-        port: (json['port'] as num?)?.toInt() ?? 22,
+        port: (json['port'] as num?)?.toInt(),
         username: json['username'] as String? ?? '',
         rememberPassword: json['rememberPassword'] as bool? ?? false,
         password: json['password'] as String? ?? '',
         enablePassword: json['enablePassword'] as String? ?? '',
         folderId: json['folderId'] as String?,
-        protocol: ConnectionProtocol.values.firstWhere(
-          (p) => p.name == (json['protocol'] as String? ?? 'ssh'),
-          orElse: () => ConnectionProtocol.ssh,
-        ),
+        protocol: ConnectionProtocol.fromName(json['protocol'] as String?),
         domain: json['domain'] as String?,
         rdpClipboard: json['rdpClipboard'] as bool? ?? true,
         rdpWallpaper: json['rdpWallpaper'] as bool? ?? false,

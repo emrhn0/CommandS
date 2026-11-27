@@ -184,6 +184,10 @@ void main() {
       'folder_path': [],
       'connections': [row, {...row, 'password': 'example-password'}],
     }), throwsArgumentError);
+    await expectLater(catalog.createConnections({
+      'folder_path': [],
+      'connections': [{...row, 'protocol': 'telnet'}],
+    }), throwsArgumentError);
     expect(approvals, 0);
     await expectLater(catalog.createFolder({'path': ['CUSTOMER-A']}), throwsStateError);
     await expectLater(catalog.createConnections({

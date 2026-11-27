@@ -159,6 +159,14 @@ const german = <String, String>{
   'Delete folder': 'Ordner löschen',
   'Edit…': 'Bearbeiten…',
   'Clone': 'Klonen',
+  'Telnet is not encrypted.': 'Telnet ist unverschlüsselt.',
+  'Telnet is not encrypted. Enter login details in the terminal.':
+      'Telnet ist unverschlüsselt. Gib die Anmeldedaten im Terminal ein.',
+  'Enter a valid Telnet host and port.': 'Gib einen gültigen Telnet-Host und Port ein.',
+  'Telnet client not found. Install PuTTY or use the packaged Windows build.':
+      'Kein Telnet-Client gefunden. Installiere PuTTY oder nutze das CommandS-Paket für Windows.',
+  'Telnet client not found. Install a telnet command-line client.':
+      'Kein Telnet-Client gefunden. Installiere einen Telnet-Kommandozeilenclient.',
   'Move to folder…': 'In Ordner verschieben…',
   'Open layout': 'Layout öffnen',
   'Delete layout': 'Layout löschen',

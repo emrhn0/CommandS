@@ -143,9 +143,12 @@ class McpCatalog {
       final host = _text(row['host'], 'host', max: 253);
       if (!_validHost(host)) throw ArgumentError('host must be a hostname or IP address.');
       final protocolName = row.containsKey('protocol') ? row['protocol'] : 'ssh';
-      final protocol = ConnectionProtocol.values.where((p) => p.name == protocolName).firstOrNull;
+      // Only what the tool schema offers; Telnet is not saved through MCP.
+      final protocol = const [ConnectionProtocol.ssh, ConnectionProtocol.rdp]
+          .where((p) => p.name == protocolName)
+          .firstOrNull;
       if (protocol == null) throw ArgumentError('protocol must be ssh or rdp.');
-      final port = row.containsKey('port') ? row['port'] : (protocol == ConnectionProtocol.ssh ? 22 : 3389);
+      final port = row.containsKey('port') ? row['port'] : protocol.defaultPort;
       if (port is! int || port < 1 || port > 65535) {
         throw ArgumentError('port must be an integer from 1 to 65535.');
       }

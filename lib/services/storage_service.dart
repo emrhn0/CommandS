@@ -372,17 +372,18 @@ class StorageService {
       );
     }).toList();
     final connections = doc.findAllElements('Connection').map((e) {
+      final protocol = ConnectionProtocol.fromName(e.getAttribute('protocol'));
       return SavedConnection(
         id: e.getAttribute('id'),
         name: e.getAttribute('name') ?? 'Unnamed',
         host: e.getAttribute('host') ?? '',
-        port: int.tryParse(e.getAttribute('port') ?? '') ?? 22,
+        port: int.tryParse(e.getAttribute('port') ?? ''),
         username: e.getAttribute('username') ?? '',
         password: e.getAttribute('password') ?? '',
         enablePassword: e.getAttribute('enablePassword') ?? '',
         rememberPassword: (e.getAttribute('password') ?? '').isNotEmpty,
         folderId: e.getAttribute('folderId'),
-        protocol: e.getAttribute('protocol') == 'rdp' ? ConnectionProtocol.rdp : ConnectionProtocol.ssh,
+        protocol: protocol,
         domain: e.getAttribute('domain'),
         rdpClipboard: e.getAttribute('rdpClipboard') != 'false',
         rdpWallpaper: e.getAttribute('rdpWallpaper') == 'true',
@@ -579,10 +580,14 @@ class StorageService {
 
     ConnectionProtocol protocolOf(List<String> fields) {
       if (iProtocol != -1) {
-        return field(fields, iProtocol).trim().toUpperCase().contains('RDP') ? ConnectionProtocol.rdp : ConnectionProtocol.ssh;
+        final protocol = field(fields, iProtocol).trim().toLowerCase();
+        if (protocol.contains('rdp')) return ConnectionProtocol.rdp;
+        if (protocol.contains('telnet')) return ConnectionProtocol.telnet;
+        return ConnectionProtocol.ssh;
       }
       if (iConnType != -1) {
         final t = field(fields, iConnType).trim().toLowerCase();
+        if (t.contains('telnet')) return ConnectionProtocol.telnet;
         if (t.contains('rdp') || t.contains('masaüstü') || t.contains('masaustu') || t.contains('desktop')) {
           return ConnectionProtocol.rdp;
         }
@@ -627,7 +632,7 @@ class StorageService {
         connections.add(SavedConnection(
           name: field(fields, iName).trim().isEmpty ? host : field(fields, iName).trim(),
           host: host,
-          port: int.tryParse(field(fields, iPort).trim()) ?? (protocol == ConnectionProtocol.rdp ? 3389 : 22),
+          port: int.tryParse(field(fields, iPort).trim()),
           username: field(fields, iUser).trim(),
           rememberPassword: password.isNotEmpty,
           password: password,
@@ -673,7 +678,7 @@ class StorageService {
       connections.add(SavedConnection(
         name: field(fields, iName).trim().isEmpty ? host : field(fields, iName).trim(),
         host: host,
-        port: int.tryParse(field(fields, iPort).trim()) ?? (protocol == ConnectionProtocol.rdp ? 3389 : 22),
+        port: int.tryParse(field(fields, iPort).trim()),
         username: field(fields, iUser).trim(),
         rememberPassword: password.isNotEmpty,
         password: password,
