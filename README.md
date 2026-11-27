@@ -92,7 +92,7 @@ CommandS can let an AI assistant work in your SSH sessions: Claude, ChatGPT,
 Cursor, or any app that supports MCP servers over HTTP.
 
 1. Open **Settings > MCP integration** and turn it on.
-2. Tick the connections the agent may use. Nothing else is shown to it.
+2. Tick the connections the agent may use for SSH sessions.
 3. Add the URL shown there to your AI app as an MCP server. For example, in
    Claude Code:
 
@@ -111,6 +111,12 @@ Cursor, or any app that supports MCP servers over HTTP.
 - On network devices, `show` and `display` commands run at once. Every
   other command asks you first.
 - Terminal output is sent to the agent as it is.
+- An agent can save a table of connections with `create_connections`. Give it
+  the destination as a list of folder names, such as `["CUSTOMER-A", "Switch"]`.
+  It can use `create_folder` to add the missing folder under an existing
+  parent. Review and confirm each request in CommandS. Saved entries keep
+  their existing SSH access settings, and new entries start without agent
+  access. Enter any passwords in CommandS.
 - Keep the URL private: any program on your computer that has it can use
   the allowed connections. **New address** in Settings replaces it.
 

@@ -785,8 +785,7 @@ class AppState extends ChangeNotifier {
           changed = true;
         }
       }
-      final key =
-          '${c.host.trim().toLowerCase()}\u0000${c.port}\u0000${c.protocol.name}\u0000${c.username.trim().toLowerCase()}';
+      final key = connectionIdentity(c);
       final existing = keptConnections[key];
       if (existing == null) {
         keptConnections[key] = c;
@@ -862,8 +861,15 @@ class AppState extends ChangeNotifier {
   // ---- Folders ----
 
   Future<void> addFolder(String name, {String? parentId, FolderKind? kind}) async {
-    folders.add(ConnectionFolder(name: name, parentId: parentId, kind: kind));
-    await _storage.saveFolders(folders);
+    final folder = ConnectionFolder(name: name, parentId: parentId, kind: kind);
+    folders.add(folder);
+    try {
+      await _storage.saveFolders(folders);
+    } catch (_) {
+      folders.remove(folder);
+      notifyListeners();
+      rethrow;
+    }
     notifyListeners();
   }
 
@@ -1364,6 +1370,23 @@ class AppState extends ChangeNotifier {
   }
 
   // ---- Connections ----
+
+  /// The same identity used when cleaning up old duplicate connections.
+  static String connectionIdentity(SavedConnection c) =>
+      '${c.host.trim().toLowerCase()}\u0000${c.port}\u0000${c.protocol.name}\u0000${c.username.trim().toLowerCase()}';
+
+  /// Saves a batch of new connections with a single write.
+  Future<void> addConnections(List<SavedConnection> entries) async {
+    connections.addAll(entries);
+    try {
+      await _storage.saveConnections(connections);
+    } catch (_) {
+      connections.removeWhere(entries.contains);
+      notifyListeners();
+      rethrow;
+    }
+    notifyListeners();
+  }
 
   Future<void> upsertConnection(SavedConnection conn) async {
     final old = connections.where((e) => e.id == conn.id).firstOrNull;

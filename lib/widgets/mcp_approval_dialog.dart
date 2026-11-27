@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../l10n/strings.dart';
+import '../services/mcp_catalog.dart';
 import '../services/mcp_server.dart';
 
 /// How long a request waits for an answer before it counts as a no.
@@ -21,6 +22,58 @@ Future<bool> askMcpApproval(GlobalKey<NavigatorState> navigator, McpApproval app
     builder: (_) => McpApprovalDialog(approval: approval),
   ).timeout(mcpApprovalTimeout, onTimeout: () {
     navigator.currentState?.maybePop(false);
+    return false;
+  });
+  return answer ?? false;
+}
+
+Future<bool> askMcpCatalogApproval(
+  GlobalKey<NavigatorState> navigator,
+  McpCatalogApproval approval,
+) async {
+  final state = navigator.currentState;
+  if (state == null) return false;
+  unawaited(windowManager.focus().catchError((Object _) {}));
+  final route = DialogRoute<bool>(
+    context: state.context,
+    barrierDismissible: false,
+    builder: (context) {
+      final addingFolder = approval.connections.isEmpty;
+      return AlertDialog(
+        title: Text(addingFolder ? tr('Create this folder?') : tr('Save these connections?')),
+        scrollable: true,
+        content: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(tr('Requested by the connected MCP agent.')),
+              const SizedBox(height: 12),
+              Text(tr('Folder')),
+              SelectableText(approval.path.isEmpty ? tr('No folder (top level)') : approval.path.join(' › ')),
+              if (approval.kind case final kind?) Text(tr(kind.label)),
+              for (final connection in approval.connections)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SelectableText(connection),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text(tr('Cancel'))),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(addingFolder ? tr('Create') : tr('Save')),
+          ),
+        ],
+      );
+    },
+  );
+  final answer = await state.push(route).timeout(mcpApprovalTimeout, onTimeout: () {
+    // Remove only this request, even if a different dialog was opened later.
+    if (route.isActive) state.removeRoute(route);
     return false;
   });
   return answer ?? false;

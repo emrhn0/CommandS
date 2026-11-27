@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../app_version.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import 'mcp_catalog.dart';
 import 'mcp_command_policy.dart';
 import 'pty_session.dart';
 
@@ -31,15 +32,25 @@ abstract class McpGateway {
   List<Map<String, Object>> listConnections();
   List<Map<String, Object>> listSessions();
   Future<String> openConnection(String connectionId, {bool newSession = false});
+  Future<Map<String, Object>> createFolder(Map<String, dynamic> args);
+  Future<Map<String, Object>> createConnections(Map<String, dynamic> args);
   Future<int> sendCommand(String sessionId, String command);
   Map<String, Object?> readOutput(String sessionId, int cursor);
   void close();
 }
 
 class AppMcpGateway extends ChangeNotifier implements McpGateway {
-  AppMcpGateway(this.app, {this.approve});
+  AppMcpGateway(this.app, {this.approve, Future<bool> Function(McpCatalogApproval)? approveCatalog})
+      : _catalog = McpCatalog(app, approveCatalog);
 
   final AppState app;
+  final McpCatalog _catalog;
+
+  @override
+  Future<Map<String, Object>> createFolder(Map<String, dynamic> args) => _catalog.createFolder(args);
+
+  @override
+  Future<Map<String, Object>> createConnections(Map<String, dynamic> args) => _catalog.createConnections(args);
 
   /// Asks the user about one command. No answer, or no way to ask, is a no.
   final Future<bool> Function(McpApproval approval)? approve;
@@ -260,6 +271,7 @@ class AppMcpGateway extends ChangeNotifier implements McpGateway {
 
   @override
   void close() {
+    _catalog.revokePendingRequests();
     for (final session in _sessions.values) {
       session.close();
     }
@@ -580,7 +592,9 @@ class McpServer extends ChangeNotifier {
                 'On network devices, show and display commands (and turning off paging for the session) run at once. Every other command, such as configuration changes or saving, is approved by the user in CommandS first and can be refused. '
                 'Open a session, send a single command, then read output using the returned cursor. '
                 'Session output is asynchronous; poll read_output until the expected prompt or result appears. '
-                'Never assume a command has finished just because one read returned no text.',
+                'Never assume a command has finished just because one read returned no text. '
+                'To save catalog entries, use create_folder and create_connections with the destination folder path supplied by the user. '
+                'CommandS asks for approval before saving new entries. Saving does not grant SSH session access.',
           };
           break;
         case 'ping':
@@ -618,6 +632,12 @@ class McpServer extends ChangeNotifier {
           break;
         case 'list_sessions':
           value = {'sessions': gateway.listSessions()};
+          break;
+        case 'create_folder':
+          value = await gateway.createFolder(args);
+          break;
+        case 'create_connections':
+          value = await gateway.createConnections(args);
           break;
         case 'open_connection':
           final newSession = args.containsKey('new_session')
@@ -696,6 +716,58 @@ class McpServer extends ChangeNotifier {
       'name': 'list_sessions',
       'description': 'List open SSH sessions created through MCP for still-allowed connections. Returns session_id, connection_id and terminal status. Use session_id to resume. A running terminal may still be waiting for login or MFA; check read_output before sending commands.',
       'inputSchema': {'type': 'object', 'properties': <String, Object>{}},
+    },
+    {
+      'name': 'create_folder',
+      'description': 'Create a saved folder after local approval. Pass each name in order, e.g. ["CUSTOMER-A", "Switch"]. The parent must exist. Returns created: false if the folder already exists, without changing it.',
+      'annotations': {'destructiveHint': false, 'idempotentHint': true, 'openWorldHint': false},
+      'inputSchema': {
+        'type': 'object',
+        'additionalProperties': false,
+        'properties': {
+          'path': {
+            'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 16,
+          },
+          'kind': {'type': 'string', 'enum': ['network', 'firewall', 'system']},
+        },
+        'required': ['path'],
+      },
+    },
+    {
+      'name': 'create_connections',
+      'description': 'Save one or more connections in CommandS with one local approval. Use hostname as name and the address as host when importing a table. Create any missing destination with create_folder first. Repeated host, port, protocol and username combinations are skipped across the catalog. Returns created and skipped counts.',
+      'annotations': {'destructiveHint': false, 'idempotentHint': true, 'openWorldHint': false},
+      'inputSchema': {
+        'type': 'object',
+        'additionalProperties': false,
+        'properties': {
+          'folder_path': {
+            'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16,
+            'description': 'Folder names from root to leaf. Use [] for the top level.',
+          },
+          'connections': {
+            'type': 'array', 'minItems': 1, 'maxItems': 100,
+            'items': {
+              'type': 'object',
+              'additionalProperties': false,
+              'properties': {
+                'name': {'type': 'string'},
+                'host': {'type': 'string'},
+                'port': {'type': 'integer', 'minimum': 1, 'maximum': 65535},
+                'protocol': {'type': 'string', 'enum': ['ssh', 'rdp'], 'default': 'ssh'},
+                'username': {'type': 'string'},
+                'device_type': {
+                  'type': 'string',
+                  'description': 'Optional known vendor or platform for SSH. Omit to detect automatically.',
+                  'enum': ['linux', 'vmware', 'paloalto', 'fortinet', 'cisco', 'aruba', 'hpe', 'dell', 'huawei'],
+                },
+              },
+              'required': ['name', 'host'],
+            },
+          },
+        },
+        'required': ['folder_path', 'connections'],
+      },
     },
     {
       'name': 'open_connection',

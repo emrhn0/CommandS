@@ -1,3 +1,4 @@
+import 'package:commands/services/mcp_catalog.dart';
 import 'package:commands/services/mcp_server.dart';
 import 'package:commands/widgets/mcp_approval_dialog.dart';
 import 'package:flutter/material.dart';
@@ -41,5 +42,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(await answer, isFalse);
     expect(find.text('show version'), findsNothing);
+  });
+
+  testWidgets('catalog approval shows the destination and records before saving', (tester) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('window_manager'),
+      (call) async => null,
+    );
+    await tester.pumpWidget(MaterialApp(navigatorKey: key, home: const Scaffold()));
+    final answer = askMcpCatalogApproval(key, const McpCatalogApproval(
+      path: ['CUSTOMER-A', 'Switch'],
+      connections: ['DEVICE-01 — SSH 192.0.2.11 (port 22)'],
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('CUSTOMER-A › Switch'), findsOneWidget);
+    expect(find.textContaining('192.0.2.11'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(await answer, isTrue);
   });
 }
