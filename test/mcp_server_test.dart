@@ -29,9 +29,18 @@ class _FakeGateway implements McpGateway {
   ];
 
   @override
-  Future<String> openConnection(String connectionId) async {
+  List<Map<String, Object>> listSessions() => [
+    {
+      'session_id': 'session-01',
+      'connection_id': 'device-01',
+      'status': 'running',
+    },
+  ];
+
+  @override
+  Future<String> openConnection(String connectionId, {bool newSession = false}) async {
     if (connectionId != 'device-01') throw ArgumentError('Unknown connection');
-    return 'session-01';
+    return newSession ? 'session-02' : 'session-01';
   }
 
   @override
@@ -119,6 +128,7 @@ void main() {
       tools.map((t) => t['name']),
       containsAll([
         'list_connections',
+        'list_sessions',
         'open_connection',
         'send_command',
         'read_output',
@@ -153,6 +163,29 @@ void main() {
       'connection_id': 'device-01',
     });
     expect(opened['session_id'], 'session-01');
+    expect(await call(7, 'list_sessions', {}), {
+      'sessions': [
+        {
+          'session_id': 'session-01',
+          'connection_id': 'device-01',
+          'status': 'running',
+        },
+      ],
+    });
+    expect(await call(8, 'open_connection', {
+      'connection_id': 'device-01',
+      'new_session': true,
+    }), {'session_id': 'session-02'});
+    final (_, invalidOpen) = await _request(url, {
+      'jsonrpc': '2.0',
+      'id': 9,
+      'method': 'tools/call',
+      'params': {
+        'name': 'open_connection',
+        'arguments': {'connection_id': 'device-01', 'new_session': 'true'},
+      },
+    });
+    expect(invalidOpen!['result']['isError'], isTrue);
     final sent = await call(5, 'send_command', {
       'session_id': 'session-01',
       'command': 'show version',
@@ -316,6 +349,95 @@ void main() {
       expect(notified, greaterThan(0), reason: 'the tab bar redraws to show the mark');
     });
 
+    test('parallel opens reuse a starting MCP session, never a user tab', () async {
+      await gateway.setAllowed('c1', true);
+      await app.openConnection(app.connections.first);
+      final alias = gateway.aliasOf('c1')!;
+      final sessions = await Future.wait([
+        gateway.openConnection(alias),
+        gateway.openConnection(alias),
+      ]);
+      final session = sessions.first;
+      expect(sessions, [session, session]);
+      expect(app.tabs, hasLength(2));
+      expect(session, isNot(app.tabs.first.id));
+      expect(gateway.listSessions(), [
+        {'session_id': session, 'connection_id': alias, 'status': 'starting'},
+      ]);
+
+      final controller = app.tabs.last.controller as PtySessionController;
+      controller.debugSetStatus(SessionStatus.running);
+      expect(await gateway.openConnection(alias), session);
+      expect(gateway.listSessions().single['status'], 'running');
+      expect(app.tabs, hasLength(2));
+    });
+
+    test('explicit opens create a second session and dead tabs are skipped', () async {
+      await gateway.setAllowed('c1', true);
+      final alias = gateway.aliasOf('c1')!;
+      final original = await gateway.openConnection(alias);
+      final extra = await gateway.openConnection(alias, newSession: true);
+      expect(extra, isNot(original));
+      expect(gateway.listSessions().map((s) => s['session_id']), [original, extra]);
+      expect(await gateway.openConnection(alias), original);
+
+      final controller = app.tabs.first.controller as PtySessionController;
+      controller.debugSetStatus(SessionStatus.error);
+      expect(await gateway.openConnection(alias), extra);
+      expect(gateway.listSessions().map((s) => s['session_id']), [extra]);
+
+      app.closeTab(1);
+      expect(gateway.listSessions(), isEmpty);
+      final replacement = await gateway.openConnection(alias);
+      expect(replacement, isNot(isIn([original, extra])));
+      expect(gateway.listSessions().single['session_id'], replacement);
+    });
+
+    test('different saved connections at the same address use separate tabs', () async {
+      app.connections[1] = SavedConnection(
+        id: 'c2',
+        name: app.connections.first.name,
+        host: app.connections.first.host,
+      );
+      await gateway.setAllowedAll(['c1', 'c2'], true);
+      final aliases = ['c1', 'c2'].map((id) => gateway.aliasOf(id)!).toList();
+      final sessions = await Future.wait(aliases.map(gateway.openConnection));
+
+      expect(sessions.toSet(), hasLength(2));
+      expect(gateway.listSessions().map((s) => s['connection_id']), aliases);
+    });
+
+    test('editing the target prevents reuse of its old tab', () async {
+      await gateway.setAllowed('c1', true);
+      final alias = gateway.aliasOf('c1')!;
+      final original = await gateway.openConnection(alias);
+      app.connections[0] = SavedConnection(
+        id: 'c1',
+        name: app.connections.first.name,
+        host: '198.51.100.1',
+      );
+
+      expect(gateway.listSessions(), isEmpty);
+      final replacement = await gateway.openConnection(alias);
+      expect(replacement, isNot(original));
+      expect(gateway.listSessions().single['session_id'], replacement);
+    });
+
+    test('rotating the MCP address releases the session but leaves its tab open', () async {
+      final server = McpServer(gateway, port: 0);
+      addTearDown(server.dispose);
+      await server.start();
+      await gateway.setAllowed('c1', true);
+      final alias = gateway.aliasOf('c1')!;
+      final original = await gateway.openConnection(alias);
+
+      await server.regenerateUrl();
+      expect(app.tabs.single.id, original);
+      expect(gateway.listSessions(), isEmpty);
+      expect(() => gateway.readOutput(original, 0), throwsArgumentError);
+      expect(await gateway.openConnection(alias), isNot(original));
+    });
+
     test('every command waits for the user; a no sends nothing', () async {
       await gateway.setAllowed('c1', true);
       final session = await gateway.openConnection('DEVICE-01');
@@ -365,6 +487,7 @@ void main() {
       await gateway.setAllowed('c1', true);
       final session = await gateway.openConnection('DEVICE-01');
       await gateway.setAllowed('c1', false);
+      expect(gateway.listSessions(), isEmpty);
       expect(() => gateway.readOutput(session, 0), throwsStateError);
       await expectLater(gateway.sendCommand(session, 'show version'), throwsStateError);
       expect(asked, isEmpty);

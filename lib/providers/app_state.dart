@@ -1636,6 +1636,12 @@ class AppState extends ChangeNotifier {
   /// Always opens a tab (SSH and RDP alike) — returns null once the tab is
   /// up; only used to report a same-tick failure (e.g. an unsafe host).
   Future<String?> openConnection(SavedConnection conn) async {
+    openConnectionTab(conn);
+    return null;
+  }
+
+  /// Opens and selects a tab, returning the exact tab created for this call.
+  OpenTab openConnectionTab(SavedConnection conn) {
     final tab = _openTab(conn);
     _noteRecent(conn);
     activeTabIndex = tabs.length - 1;
@@ -1644,7 +1650,7 @@ class AppState extends ChangeNotifier {
     paneLayout = PaneLeaf(tab.id);
     activeGroupId = null;
     notifyListeners();
-    return null;
+    return tab;
   }
 
   /// The names of folder [folderId] and the folders above it, outermost
