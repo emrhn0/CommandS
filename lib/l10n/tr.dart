@@ -158,6 +158,14 @@ const turkish = <String, String>{
   'Delete folder': 'Klasörü sil',
   'Edit…': 'Düzenle…',
   'Clone': 'Kopyala',
+  'Telnet is not encrypted.': 'Telnet bağlantısı şifrelenmez.',
+  'Telnet is not encrypted. Enter login details in the terminal.':
+      'Telnet bağlantısı şifrelenmez. Giriş bilgilerini terminalde girin.',
+  'Enter a valid Telnet host and port.': 'Geçerli bir Telnet adresi ve portu girin.',
+  'Telnet client not found. Install PuTTY or use the packaged Windows build.':
+      'Telnet istemcisi bulunamadı. PuTTY kurun veya CommandS Windows paketini kullanın.',
+  'Telnet client not found. Install a telnet command-line client.':
+      'Telnet istemcisi bulunamadı. Bir telnet komut satırı istemcisi kurun.',
   'Move to folder…': 'Klasöre taşı…',
   'Open layout': 'Düzeni aç',
   'Delete layout': 'Düzeni sil',

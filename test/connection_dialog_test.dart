@@ -8,6 +8,52 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('a Telnet connection defaults to port 23 and saves without credentials', (tester) async {
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState();
+    await tester.pump();
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: app,
+      child: MaterialApp(
+        home: Builder(builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => showNewConnectionDialog(context),
+            child: const Text('open'),
+          ),
+        )),
+      ),
+    ));
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Telnet'));
+    await tester.pumpAndSettle();
+    expect(find.text('Telnet is not encrypted. Enter login details in the terminal.'), findsOneWidget);
+    expect(find.text('Username'), findsNothing);
+    expect(find.text('Enable password'), findsNothing);
+    final port = find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.controller?.text == '23',
+    );
+    expect(port, findsOneWidget);
+    await tester.enterText(port, '2323');
+    // The host field initially has focus when the dialog opens.
+    final host = find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.autofocus,
+    );
+    await tester.enterText(host, '192.0.2.11');
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    final connection = app.connections.single;
+    expect(connection.protocol, ConnectionProtocol.telnet);
+    expect(connection.host, '192.0.2.11');
+    expect(connection.port, 2323);
+    expect(connection.rememberPassword, isFalse);
+  });
+
   testWidgets('editing a connection: switch to RDP, set options, save in place', (tester) async {
     tester.view.physicalSize = const Size(1000, 900);
     tester.view.devicePixelRatio = 1;

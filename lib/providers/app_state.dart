@@ -283,11 +283,14 @@ class AppState extends ChangeNotifier {
 
   bool canRunCommand(AppCommandId id) {
     final tab = commandTab;
+    final controller = tab?.controller;
     return switch (id) {
       AppCommandId.copyName || AppCommandId.copyAddress => tab != null,
       AppCommandId.copyPassword => commandPassword != null,
-      AppCommandId.typePassword => !homeShown && tab?.controller is PtySessionController &&
-          tab!.controller.status == SessionStatus.running && commandPassword != null,
+      AppCommandId.typePassword => !homeShown &&
+          controller is PtySessionController &&
+          controller.isSsh &&
+          controller.status == SessionStatus.running && commandPassword != null,
       _ => true,
     };
   }
@@ -1632,7 +1635,7 @@ class AppState extends ChangeNotifier {
   /// show the active tab", the common case, without a tree to walk.
   PaneNode? paneLayout;
 
-  /// Always opens a tab (SSH and RDP alike) — returns null once the tab is
+  /// Always opens a tab — returns null once the tab is
   /// up; only used to report a same-tick failure (e.g. an unsafe host).
   Future<String?> openConnection(SavedConnection conn) async {
     final tab = _openTab(conn);
@@ -1687,6 +1690,7 @@ class AppState extends ChangeNotifier {
   /// Creates a tab for [conn] without changing what is on screen.
   OpenTab _openTab(SavedConnection saved) {
     final conn = resolved(saved);
+    final ssh = conn.protocol == ConnectionProtocol.ssh;
     final SessionController controller = conn.protocol == ConnectionProtocol.rdp
         // The embedding controller talks to a win32-only method channel
         // (windows/runner/rdp_plugin.cpp); anywhere else that channel does not
@@ -1696,9 +1700,10 @@ class AppState extends ChangeNotifier {
         : (PtySessionController(
             host: conn.host,
             port: conn.port,
-            username: conn.username,
-            password: conn.rememberPassword ? conn.password : '',
-            enablePassword: conn.enablePassword,
+            protocol: conn.protocol,
+            username: ssh ? conn.username : '',
+            password: ssh && conn.rememberPassword ? conn.password : '',
+            enablePassword: ssh ? conn.enablePassword : '',
             tabTitle: conn.name,
             recordByDefault: conn.recordSessionByDefault,
           )
@@ -1712,6 +1717,8 @@ class AppState extends ChangeNotifier {
     );
     if (controller is PtySessionController) {
       controller.onDeviceDetected = (kind) => _deviceDetected(conn.id, kind);
+    }
+    if (controller is PtySessionController && controller.isSsh) {
       controller.answerLoginQuestionYes = conn.answerLoginQuestionYes;
       // Only a saved connection can remember the answer.
       if (connections.any((c) => c.id == conn.id)) {
@@ -1884,6 +1891,10 @@ class AppState extends ChangeNotifier {
     openConnection(SavedConnection(name: host, host: host, port: port, protocol: ConnectionProtocol.rdp));
   }
 
+  void openQuickTelnet({required String host, required int port}) {
+    openConnection(SavedConnection(name: host, host: host, port: port, protocol: ConnectionProtocol.telnet));
+  }
+
   /// What a tab opened from quick connect was connected to, as an unsaved
   /// connection (host, port and protocol filled in) for its "Save
   /// connection" entry. Null for a tab that already is a saved connection.
@@ -1891,7 +1902,9 @@ class AppState extends ChangeNotifier {
     final id = tab.connectionId;
     if (id != null && connections.any((c) => c.id == id)) return null;
     final c = tab.controller;
-    if (c is PtySessionController) return SavedConnection(name: c.host, host: c.host, port: c.port);
+    if (c is PtySessionController) {
+      return SavedConnection(name: c.host, host: c.host, port: c.port, protocol: c.protocol);
+    }
     final SavedConnection? rdp = c is RdpSessionController
         ? c.conn
         : c is MacRdpSessionController

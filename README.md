@@ -1,6 +1,6 @@
 # CommandS
 
-A connection manager for SSH, RDP and serial consoles, for Windows and macOS.
+A connection manager for SSH, Telnet, RDP and serial consoles, for Windows and macOS.
 Keep every device in one folder tree and open it in a tab with a double click.
 
 It is built to be fast and to stay out of the way. It is a native app, not a
@@ -131,5 +131,9 @@ are made.
 
 ## Third-party
 
-The Windows build bundles PuTTY's `plink.exe` as a fallback SSH client,
+Telnet uses port 23 by default. Enter login details in the terminal. Telnet
+sends its traffic unencrypted. On macOS, install a command-line `telnet`
+client available on PATH or in a standard Homebrew location.
+
+The Windows build bundles PuTTY's `plink.exe` for Telnet and as a fallback SSH client,
 under the MIT licence: see [third_party/PUTTY-LICENCE.txt](third_party/PUTTY-LICENCE.txt).

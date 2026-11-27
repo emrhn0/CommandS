@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../app_version.dart';
+import '../models/models.dart';
 import '../providers/app_state.dart';
 import '../services/serial_session.dart';
 import 'context_menu.dart';
@@ -14,6 +15,7 @@ import '../l10n/strings.dart';
 enum QuickProtocol {
   serial('Serial', Icons.cable),
   ssh('SSH', Icons.terminal),
+  telnet('Telnet', Icons.settings_ethernet),
   rdp('RDP', Icons.desktop_windows_outlined);
 
   const QuickProtocol(this.label, this.icon);
@@ -37,7 +39,7 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
   final _controller = TextEditingController();
 
   /// Serial by default, every launch: the console cable is what this box is
-  /// reached for most, the other two are a click away.
+  /// reached for most. The other protocols are a click away.
   QuickProtocol _protocol = QuickProtocol.serial;
 
   /// Shown in front of what is typed for a serial port, and not part of the
@@ -75,7 +77,26 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
       _controller.clear();
       return;
     }
-    final defaultPort = _protocol == QuickProtocol.rdp ? 3389 : 22;
+    if (_protocol == QuickProtocol.telnet) {
+      final literal = InternetAddress.tryParse(raw);
+      final uri = literal == null ? Uri.tryParse('telnet://$raw') : null;
+      final host = literal?.address ?? uri?.host ?? '';
+      final port = uri?.hasPort == true ? uri!.port : ConnectionProtocol.telnet.defaultPort;
+      if (host.isEmpty ||
+          port < 1 ||
+          port > 65535 ||
+          (uri != null && (uri.userInfo.isNotEmpty || uri.path.isNotEmpty ||
+              uri.hasQuery || uri.hasFragment))) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('Enter a valid Telnet host and port.'))),
+        );
+        return;
+      }
+      app.openQuickTelnet(host: host, port: port);
+      _controller.clear();
+      return;
+    }
+    final defaultPort = ConnectionProtocol.fromName(_protocol.name).defaultPort;
     final parts = raw.split(':');
     final host = parts.first.trim();
     final port = parts.length > 1 ? int.tryParse(parts[1].trim()) ?? defaultPort : defaultPort;
@@ -176,6 +197,11 @@ class _QuickConnectBarState extends State<QuickConnectBar> {
               _ProtocolPicker(value: _protocol, onChanged: _setProtocol),
             ],
           ),
+          if (_protocol == QuickProtocol.telnet)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(tr('Telnet is not encrypted.'), style: theme.textTheme.bodySmall),
+            ),
         ],
       ),
     );

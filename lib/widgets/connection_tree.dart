@@ -1844,7 +1844,11 @@ class _ConnectionRow extends StatelessWidget {
       onSecondary: onSecondary,
       onOpen: onOpen,
       openStatus: _openStatus(app),
-      icon: conn.protocol == ConnectionProtocol.rdp ? Icons.desktop_windows_outlined : Icons.terminal,
+      icon: switch (conn.protocol) {
+        ConnectionProtocol.rdp => Icons.desktop_windows_outlined,
+        ConnectionProtocol.telnet => Icons.settings_ethernet,
+        ConnectionProtocol.ssh => Icons.terminal,
+      },
       leading: switch (DeviceIcon.of(conn)) {
         final kind? => DeviceIcon(kind),
         null => null,
@@ -2398,6 +2402,7 @@ AppMcpGateway? _mcpGateway(BuildContext context) {
 enum TreeFilter {
   all('All', null),
   ssh('SSH', Icons.terminal_rounded),
+  telnet('Telnet', Icons.settings_ethernet),
   rdp('RDP', Icons.desktop_windows_outlined),
   favorites('Favorites', Icons.star_rounded);
 
@@ -2408,13 +2413,14 @@ enum TreeFilter {
   bool matches(SavedConnection c, AppState app) => switch (this) {
         TreeFilter.all => true,
         TreeFilter.ssh => c.protocol == ConnectionProtocol.ssh,
+        TreeFilter.telnet => c.protocol == ConnectionProtocol.telnet,
         TreeFilter.rdp => c.protocol == ConnectionProtocol.rdp,
         TreeFilter.favorites => app.isFavorite(c.id),
       };
 }
 
-/// The chips under the search box: all connections, only SSH, only RDP, or
-/// only the favorites. A chip with nothing behind it is left out, "All" aside.
+/// The chips under the search box: all connections, a protocol, or favorites.
+/// A chip with nothing behind it is left out, "All" aside.
 class _FilterChips extends StatelessWidget {
   const _FilterChips({required this.value, required this.counts, required this.onChanged});
 

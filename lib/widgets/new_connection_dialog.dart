@@ -138,11 +138,10 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
 
   void _setProtocol(ConnectionProtocol p) {
     setState(() {
+      final useDefault = _port.text.trim().isEmpty ||
+          _port.text.trim() == '${_protocol.defaultPort}';
       _protocol = p;
-      final defaultPort = p == ConnectionProtocol.rdp ? '3389' : '22';
-      if (_port.text.trim().isEmpty || _port.text.trim() == '22' || _port.text.trim() == '3389') {
-        _port.text = defaultPort;
-      }
+      if (useDefault) _port.text = '${p.defaultPort}';
     });
   }
 
@@ -153,7 +152,8 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
     final autoName = _protocol == ConnectionProtocol.ssh &&
         (enteredName.isEmpty ||
             (widget.existing?.autoNamePending == true && enteredName == widget.existing!.name));
-    final port = int.tryParse(_port.text.trim()) ?? (_protocol == ConnectionProtocol.rdp ? 3389 : 22);
+    final port = int.tryParse(_port.text.trim()) ?? _protocol.defaultPort;
+    final telnet = _protocol == ConnectionProtocol.telnet;
     return SavedConnection(
       // Keeping the id means an edit updates the entry instead of cloning it.
       id: widget.existing?.id,
@@ -161,22 +161,22 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       autoNamePending: autoName,
       host: host,
       port: port,
-      username: _username.text.trim(),
+      username: telnet ? '' : _username.text.trim(),
       // A saved connection always remembers whatever password field it was
       // given — that's the point of typing one in here. An empty field just
       // means "ask at connect time", same as before.
-      rememberPassword: true,
-      password: _password.text,
+      rememberPassword: !telnet,
+      password: telnet ? '' : _password.text,
       enablePassword: _protocol == ConnectionProtocol.ssh ? _enablePassword.text : '',
       folderId: _folderId,
       protocol: _protocol,
-      domain: _domain.text.trim().isEmpty ? null : _domain.text.trim(),
+      domain: telnet || _domain.text.trim().isEmpty ? null : _domain.text.trim(),
       rdpClipboard: _rdpClipboard,
       rdpWallpaper: _rdpWallpaper,
-      recordSessionByDefault: _protocol == ConnectionProtocol.ssh && _recordSessionByDefault,
+      recordSessionByDefault: _protocol != ConnectionProtocol.rdp && _recordSessionByDefault,
       device: _pickedDevice ?? _detectedDevice,
       deviceManual: _pickedDevice != null,
-      credentialProfileId: _profileId,
+      credentialProfileId: telnet ? null : _profileId,
       answerLoginQuestionYes: _protocol == ConnectionProtocol.ssh && _answerLoginYes,
     );
   }
@@ -308,6 +308,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final rdp = _protocol == ConnectionProtocol.rdp;
+    final telnet = _protocol == ConnectionProtocol.telnet;
     return AppDialog(
       title: tr(
         _isEdit
@@ -316,7 +317,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             ? 'Save Connection'
             : 'New Connection',
       ),
-      icon: rdp ? Icons.desktop_windows_outlined : Icons.terminal,
+      icon: rdp ? Icons.desktop_windows_outlined : telnet ? Icons.settings_ethernet : Icons.terminal,
       width: 460,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -330,6 +331,11 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                 icon: Icon(Icons.terminal, size: 16),
               ),
               ButtonSegment(
+                value: ConnectionProtocol.telnet,
+                label: Text('Telnet'),
+                icon: Icon(Icons.settings_ethernet, size: 16),
+              ),
+              ButtonSegment(
                 value: ConnectionProtocol.rdp,
                 label: Text('RDP'),
                 icon: Icon(Icons.desktop_windows_outlined, size: 16),
@@ -338,13 +344,21 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             selected: {_protocol},
             onSelectionChanged: (s) => _setProtocol(s.first),
           ),
+          if (telnet)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                tr('Telnet is not encrypted. Enter login details in the terminal.'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           const _Section('Connection'),
           LabeledField(
             label: 'Name',
             child: TextField(
               controller: _name,
               decoration: InputDecoration(
-                hintText: tr(rdp ? 'Defaults to the host' : 'Hostname after first SSH connection, otherwise host'),
+                hintText: tr(rdp || telnet ? 'Defaults to the host' : 'Hostname after first SSH connection, otherwise host'),
               ),
             ),
           ),
@@ -378,52 +392,54 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             ),
           ),
           if (!rdp) _deviceField(),
-          const _Section('Credentials'),
-          _profileField(app),
-          if (_profileId != null && app.credentialProfiles.any((p) => p.id == _profileId)) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 2, bottom: 8),
-              child: Text(
-                tr("Logs in as {user} with the profile's password. Change them in the profile.", {
-                  'user': app.credentialProfiles.firstWhere((p) => p.id == _profileId).username.isEmpty
-                      ? '—'
-                      : app.credentialProfiles.firstWhere((p) => p.id == _profileId).username,
-                }),
-                style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
-              ),
-            ),
-            if (rdp)
-              LabeledField(
-                label: 'Domain',
-                child: TextField(controller: _domain, decoration: InputDecoration(hintText: tr('Optional'))),
-              ),
-          ] else ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: LabeledField(
-                  label: 'Username',
-                  child: TextField(controller: _username, autofocus: _isSaveOfQuick),
+          if (!telnet) ...[
+            const _Section('Credentials'),
+            _profileField(app),
+            if (_profileId != null && app.credentialProfiles.any((p) => p.id == _profileId)) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 2, bottom: 8),
+                child: Text(
+                  tr("Logs in as {user} with the profile's password. Change them in the profile.", {
+                    'user': app.credentialProfiles.firstWhere((p) => p.id == _profileId).username.isEmpty
+                        ? '—'
+                        : app.credentialProfiles.firstWhere((p) => p.id == _profileId).username,
+                  }),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: rdp
-                    ? LabeledField(
-                        label: 'Domain',
-                        child: TextField(
-                          controller: _domain,
-                          decoration: InputDecoration(hintText: tr('Optional')),
-                        ),
-                      )
-                    : _passwordField(),
+              if (rdp)
+                LabeledField(
+                  label: 'Domain',
+                  child: TextField(controller: _domain, decoration: InputDecoration(hintText: tr('Optional'))),
+                ),
+            ] else ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: LabeledField(
+                      label: 'Username',
+                      child: TextField(controller: _username, autofocus: _isSaveOfQuick),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: rdp
+                        ? LabeledField(
+                            label: 'Domain',
+                            child: TextField(
+                              controller: _domain,
+                              decoration: InputDecoration(hintText: tr('Optional')),
+                            ),
+                          )
+                        : _passwordField(),
+                  ),
+                ],
               ),
+              if (rdp) _passwordField(),
             ],
-          ),
-          if (rdp) _passwordField(),
+            if (!rdp) _enablePasswordField(),
           ],
-          if (!rdp) _enablePasswordField(),
           if (!rdp) ...[
             const _Section('Other'),
             InkWell(
@@ -441,7 +457,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                 ],
               ),
             ),
-            InkWell(
+            if (!telnet) InkWell(
               key: const Key('answer-login-yes'),
               borderRadius: BorderRadius.circular(6),
               onTap: () => setState(() => _answerLoginYes = !_answerLoginYes),
