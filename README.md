@@ -101,6 +101,8 @@ Cursor, or any app that supports MCP servers over HTTP.
    ```
 
 - Off by default, and reachable only from your own computer.
+- The default MCP server port is 8765. Change it in **Settings > MCP
+  integration**, then update the URL in your MCP client or tunnel.
 - The agent sees each allowed connection's name, address, port and
   username, never its password.
 - Clients use the short ID returned by `list_connections` (such as `a4`)

@@ -412,6 +412,21 @@ class _McpPanel extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: Text(tr('MCP server port'))),
+            Text(server.port.toString()),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => _McpPortDialog(server: server),
+              ),
+              child: Text(tr('Change port')),
+            ),
+          ],
+        ),
         if (server.url case final url?) ...[
           const SizedBox(height: 12),
           Text(tr('MCP server URL'), style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -446,6 +461,90 @@ class _McpPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
         ],
+      ],
+    );
+  }
+}
+
+class _McpPortDialog extends StatefulWidget {
+  const _McpPortDialog({required this.server});
+
+  final McpServer server;
+
+  @override
+  State<_McpPortDialog> createState() => _McpPortDialogState();
+}
+
+class _McpPortDialogState extends State<_McpPortDialog> {
+  late String _input = widget.server.port.toString();
+  String? _error;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final port = int.tryParse(_input.trim(), radix: 10);
+    if (port == null || !McpServer.isValidPort(port)) {
+      setState(() => _error = tr('Enter a port from 1 to 65535.'));
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.server.setPort(port);
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.of(context).pop();
+      }
+    } on SocketException {
+      if (mounted) {
+        setState(() => _error = tr('Could not use this port. It may already be in use.'));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = tr('Could not save the MCP port.'));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(tr('MCP server port')),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              initialValue: _input,
+              enabled: !_saving,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: tr('Port'), errorText: _error),
+              onChanged: (value) => setState(() {
+                _input = value;
+                _error = null;
+              }),
+              onFieldSubmitted: (_) => _save(),
+            ),
+            if (widget.server.enabled) ...[
+              const SizedBox(height: 12),
+              Text(tr('Update your MCP client or tunnel with the new URL after changing the port.')),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: Text(tr('Cancel')),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(tr('Save')),
+        ),
       ],
     );
   }

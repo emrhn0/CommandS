@@ -433,6 +433,12 @@ const german = <String, String>{
   'Lets a connected agent open saved SSH connections, send commands, and read terminal output.':
       'Erlaubt einem verbundenen Agenten, gespeicherte SSH-Verbindungen zu öffnen, Befehle zu senden und die Terminalausgabe zu lesen.',
   'MCP server URL': 'MCP-Server-URL',
+  'MCP server port': 'MCP-Serverport',
+  'Change port': 'Port ändern',
+  'Enter a port from 1 to 65535.': 'Gib einen Port zwischen 1 und 65535 ein.',
+  'Could not use this port. It may already be in use.': 'Dieser Port konnte nicht verwendet werden. Er ist möglicherweise bereits belegt.',
+  'Could not save the MCP port.': 'Der MCP-Port konnte nicht gespeichert werden.',
+  'Update your MCP client or tunnel with the new URL after changing the port.': 'Aktualisiere nach der Portänderung die URL in deinem MCP-Client oder Tunnel.',
   'New address': 'Neue Adresse',
   'Create a new address?': 'Neue Adresse erstellen?',
   'The current address stops working at once. Agents connected with it lose access until you give them the new one.':
