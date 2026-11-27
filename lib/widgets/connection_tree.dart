@@ -1881,7 +1881,9 @@ class _ConnectionRow extends StatelessWidget {
         } else if (key == 'edit') {
           await showEditConnectionDialog(context, conn);
         } else if (key == 'clone') {
-          await app.cloneConnection(conn.id);
+          final copy = await app.cloneConnection(conn.id);
+          if (!context.mounted) return;
+          await showEditConnectionDialog(context, copy);
         } else if (key == 'rename') {
           final name = await showTextInputDialog(context, title: 'Rename connection', initial: conn.name);
           if (name != null) app.renameConnection(conn.id, name);
